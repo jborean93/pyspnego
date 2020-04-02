@@ -13,6 +13,7 @@ import win32security
 from spnego._context import (
     SecurityContext,
     requires_context,
+    split_username,
 )
 
 log = logging.getLogger(__name__)
@@ -20,16 +21,17 @@ log = logging.getLogger(__name__)
 
 class SSPI(SecurityContext):
 
-    VALID_PROVIDERS = {'negotiate', 'ntlm', 'kerberos'}
+    VALID_PROTOCOLS = {'negotiate', 'ntlm', 'kerberos'}
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=None, provider='negotiate'):
+                 confidentiality=None, protocol='negotiate'):
         super(SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
-                                   provider)
+                                   protocol)
+        domain, username = split_username(self.username)
 
         self._context = sspi.ClientAuth(
             pkg_name=None,
-            auth_info=(self.username, self.domain, self.password),
+            auth_info=(username, domain, self.password),
             targetspn=None,
             scflags=None
         )
@@ -102,9 +104,3 @@ class SSPI(SecurityContext):
             raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s" % (rc, rc_name, format(rc, 'x')))
 
         return out_buffer[0].Buffer
-
-    @staticmethod
-    def convert_channel_bindings(bindings):
-        # Need to hand craft the SEC_CHANNEL_BINDINGS structure for SSPI
-        # https://msdn.microsoft.com/en-us/library/windows/desktop/dd919963(v=vs.85).aspx
-        return bindings.get_data()

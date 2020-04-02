@@ -18,6 +18,7 @@ from ntlm_auth.ntlm import (
 from spnego._context import (
     SecurityContext,
     requires_context,
+    split_username,
 )
 
 log = logging.getLogger(__name__)
@@ -25,21 +26,17 @@ log = logging.getLogger(__name__)
 
 class NTLM(SecurityContext):
 
-    VALID_PROVIDERS = {'negotiate', 'ntlm'}
+    VALID_PROTOCOLS = {'negotiate', 'ntlm'}
 
-    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=None, provider='ntlm', workstation=None, ntlm_compatibility=3):
+    def __init__(self, username, password, channel_bindings=None, protocol='ntlm', workstation=None,
+                 ntlm_compatibility=3):
         """
         Generates an NTLM backed context through either raw NTLM or SPNEGO tokens.
 
         :param username: The username to authenticate with.
         :param password: The password for the user.
-        :param hostname: This parameter is not used with this auth context.
-        :param service: This parameter is not used with this auth context.
         :param channel_bindings: Optional channel_bindings.GssChannelBinding object.
-        :param delegate: This parameter is not used with this auth context.
-        :param confidentiality: This parameter is not used with this auth context.
-        :param provider: The auth provider to use when creating authentication tokens, can be ntlm or negotiate.
+        :param protocol: The auth protocol to use for the security context, can be ntlm or negotiate.
             Setting to negotiate will just wrap the raw ntlm tokens in an SPNEGO token.
         :param workstation: Optional workstation name, used as a simple identifier.
         :param ntlm_compatibility: Set the Lan Manager Compatability level. This should be changed unless you really
@@ -50,14 +47,14 @@ class NTLM(SecurityContext):
             2: NTLMv1, and NTLMv1 with Extended Session Security
             3: NTLMv2 Only
         """
-        super(NTLM, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
-                                   provider)
+        super(NTLM, self).__init__(username, password, None, None, channel_bindings, None, None, protocol)
+        domain, username = split_username(self.username)
 
         if username and not password:
             raise ValueError("Cannot use NTLM auth with explicit user and not password")
 
         # TODO: Look into adding anonymous support for NTLM auth in ntlm-auth.
-        self._context = NtlmContext(self.username, self.password, domain=self.domain, workstation=workstation,
+        self._context = NtlmContext(username, self.password, domain=domain, workstation=workstation,
                                     cbt_data=self.channel_bindings, ntlm_compatibility=ntlm_compatibility)
 
     @property

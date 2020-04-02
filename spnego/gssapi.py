@@ -28,16 +28,16 @@ log = logging.getLogger(__name__)
 
 class GSSAPI(SecurityContext):
 
-    VALID_PROVIDERS = {'negotiate', 'ntlm', 'kerberos'}
+    VALID_PROTOCOLS = {'negotiate', 'ntlm', 'kerberos'}
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=None, provider='negotiate'):
+                 confidentiality=None, protocol='negotiate'):
 
         if confidentiality and not wrap_iov:
             raise ValueError("The GSSAPI auth provider does not support confidentiality on this host.")
 
         super(GSSAPI, self).__init__(username, password, hostname, service, channel_bindings, delegate,
-                                     confidentiality, provider, extract_domain=False)
+                                     confidentiality, protocol)
 
         # TODO: accept all these options.
 

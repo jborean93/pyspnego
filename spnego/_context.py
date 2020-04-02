@@ -4,6 +4,11 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+from abc import (
+    ABCMeta,
+    abstractmethod,
+)
+
 
 def split_username(username):
     if username is None:
@@ -24,19 +29,44 @@ def requires_context(method):
     return wrapped
 
 
+def add_metaclass(metaclass):
+    """Class decorator for creating a class with a metaclass. This has been copied from six under the MIT license. """
+    def wrapper(cls):
+        orig_vars = cls.__dict__.copy()
+        slots = orig_vars.get('__slots__')
+        if slots is not None:
+            if isinstance(slots, str):
+                slots = [slots]
+            for slots_var in slots:
+                orig_vars.pop(slots_var)
+        orig_vars.pop('__dict__', None)
+        orig_vars.pop('__weakref__', None)
+        if hasattr(cls, '__qualname__'):
+            orig_vars['__qualname__'] = cls.__qualname__
+        return metaclass(cls.__name__, cls.__bases__, orig_vars)
+    return wrapper
+
+
+@add_metaclass(ABCMeta)
 class SecurityContext:
 
-    VALID_PROVIDERS = {}
+    VALID_PROTOCOLS = {}
 
-    def __init__(self, username, password, hostname, service, channel_bindings, delegate, confidentiality, provider,
-                 extract_domain=True):
+    def __init__(self, username, password, hostname, service, channel_bindings, delegate, confidentiality, protocol):
+        """
+        Base class for a security context. Various parameters may or may not be used by each implementing class.
 
-        if extract_domain:
-            self.domain, self.username = split_username(username)
-        else:
-            self.domain = None
-            self.username = username
-
+        :param username: The username to authenticate with.
+        :param password: The password for the user.
+        :param hostname: The target hostname, used as part of building the SPN if required.
+        :param service: The target service class, used as part of building the SPN if required.
+        :param channel_bindings: An optional channel_binding.GssChannelBindings object.
+        :param delegate: Whether to apply the delegate flag to the security context.
+        :param confidentiality: Whether confidentiality (encryption) is required.
+        :param protocol: Enforce a particular protocol on the security context. Each security context implementer
+            specify what protocols it supports.
+        """
+        self.username = username
         self.password = password
         self.hostname = hostname
         self.service = service
@@ -48,36 +78,47 @@ class SecurityContext:
         self.delegate = delegate
         self.confidentiality = confidentiality
 
-        self.provider = provider
-        if provider not in self.VALID_PROVIDERS:
-            raise ValueError("Specified provider %s is not supported by this auth context, valid providers: %s"
-                             % (provider, ", ".join(self.VALID_PROVIDERS)))
+        self.provider = protocol
+        if protocol not in self.VALID_PROTOCOLS:
+            raise ValueError("Specified protocol %s is not supported by this security context, valid protocols: %s"
+                             % (protocol, ", ".join(self.VALID_PROTOCOLS)))
 
     @property
+    @abstractmethod
     def complete(self):
         """ Whether the authentication exchange has finished and the context is ready for wrapping/unwrapping."""
-        raise NotImplementedError()
+        pass
 
     @property
     @requires_context
+    @abstractmethod
     def session_key(self):
         """ Session key associated with the set up context. """
-        raise NotImplementedError()
+        pass
 
+    @abstractmethod
     def step(self):
         """ A generator that yields authentication tokens and processes input tokens from the server. """
-        raise NotImplementedError()
+        pass
 
     @requires_context
     def wrap(self, data):
         """ Wraps the data similar to EncryptMessage() in SSPI. """
-        raise NotImplementedError()
+        pass
 
     @requires_context
     def unwrap(self, header, data):
         """ Unwraps the data similar to DecryptMessage() in SSPI. """
-        raise NotImplementedError()
+        pass
 
     @staticmethod
     def convert_channel_bindings(bindings):
-        raise NotImplementedError()
+        """
+        Converts the generic channel_bindings.GssChannelBindings to the security context specific object. Defaults to
+        just returning the byte string of the GSS Channel Bindings struct. Otherwise a security context class can
+        return the structure it requires.
+
+        :param bindings: The channel_bindings.GssChannelBindings to convert from.
+        :returns: A security context specific object of the GSS Channel Bindings structure.
+        """
+        return bindings.get_data()
