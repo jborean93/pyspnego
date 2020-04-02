@@ -15,25 +15,33 @@ from ntlm_auth.ntlm import (
     NtlmContext,
 )
 
-from spgnego._context import (
-    _AuthContext,
+from spnego._context import (
+    SecurityContext,
     requires_context,
-    split_username,
 )
 
 log = logging.getLogger(__name__)
 
 
-class NTLM(_AuthContext):
+class NTLM(SecurityContext):
 
-    def __init__(self, username, password, workstation=None, channel_bindings=None, ntlm_compatibility=3):
+    VALID_PROVIDERS = {'negotiate', 'ntlm'}
+
+    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
+                 confidentiality=None, provider='ntlm', workstation=None, ntlm_compatibility=3):
         """
-        Generates a pure NTLM authentication context with no SPNEGO wrapping.
+        Generates an NTLM backed context through either raw NTLM or SPNEGO tokens.
 
         :param username: The username to authenticate with.
         :param password: The password for the user.
-        :param workstation: Optional workstation name, used as a simple identifier.
+        :param hostname: This parameter is not used with this auth context.
+        :param service: This parameter is not used with this auth context.
         :param channel_bindings: Optional channel_bindings.GssChannelBinding object.
+        :param delegate: This parameter is not used with this auth context.
+        :param confidentiality: This parameter is not used with this auth context.
+        :param provider: The auth provider to use when creating authentication tokens, can be ntlm or negotiate.
+            Setting to negotiate will just wrap the raw ntlm tokens in an SPNEGO token.
+        :param workstation: Optional workstation name, used as a simple identifier.
         :param ntlm_compatibility: Set the Lan Manager Compatability level. This should be changed unless you really
             need backwards compatibility with insecure authentication protocols.
 
@@ -42,26 +50,15 @@ class NTLM(_AuthContext):
             2: NTLMv1, and NTLMv1 with Extended Session Security
             3: NTLMv2 Only
         """
-        super(NTLM, self).__init__()
+        super(NTLM, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
+                                   provider)
 
         if username and not password:
             raise ValueError("Cannot use NTLM auth with explicit user and not password")
 
-        self.domain, self.username = split_username(username)
-        self.password = password
-
-        cbt = None
-        if channel_bindings:
-            cbt = GssChannelBindingsStruct()
-            cbt[cbt.INITIATOR_ADDTYPE] = channel_bindings.initiator_addrtype
-            cbt[cbt.INITIATOR_ADDRESS] = channel_bindings.initiator_address
-            cbt[cbt.ACCEPTOR_ADDRTYPE] = channel_bindings.acceptor_addrtype
-            cbt[cbt.ACCEPTOR_ADDRESS] = channel_bindings.acceptor_address
-            cbt[cbt.APPLICATION_DATA] = channel_bindings.application_data
-
         # TODO: Look into adding anonymous support for NTLM auth in ntlm-auth.
         self._context = NtlmContext(self.username, self.password, domain=self.domain, workstation=workstation,
-                                    cbt_data=cbt, ntlm_compatibility=ntlm_compatibility)
+                                    cbt_data=self.channel_bindings, ntlm_compatibility=ntlm_compatibility)
 
     @property
     def complete(self):
@@ -76,6 +73,7 @@ class NTLM(_AuthContext):
         return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
 
     def step(self):
+        # TODO: wrap/unwrap each token in an SPNEGO structure when self.provider == 'negotiate'.
         msg1 = self._context.step()
         log.debug("NTLM Negotiate: %s", lambda: base64.b64encode(msg1))
 
@@ -95,3 +93,14 @@ class NTLM(_AuthContext):
     @requires_context
     def unwrap(self, header, data):
         return self._context.unwrap(header + data)
+
+    @staticmethod
+    def convert_channel_bindings(bindings):
+        cbt = GssChannelBindingsStruct()
+        cbt[cbt.INITIATOR_ADDTYPE] = bindings.initiator_addrtype
+        cbt[cbt.INITIATOR_ADDRESS] = bindings.initiator_address
+        cbt[cbt.ACCEPTOR_ADDRTYPE] = bindings.acceptor_addrtype
+        cbt[cbt.ACCEPTOR_ADDRESS] = bindings.acceptor_address
+        cbt[cbt.APPLICATION_DATA] = bindings.application_data
+
+        return cbt

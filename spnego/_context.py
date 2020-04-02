@@ -24,7 +24,34 @@ def requires_context(method):
     return wrapped
 
 
-class _AuthContext:
+class SecurityContext:
+
+    VALID_PROVIDERS = {}
+
+    def __init__(self, username, password, hostname, service, channel_bindings, delegate, confidentiality, provider,
+                 extract_domain=True):
+
+        if extract_domain:
+            self.domain, self.username = split_username(username)
+        else:
+            self.domain = None
+            self.username = username
+
+        self.password = password
+        self.hostname = hostname
+        self.service = service
+
+        self.channel_bindings = channel_bindings
+        if channel_bindings:
+            self.channel_bindings = self.convert_channel_bindings(channel_bindings)
+
+        self.delegate = delegate
+        self.confidentiality = confidentiality
+
+        self.provider = provider
+        if provider not in self.VALID_PROVIDERS:
+            raise ValueError("Specified provider %s is not supported by this auth context, valid providers: %s"
+                             % (provider, ", ".join(self.VALID_PROVIDERS)))
 
     @property
     def complete(self):
@@ -49,4 +76,8 @@ class _AuthContext:
     @requires_context
     def unwrap(self, header, data):
         """ Unwraps the data similar to DecryptMessage() in SSPI. """
+        raise NotImplementedError()
+
+    @staticmethod
+    def convert_channel_bindings(bindings):
         raise NotImplementedError()

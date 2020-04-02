@@ -10,28 +10,22 @@ import sspi
 import sspicon
 import win32security
 
-from spgnego._context import (
-    _AuthContext,
+from spnego._context import (
+    SecurityContext,
     requires_context,
-    split_username,
 )
 
 log = logging.getLogger(__name__)
 
 
-class SSPI(_AuthContext):
+class SSPI(SecurityContext):
 
-    def __init__(self, username=None, password=None, channel_bindings=None):
-        super(SSPI, self).__init__()
+    VALID_PROVIDERS = {'negotiate', 'ntlm', 'kerberos'}
 
-        self.domain, self.username = split_username(username)
-        self.password = password
-
-        self._cbt = None
-        if channel_bindings:
-            # Need to hand craft the SEC_CHANNEL_BINDINGS structure for SSPI
-            # https://msdn.microsoft.com/en-us/library/windows/desktop/dd919963(v=vs.85).aspx
-            self._cbt = channel_bindings.get_data()
+    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
+                 confidentiality=None, provider='negotiate'):
+        super(SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
+                                   provider)
 
         self._context = sspi.ClientAuth(
             pkg_name=None,
@@ -84,9 +78,9 @@ class SSPI(_AuthContext):
             sec_token = win32security.PySecBufferType(self._context.pkg_info['MaxToken'], sspicon.SECBUFFER_TOKEN)
             sec_token.Buffer = token
             sec_tokens.append(sec_token)
-        if self._cbt:
-            sec_token = win32security.PySecBufferType(len(self._cbt), sspicon.SECBUFFER_CHANNEL_BINDINGS)
-            sec_token.Buffer = self._cbt
+        if self.channel_bindings:
+            sec_token = win32security.PySecBufferType(len(self.channel_bindings), sspicon.SECBUFFER_CHANNEL_BINDINGS)
+            sec_token.Buffer = self.channel_bindings
             sec_tokens.append(sec_token)
 
         if len(sec_tokens) > 0:
@@ -108,3 +102,9 @@ class SSPI(_AuthContext):
             raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s" % (rc, rc_name, format(rc, 'x')))
 
         return out_buffer[0].Buffer
+
+    @staticmethod
+    def convert_channel_bindings(bindings):
+        # Need to hand craft the SEC_CHANNEL_BINDINGS structure for SSPI
+        # https://msdn.microsoft.com/en-us/library/windows/desktop/dd919963(v=vs.85).aspx
+        return bindings.get_data()

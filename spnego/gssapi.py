@@ -11,37 +11,38 @@ import logging
 from gssapi.raw import acquire_cred_with_password
 from gssapi.raw import set_sec_context_option
 from gssapi.raw import ChannelBindings
-from gssapi.raw import wrap_iov, IOV, IOVBufferType
 
-from spgnego._context import (
-    _AuthContext,
+wrap_iov = None
+try:
+    from gssapi.raw import wrap_iov, IOV, IOVBufferType
+except ImportError:
+    pass
+
+from spnego._context import (
+    SecurityContext,
     requires_context,
 )
 
 log = logging.getLogger(__name__)
 
 
-class GSSAPI(_AuthContext):
+class GSSAPI(SecurityContext):
 
-    def __init__(self, username=None, password=None, channel_bindings=None):
-        super(GSSAPI, self).__init__()
+    VALID_PROVIDERS = {'negotiate', 'ntlm', 'kerberos'}
 
-        self.domain = None  # Just aligns with other providers
-        self.username = username
-        self.password = password
+    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
+                 confidentiality=None, provider='negotiate'):
 
-        cbt = None
-        if channel_bindings:
-            cbt = ChannelBindings(initiator_address_type=channel_bindings.initiator_addrtype,
-                                  initiator_address=channel_bindings.initiator_address,
-                                  acceptor_address_type=channel_bindings.acceptor_addrtype,
-                                  acceptor_address=channel_bindings.acceptor_address,
-                                  application_data=channel_bindings.application_data)
+        if confidentiality and not wrap_iov:
+            raise ValueError("The GSSAPI auth provider does not support confidentiality on this host.")
+
+        super(GSSAPI, self).__init__(username, password, hostname, service, channel_bindings, delegate,
+                                     confidentiality, provider, extract_domain=False)
 
         # TODO: accept all these options.
 
         self._context = gssapi.SecurityContext(name=None, creds=None, usage='initiate', mech=None, flags=None,
-                                               channel_bindings=cbt)
+                                               channel_bindings=self.channel_bindings)
 
     @property
     def complete(self):
@@ -78,3 +79,11 @@ class GSSAPI(_AuthContext):
     @requires_context
     def unwrap(self, header, data):
         return self._context.unwrap(header + data)[0]
+
+    @staticmethod
+    def convert_channel_bindings(bindings):
+        return ChannelBindings(initiator_address_type=bindings.initiator_addrtype,
+                               initiator_address=bindings.initiator_address,
+                               acceptor_address_type=bindings.acceptor_addrtype,
+                               acceptor_address=bindings.acceptor_address,
+                               application_data=bindings.application_data)

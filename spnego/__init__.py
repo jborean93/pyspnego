@@ -9,6 +9,20 @@ import logging
 import logging.config
 import os
 
+from spnego.ntlm import NTLM
+
+GSSAPI = None
+try:
+    from spnego.gssapi import GSSAPI
+except ImportError:
+    pass
+
+SSPI = None
+try:
+    from spnego.sspi import SSPI
+except ImportError:
+    pass
+
 try:
     from logging import NullHandler
 except ImportError:  # pragma: no cover
@@ -35,5 +49,13 @@ logger = logging.getLogger(__name__)
 _setup_logging(logger)
 
 
-def get_auth_context():
+def initialize_security_context(username, password, hostname=None, service='HOST', delegate=False,
+                                confidentiality=True, channel_bindings=None, provider='negotiate'):
+    # FUTURE: See if we can pluginise each provider and add a method for someone to define their own.
+    if provider not in ['negotiate', 'ntlm', 'kerberos']:
+        raise ValueError("provider must be negotiate, ntlm, or kerberos")
+
+    if provider == 'ntlm':
+        return NTLM(username, password, channel_bindings=channel_bindings)
+
     return None
