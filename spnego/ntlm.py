@@ -80,7 +80,7 @@ class NTLM(SecurityContext):
         msg3 = self._context.step(msg2)
         log.debug("NTLM Authenticate: %s", lambda: base64.b64encode(msg3))
 
-        yield msg2
+        yield msg3
 
     @requires_context
     def wrap(self, data):
