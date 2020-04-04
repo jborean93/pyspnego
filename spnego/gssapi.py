@@ -23,6 +23,11 @@ from spnego._context import (
     requires_context,
 )
 
+from spnego._text import (
+    to_bytes,
+    to_text,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -40,8 +45,21 @@ class GSSAPI(SecurityContext):
                                      confidentiality, protocol)
 
         # TODO: accept all these options.
+        server_name = gssapi.Name('%s@%s' % (service, hostname), name_type=gssapi.NameType.hostbased_service)
 
-        self._context = gssapi.SecurityContext(name=None, creds=None, usage='initiate', mech=None, flags=None,
+        name_type = gssapi.NameType.kerberos_principal
+        mech = {
+            'kerberos': gssapi.OID.from_int_seq('1.2.840.113554.1.2.2'),
+            'negotiate': gssapi.OID.from_int_seq('1.3.6.1.5.5.2'),
+            'ntlm': gssapi.OID.from_int_seq('1.3.6.1.4.1.311.2.2.10'),
+        }[protocol]
+        cred = gssapi.raw.acquire_cred_with_password(gssapi.Name(base=username, name_type=name_type),
+                                                     to_bytes(password), usage='initiate', mechs=[mech]).creds
+
+        flags = gssapi.RequirementFlag.mutual_authentication | gssapi.RequirementFlag.out_of_sequence_detection | \
+            gssapi.RequirementFlag.confidentiality
+
+        self._context = gssapi.SecurityContext(name=server_name, creds=cred, usage='initiate', mech=mech, flags=flags,
                                                channel_bindings=self.channel_bindings)
 
     @property
@@ -61,10 +79,10 @@ class GSSAPI(SecurityContext):
         in_token = None
         while not self.complete:
             out_token = self._context.step(in_token)
-            log.debug("GSSAPI gss_init_sec_context() output: %s", lambda: base64.b64encode(out_token or b""))
+            log.debug("GSSAPI gss_init_sec_context() output: %s", to_text(base64.b64encode(out_token or b"")))
 
             in_token = yield out_token
-            log.debug("GSSAPI gss_init_sec_context() input: %s", lambda: base64.b64encode(in_token))
+            log.debug("GSSAPI gss_init_sec_context() input: %s", to_text(base64.b64encode(in_token)))
 
         # FIXME: requests-credssp returns a final token with mechListMIC when using NTLM which yields nothing.
 

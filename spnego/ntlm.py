@@ -21,6 +21,10 @@ from spnego._context import (
     split_username,
 )
 
+from spnego._text import (
+    to_text,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -72,13 +76,13 @@ class NTLM(SecurityContext):
     def step(self):
         # TODO: wrap/unwrap each token in an SPNEGO structure when self.provider == 'negotiate'.
         msg1 = self._context.step()
-        log.debug("NTLM Negotiate: %s", lambda: base64.b64encode(msg1))
+        log.debug("NTLM Negotiate: %s", to_text(base64.b64encode(msg1)))
 
         msg2 = yield msg1
-        log.debug("NTLM Challenge: %s", lambda: base64.b64encode(msg2))
+        log.debug("NTLM Challenge: %s", to_text(base64.b64encode(msg2)))
 
         msg3 = self._context.step(msg2)
-        log.debug("NTLM Authenticate: %s", lambda: base64.b64encode(msg3))
+        log.debug("NTLM Authenticate: %s", to_text(base64.b64encode(msg3)))
 
         yield msg3
 

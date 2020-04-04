@@ -1,33 +1,43 @@
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 
 
 namespace Authentication
 {
-    public class NativeHelpers
+    internal class NativeHelpers
     {
         [StructLayout(LayoutKind.Sequential)]
-        public struct CREDSSP_CRED
+        public struct LUID
         {
-            public CredSubmitType Type;
-            public IntPtr pSchannelCred;
-            public IntPtr pSpnegoCred;
+            public UInt32 LowPart;
+            public Int32 HighPart;
+
+            public static explicit operator UInt64(LUID l)
+            {
+                return (UInt64)((UInt64)l.HighPart << 32) | (UInt64)l.LowPart;
+            }
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct SECURITY_STRING
+        public struct LUID_AND_ATTRIBUTES
         {
-            public UInt16 Length;
-            public UInt16 MaximumLength;
-            public IntPtr Buffer;
+            public LUID Luid;
+            public UInt32 Attributes;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SID_AND_ATTRIBUTES
+        {
+            public IntPtr Sid;
+            public int Attributes;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -41,7 +51,7 @@ namespace Authentication
         [StructLayout(LayoutKind.Sequential)]
         public struct SecBuffer
         {
-            public UInt32 cbBuffer;
+            public Int32 cbBuffer;
             public BufferType BufferType;
             public IntPtr pvBuffer;
         }
@@ -52,6 +62,146 @@ namespace Authentication
             public UIntPtr dwLower;
             public UIntPtr dwUpper;
         }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct SecPkgInfoW
+        {
+            public Int32 fCapabilities;
+            public Int16 wVersion;
+            public Int16 wRPCID;
+            public Int32 cbMaxToken;
+            [MarshalAs(UnmanagedType.LPWStr)] public string Name;
+            [MarshalAs(UnmanagedType.LPWStr)] public string Comment;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct TOKEN_PRIVILEGES
+        {
+            public UInt32 PrivilegeCount;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1)]
+            public LUID_AND_ATTRIBUTES[] Privileges;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct TOKEN_USER
+        {
+            public SID_AND_ATTRIBUTES User;
+        }
+
+        public enum TokenInformationClass : uint
+        {
+            TokenUser = 1,
+            TokenPrivileges = 3,
+            TokenStatistics = 10,
+            TokenElevationType = 18,
+            TokenLinkedToken = 19,
+        }
+    }
+
+    internal class NativeMethods
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool CloseHandle(
+            IntPtr hObject);
+
+        [DllImport("kernel32.dll")]
+        public static extern SafeNativeHandle GetCurrentProcess();
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool GetTokenInformation(
+            SafeNativeHandle TokenHandle,
+            NativeHelpers.TokenInformationClass TokenInformationClass,
+            SafeMemoryBuffer TokenInformation,
+            UInt32 TokenInformationLength,
+            out UInt32 ReturnLength);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool ImpersonateLoggedOnUser(
+            SafeNativeHandle hToken);
+
+        [DllImport("Advapi32.dll")]
+        public static extern bool ImpersonateSelf(
+            SecurityImpersonationLevel ImpersonationLevel);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern bool LookupPrivilegeNameW(
+            string lpSystemName,
+            ref NativeHelpers.LUID lpLuid,
+            StringBuilder lpName,
+            ref UInt32 cchName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern SafeNativeHandle OpenProcess(
+            ProcessAccessFlags dwDesiredAccess,
+            bool bInheritHandle,
+            UInt32 dwProcessId);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool OpenProcessToken(
+            SafeNativeHandle ProcessHandle,
+            TokenAccessLevels DesiredAccess,
+            out SafeNativeHandle TokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool RevertToSelf();
+
+
+
+
+
+
+        [DllImport("Secur32.dll")]
+        public static extern UInt32 AcceptSecurityContext(
+            ServerCredential phCredential,
+            IntPtr phContext,
+            ref NativeHelpers.SecBufferDesc pInput,
+            UInt32 fContextReq,
+            UInt32 TargetDataRep,
+            IntPtr phNewContext,
+            ref NativeHelpers.SecBufferDesc pOutput,
+            out UInt32 pfContextAttr,
+            out Int64 ptsExpiry);
+
+        [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
+        public static extern UInt32 AcquireCredentialsHandleW(
+            [MarshalAs(UnmanagedType.LPWStr)] string pszPrincipal,
+            [MarshalAs(UnmanagedType.LPWStr)] string pPackage,
+            UInt32 fCredentialUse,
+            IntPtr pvLogonId,
+            IntPtr pAuthData,
+            IntPtr pGetKeyFn,
+            IntPtr pvGetKeyArgument,
+            IntPtr phCredential,
+            out Int64 ptsExpiry);
+
+        [DllImport("Secur32.dll")]
+        public static extern UInt32 CompleteAuthToken(
+            IntPtr phContext,
+            ref NativeHelpers.SecBufferDesc pToken);
+
+        [DllImport("Secur32.dll")]
+        public static extern UInt32 DecryptMessage(
+            IntPtr phContext,
+            ref NativeHelpers.SecBufferDesc pMessage,
+            UInt32 MessageSeqNo,
+            ref UInt32 pfQOP);
+
+        [DllImport("Secur32.dll")]
+        public static extern UInt32 DeleteSecurityContext(
+            IntPtr phContext);
+
+        [DllImport("Secur32.dll")]
+        public static extern UInt32 FreeContextBuffer(
+            IntPtr pvContextBuffer);
+
+        [DllImport("Secur32.dll")]
+        public static extern UInt32 FreeCredentialsHandle(
+            IntPtr phCredential);
+
+        [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
+        public static extern UInt32 QuerySecurityPackageInfoW(
+            string pPackageName,
+            ref IntPtr ppPackageInfo);
     }
 
     internal class SafeMemoryBuffer : SafeHandleZeroOrMinusOneIsInvalid
@@ -74,74 +224,94 @@ namespace Authentication
         }
     }
 
-    internal class SafeContextBuffer : SafeHandleZeroOrMinusOneIsInvalid
+    public class Win32Exception : System.ComponentModel.Win32Exception
     {
-        [DllImport("Secure32.dll")]
-        private static extern UInt32 FreeContextBuffer(
-            IntPtr pvContextBuffer);
+        private string _msg;
 
-        protected SafeContextBuffer() : base(true) { }
+        public Win32Exception(string message) : this(Marshal.GetLastWin32Error(), message) { }
+        public Win32Exception(int errorCode, string message) : base(errorCode)
+        {
+            _msg = String.Format("{0} ({1}, Win32ErrorCode {2} - 0x{2:X8})", message, base.Message, errorCode);
+        }
+
+        public override string Message { get { return _msg; } }
+        public static explicit operator Win32Exception(string message) { return new Win32Exception(message); }
+    }
+
+    public class SafeNativeHandle : SafeHandleZeroOrMinusOneIsInvalid
+    {
+        public SafeNativeHandle() : base(true) { }
+        public SafeNativeHandle(IntPtr handle) : base(true) { this.handle = handle; }
 
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
         protected override bool ReleaseHandle()
         {
-            FreeContextBuffer(this.handle);
-            return true;
+            return NativeMethods.CloseHandle(handle);
         }
     }
 
-    public class SafeCredential : SafeHandleZeroOrMinusOneIsInvalid
+    public class ServerCredential : SafeHandleZeroOrMinusOneIsInvalid
     {
-        [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
-        private static extern UInt32 AcquireCredentialsHandleW(
-            [MarshalAs(UnmanagedType.LPWStr)] string pszPrincipal,
-            [MarshalAs(UnmanagedType.LPWStr)] string pPackage,
-            CredentialUse fCredentialUse,
-            IntPtr pvLogonId,
-            IntPtr pAuthData,
-            IntPtr pGetKeyFn,
-            IntPtr pvGetKeyArgument,
-            IntPtr phCredential,
-            out Int64 ptsExpiry);
-
-        [DllImport("Secur32.dll")]
-        private static extern UInt32 FreeCredentialsHandle(
-            IntPtr phCredential);
-
-        private bool Initialized = false;
+        private bool _initialized = false;
 
         public Int64 Expiry;
+        public SecurityPackageInfo PackageInfo;
 
-        public SafeCredential(string principal, string package, CredentialUse use, object authData) : base(true)
+        public ServerCredential(string package) : base(true)
         {
             base.SetHandle(Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeHelpers.SecHandle))));
 
-            SafeMemoryBuffer authBuffer;
-            if (authData != null)
+            UInt32 res = NativeMethods.AcquireCredentialsHandleW(
+                null,
+                package,
+                0x00000001,  // SECPKG_CRED_INBOUND
+                IntPtr.Zero,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                this.handle,
+                out Expiry);
+
+            if (res != 0)
+                throw new Exception(String.Format("AcquireCredentialsHandleW() failed {0} - 0x{0:X8}", res));
+            _initialized = true;
+
+            PackageInfo = QuerySecurityPackageInfo(package);
+        }
+
+        private static SecurityPackageInfo QuerySecurityPackageInfo(string package)
+        {
+            IntPtr pkgInfo = IntPtr.Zero;
+            UInt32 res = NativeMethods.QuerySecurityPackageInfoW(package, ref pkgInfo);
+            if (res != 0)
+                throw new Exception(String.Format("QuerySecurityPackageInfoW() failed {0} - 0x{0:X8}", res));
+
+            try
             {
-                authBuffer = new SafeMemoryBuffer(Marshal.SizeOf(authData));
-                Marshal.PtrToStructure(authBuffer.DangerousGetHandle(), authData);
-            }
-            else
-                authBuffer = new SafeMemoryBuffer(IntPtr.Zero);
+                NativeHelpers.SecPkgInfoW rawInfo = (NativeHelpers.SecPkgInfoW)Marshal.PtrToStructure(pkgInfo,
+                    typeof(NativeHelpers.SecPkgInfoW));
 
-            using (authBuffer)
+                return new SecurityPackageInfo()
+                {
+                    Capabilities = rawInfo.fCapabilities,
+                    Version = rawInfo.wVersion,
+                    RPCID = rawInfo.wRPCID,
+                    MaxToken = rawInfo.cbMaxToken,
+                    Name = rawInfo.Name,
+                    Comment = rawInfo.Comment,
+                };
+            }
+            finally
             {
-                UInt32 res = AcquireCredentialsHandleW(principal, package, use, IntPtr.Zero,
-                    authBuffer.DangerousGetHandle(), IntPtr.Zero, IntPtr.Zero, this.handle, out Expiry);
-
-                if (res != 0)
-                    throw new Exception(res.ToString());
+                NativeMethods.FreeContextBuffer(pkgInfo);
             }
-
-            Initialized = true;
         }
 
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
         protected override bool ReleaseHandle()
         {
-            if (Initialized)
-                FreeCredentialsHandle(this.handle);
+            if (_initialized)
+                NativeMethods.FreeCredentialsHandle(this.handle);
 
             Marshal.FreeHGlobal(this.handle);
 
@@ -149,158 +319,203 @@ namespace Authentication
         }
     }
 
-    public class SafeSecurityContext : SafeHandleZeroOrMinusOneIsInvalid
+    public class SecurityContext : SafeHandleZeroOrMinusOneIsInvalid
     {
-        [DllImport("Secur32.dll")]
-        private static extern UInt32 AcceptSecurityContext(
-            SafeCredential phCredential,
-            IntPtr phContext,
-            ref NativeHelpers.SecBufferDesc pInput,
-            ContextRequirements fContextReq,
-            DataRepresentation TargetDataRep,
-            IntPtr phNewContext,
-            ref NativeHelpers.SecBufferDesc pOutput,
-            out ContextRequirements pfContextAttr,
-            out Int64 ptsExpiry);
+        private UInt32 SEC_E_OK = 0x00000000;
+        private UInt32 SEC_I_COMPLETE_AND_CONTINUE = 0x00090314;
+        private UInt32 SEC_I_COMPLETE_NEEDED = 0x00090313;
+        private UInt32 SEC_I_CONTINUE_NEEDED = 0x00090312;
 
-        [DllImport("Secur32.dll")]
-        private static extern UInt32 DeleteSecurityContext(
-            IntPtr phContext);
-
-        private SafeCredential credential;
-        private bool initialized = false;
-        private UInt32 SECBUFFER_VERSION = 0;
+        private ServerCredential _credential;
+        private bool _initialized = false;
 
         public bool Complete = false;
-        public ContextRequirements ContextAttributes;
+        public UInt32 ContextAttributes;
         public Int64 Expiry;
 
-        public SafeSecurityContext(SafeCredential credential) : base(true)
+        public SecurityContext(ServerCredential credential) : base(true)
         {
-            this.credential = credential;
+            this._credential = credential;
             base.SetHandle(Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeHelpers.SecHandle))));
         }
 
-        public List<SecurityBuffer> Step(List<SecurityBuffer> input)
+        public SecurityBuffer Step(List<SecurityBuffer> input)
         {
-            IntPtr contextPtr = initialized ? this.handle : IntPtr.Zero;
-
+            IntPtr contextPtr = _initialized ? this.handle : IntPtr.Zero;
+            int maxTokenSize = _credential.PackageInfo.MaxToken;
             int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
-            int bufferDataLength = input.Sum(i => i.Data.Length);
 
-            using (SafeMemoryBuffer inputBuffer = new SafeMemoryBuffer(
-                (bufferLength * input.Count) + bufferDataLength))
+            using (SafeMemoryBuffer inputBufferPtr = CreateSecBufferArray(input))
+            using (SafeMemoryBuffer outputBufferPtr = new SafeMemoryBuffer(bufferLength + maxTokenSize))
             {
-                IntPtr inputBufferPtr = inputBuffer.DangerousGetHandle();
-                IntPtr inputBufferDataPtr = IntPtr.Add(inputBufferPtr, bufferLength * input.Count);
-
-                NativeHelpers.SecBufferDesc bufferDesc = new NativeHelpers.SecBufferDesc()
+                NativeHelpers.SecBufferDesc inputBuffer = new NativeHelpers.SecBufferDesc()
                 {
-                    ulVersion = 0,
                     cBuffers = (UInt32)input.Count,
-                    pBuffers = inputBufferPtr,
+                    pBuffers = inputBufferPtr.DangerousGetHandle(),
                 };
 
-                foreach (SecurityBuffer buffer in input)
+                NativeHelpers.SecBufferDesc outputBuffer = new NativeHelpers.SecBufferDesc()
                 {
-                    NativeHelpers.SecBuffer bufferElement = new NativeHelpers.SecBuffer()
-                    {
-                        BufferType = buffer.BufferType,
-                        cbBuffer = (UInt32)buffer.Data.Length,
-                        pvBuffer = inputBufferDataPtr,
-                    };
-                    Marshal.Copy(buffer.Data, 0, inputBufferDataPtr, buffer.Data.Length);
-                    IntPtr.Add(inputBufferDataPtr, buffer.Data.Length);
+                    cBuffers = 1,
+                    pBuffers = outputBufferPtr.DangerousGetHandle(),
+                };
 
-                    Marshal.StructureToPtr(bufferElement, inputBufferPtr, false);
-                    inputBufferPtr = IntPtr.Add(inputBufferPtr, bufferLength);
-                }
-
-                int bufferSize = 48000;
-                while (true)
+                NativeHelpers.SecBuffer outputToken = new NativeHelpers.SecBuffer()
                 {
-                    using (SafeMemoryBuffer outputTokenPtr = new SafeMemoryBuffer(bufferLength + bufferSize))
-                    {
-                        NativeHelpers.SecBufferDesc outputBuffer = new NativeHelpers.SecBufferDesc()
-                        {
-                            ulVersion = 0,
-                            cBuffers = (UInt32)1,
-                            pBuffers = outputTokenPtr.DangerousGetHandle(),
-                        };
+                    BufferType = BufferType.Token,
+                    cbBuffer = maxTokenSize,
+                    pvBuffer = IntPtr.Add(outputBuffer.pBuffers, bufferLength),
+                };
+                Marshal.StructureToPtr(outputToken, outputBuffer.pBuffers, false);
 
-                        NativeHelpers.SecBuffer outputToken = new NativeHelpers.SecBuffer()
-                        {
-                            BufferType = BufferType.Token,
-                            cbBuffer = (UInt32)bufferSize,
-                            pvBuffer = IntPtr.Add(outputTokenPtr.DangerousGetHandle(), bufferLength),
-                        };
-                        Marshal.StructureToPtr(outputToken, outputTokenPtr.DangerousGetHandle(), false);
+                UInt32 res = NativeMethods.AcceptSecurityContext(
+                    _credential,
+                    contextPtr,
+                    ref inputBuffer,
+                    0,
+                    0x00000010,  // SECURITY_NATIVE_DREP
+                    this.handle,
+                    ref outputBuffer,
+                    out ContextAttributes,
+                    out Expiry);
 
-                        UInt32 res = AcceptSecurityContext(
-                            credential,
-                            contextPtr,
-                            ref bufferDesc,
-                            ContextRequirements.AllocateMemory,
-                            DataRepresentation.Native,
-                            this.handle,
-                            ref outputBuffer,
-                            out ContextAttributes,
-                            out Expiry);
-                        initialized = true;
+                _initialized = true;
+                Complete = res == SEC_E_OK || res == SEC_I_COMPLETE_NEEDED;
 
-                        if (res == 2148074273)  // SEC_E_BUFFER_TOO_SMALL
-                        {
-                            bufferSize++;
-                            continue;
-                        }
-                        else if (res == 0)
-                            Complete = true;
-                        else if (!new List<UInt32>() { 0x00090314, 0x00090313, 0x00090312 }.Contains(res))
-                            throw new Exception(String.Format("AcceptSecurityContext() failed {0} - 0x{0:X8}", res));
+                if (new List<UInt32>() { SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED }.Contains(res))
+                    res = NativeMethods.CompleteAuthToken(this.handle, ref outputBuffer);
 
-                        IntPtr outputBufferPtr = outputBuffer.pBuffers;
-                        List<SecurityBuffer> output = new List<SecurityBuffer>();
-                        for (int i = 0; i < outputBuffer.cBuffers; i++)
-                        {
-                            NativeHelpers.SecBuffer outBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(
-                                outputBufferPtr, typeof(NativeHelpers.SecBuffer));
+                if (!new List<UInt32>() { SEC_E_OK, SEC_I_CONTINUE_NEEDED }.Contains(res))
+                    throw new Exception(String.Format("AcceptSecurityContext() failed {0} - 0x{0:X8}", res));
 
-                            SecurityBuffer a = new SecurityBuffer()
-                            {
-                                BufferType = outBuffer.BufferType,
-                                Data = new byte[outBuffer.cbBuffer],
-                            };
-                            if (outBuffer.cbBuffer > 0)
-                            {
-                                Marshal.Copy(outBuffer.pvBuffer, a.Data, 0, a.Data.Length);
-                            }
+                outputToken = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(outputBuffer.pBuffers,
+                    typeof(NativeHelpers.SecBuffer));
+                SecurityBuffer output = new SecurityBuffer()
+                {
+                    BufferType = outputToken.BufferType,
+                    Data = new byte[outputToken.cbBuffer],
+                };
+                Marshal.Copy(outputToken.pvBuffer, output.Data, 0, output.Data.Length);
 
-                            output.Add(a);
-                            outputBufferPtr = IntPtr.Add(outputBufferPtr, bufferLength);
-                        }
-
-                        return output;
-                    }
-                }
+                return output;
             }
+        }
+
+        public byte[] Unwrap(byte[] data)
+        {
+            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
+
+            using (SafeMemoryBuffer buffer = new SafeMemoryBuffer((bufferLength * 2) + data.Length))
+            {
+                NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc()
+                {
+                    cBuffers = 2,
+                    pBuffers = buffer.DangerousGetHandle(),
+                };
+
+                NativeHelpers.SecBuffer streamBuffer = new NativeHelpers.SecBuffer()
+                {
+                    BufferType = BufferType.Stream,
+                    cbBuffer = data.Length,
+                    pvBuffer = IntPtr.Add(inputInfo.pBuffers, bufferLength * 2),
+                };
+                Marshal.Copy(data, 0, streamBuffer.pvBuffer, data.Length);
+                Marshal.StructureToPtr(streamBuffer, inputInfo.pBuffers, false);
+
+                NativeHelpers.SecBuffer dataBuffer = new NativeHelpers.SecBuffer()
+                {
+                    BufferType = BufferType.Data,
+                    cbBuffer = 0,
+                    pvBuffer = IntPtr.Zero,
+                };
+                IntPtr dataBufferPtr = IntPtr.Add(inputInfo.pBuffers, bufferLength);
+                Marshal.StructureToPtr(dataBuffer, dataBufferPtr, false);
+
+                UInt32 qop = 0;
+                UInt32 res = NativeMethods.DecryptMessage(this.handle, ref inputInfo, 0, ref qop);
+                if (res != SEC_E_OK)
+                    throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
+
+                dataBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(dataBufferPtr,
+                    typeof(NativeHelpers.SecBuffer));
+
+                byte[] decryptedData = new byte[dataBuffer.cbBuffer];
+                Marshal.Copy(dataBuffer.pvBuffer, decryptedData, 0, decryptedData.Length);
+
+                return decryptedData;
+            }
+        }
+
+        private static SafeMemoryBuffer CreateSecBufferArray(List<SecurityBuffer> buffers)
+        {
+            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
+            int bufferDataLength = buffers.Sum(i => i.Data.Length);
+            int bufferDataOffset = bufferLength * buffers.Count;
+
+            SafeMemoryBuffer securityBuffer = new SafeMemoryBuffer(bufferDataOffset + bufferDataLength);
+
+            IntPtr inputBufferPtr = securityBuffer.DangerousGetHandle();
+            IntPtr inputBufferDataPtr = IntPtr.Add(inputBufferPtr, bufferDataOffset);
+
+            foreach (SecurityBuffer buffer in buffers)
+            {
+                NativeHelpers.SecBuffer bufferElement = new NativeHelpers.SecBuffer()
+                {
+                    BufferType = buffer.BufferType,
+                    cbBuffer = buffer.Data.Length,
+                    pvBuffer = inputBufferDataPtr,
+                };
+                Marshal.Copy(buffer.Data, 0, inputBufferDataPtr, buffer.Data.Length);
+                IntPtr.Add(inputBufferDataPtr, buffer.Data.Length);
+
+                Marshal.StructureToPtr(bufferElement, inputBufferPtr, false);
+                inputBufferPtr = IntPtr.Add(inputBufferPtr, bufferLength);
+            }
+
+            return securityBuffer;
         }
 
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
         protected override bool ReleaseHandle()
         {
-            if (initialized)
-                DeleteSecurityContext(this.handle);
+            if (_initialized)
+                NativeMethods.DeleteSecurityContext(this.handle);
 
             Marshal.FreeHGlobal(this.handle);
 
             return true;
         }
+    }
+
+    public class PrivilegeEnabler : IDisposable
+    {
+        public PrivilegeEnabler(List<string> privileges)
+        {
+
+        }
+
+        public void Dispose()
+        {
+            NativeMethods.RevertToSelf();
+            GC.SuppressFinalize(this);
+        }
+        ~PrivilegeEnabler() { this.Dispose(); }
     }
 
     public class SecurityBuffer
     {
         public BufferType BufferType;
         public byte[] Data;
+    }
+
+    public class SecurityPackageInfo
+    {
+        public Int32 Capabilities;
+        public Int16 Version;
+        public Int16 RPCID;
+        public Int32 MaxToken;
+        public string Name;
+        public string Comment;
     }
 
     [Flags]
@@ -314,6 +529,9 @@ namespace Authentication
         Extra = 0x00000005,
         StreamTrailer = 0x00000006,
         StreamHeader = 0x00000007,
+        NegotiationInfo = 0x00000008,
+        Padding = 0x00000009,
+        Stream = 0x0000000A,
         MechList = 0x0000000B,
         MechlistSignature = 0x0000000C,
         Target = 0x0000000D,
@@ -333,59 +551,34 @@ namespace Authentication
         AttrMask = 0xF0000000,
     }
 
+    public enum SecurityImpersonationLevel : uint
+    {
+        SecurityAnonymous = 0,
+        SecurityIdentification = 1,
+        SecurityImpersonation = 2,
+        SecurityDelegation = 3,
+    }
+
     [Flags]
-    public enum ContextRequirements : uint
+    public enum ProcessAccessFlags : uint
     {
-        Delegate = 0x00000001,
-        MutualAuth = 0x00000002,
-        ReplayDetect = 0x00000004,
-        SequenceDetect = 0x00000008,
-        Confidentiality = 0x00000010,
-        UseSessionKey = 0x00000020,
-        SessionTicket = 0x00000040,
-        AllocateMemory = 0x00000100,
-        UseDceStyle = 0x00000200,
-        Datagram = 0x00000400,
-        Connection = 0x00000800,
-        CallLevel = 0x00001000,
-        FragmentSupplied = 0x00002000,
-        ExtendedError = 0x00008000,
-        Stream = 0x00010000,
-        Integrity = 0x00020000,
-        Licensing = 0x00040000,
-        Identify = 0x00080000,
-        AllowNullSession = 0x00100000,
-        AllowNonUserLogons = 0x00200000,
-        AllowContextReplay = 0x00400000,
-        FragmentToFit = 0x00800000,
-        NoToken = 0x01000000,
-        ProxyBindings = 0x04000000,
-        Reauthentication = 0x08000000,
-        AllowMissingBindings = 0x10000000,
-    }
-
-    public enum CredSubmitType : uint
-    {
-        PasswordCreds = 2,
-        SchannelCreds = 4,
-        CertificateCreds = 13,
-        SubmitBufferBoth = 50,
-        SubmitBufferBothOld = 51,
-        CredEx = 100,
-    }
-
-    public enum CredentialUse : uint
-    {
-        Inbound = 0x00000001,
-        Outbound = 0x00000002,
-        Both = 0x00000003,
-        Default = 0x00000004,
-    }
-
-    public enum DataRepresentation : uint
-    {
-        Network = 0x00000000,
-        Native = 0x00000010,
+        Terminate = 0x00000001,
+        CreateThread = 0x00000002,
+        VmOperation = 0x00000008,
+        VmRead = 0x00000010,
+        VmWrite = 0x00000020,
+        DupHandle = 0x00000040,
+        CreateProcess = 0x00000080,
+        SetQuota = 0x00000100,
+        SetInformation = 0x00000200,
+        QueryInformation = 0x00000400,
+        SuspendResume = 0x00000800,
+        QueryLimitedInformation = 0x00001000,
+        Delete = 0x00010000,
+        ReadControl = 0x00020000,
+        WriteDac = 0x00040000,
+        WriteOwner = 0x00080000,
+        Synchronize = 0x00100000,
     }
 }
 
@@ -403,14 +596,16 @@ namespace SSPI
 
             Socket handler = listener.Accept();
 
-            string package = Encoding.ASCII.GetString(ReceiveData(handler));
-            using (Authentication.SafeCredential credential = new Authentication.SafeCredential(null, package,
-                Authentication.CredentialUse.Inbound, null))
-            using (Authentication.SafeSecurityContext context = new Authentication.SafeSecurityContext(credential))
+            string package = Encoding.UTF8.GetString(ReceiveData(handler));
+
+            using (Authentication.ServerCredential credential = new Authentication.ServerCredential(package))
+            using (Authentication.SecurityContext context = new Authentication.SecurityContext(credential))
             {
                 while (!context.Complete)
                 {
                     byte[] data = ReceiveData(handler);
+                    if (data.Length == 0)
+                        return;
 
                     List<Authentication.SecurityBuffer> inputBuffers = new List<Authentication.SecurityBuffer>()
                     {
@@ -421,12 +616,18 @@ namespace SSPI
                         },
                     };
 
-                    Authentication.SecurityBuffer response = context.Step(inputBuffers)[0];
+                    Authentication.SecurityBuffer response = context.Step(inputBuffers);
 
                     handler.Send(BitConverter.GetBytes(response.Data.Length));
                     if (response.Data.Length > 0)
                         handler.Send(response.Data);
                 }
+
+                byte[] encryptedData = ReceiveData(handler);
+                byte[] decryptedData = context.Unwrap(encryptedData);
+
+                handler.Send(BitConverter.GetBytes(decryptedData.Length));
+                handler.Send(decryptedData);
 
                 handler.Shutdown(SocketShutdown.Both);
                 handler.Close();
