@@ -1,6 +1,7 @@
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -9,8 +10,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 
-
-namespace Authentication
+namespace Pyspnego
 {
     internal class NativeHelpers
     {
@@ -30,7 +30,7 @@ namespace Authentication
         public struct LUID_AND_ATTRIBUTES
         {
             public LUID Luid;
-            public UInt32 Attributes;
+            public PrivilegeAttributes Attributes;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -91,65 +91,11 @@ namespace Authentication
         public enum TokenInformationClass : uint
         {
             TokenUser = 1,
-            TokenPrivileges = 3,
-            TokenStatistics = 10,
-            TokenElevationType = 18,
-            TokenLinkedToken = 19,
         }
     }
 
     internal class NativeMethods
     {
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool CloseHandle(
-            IntPtr hObject);
-
-        [DllImport("kernel32.dll")]
-        public static extern SafeNativeHandle GetCurrentProcess();
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern bool GetTokenInformation(
-            SafeNativeHandle TokenHandle,
-            NativeHelpers.TokenInformationClass TokenInformationClass,
-            SafeMemoryBuffer TokenInformation,
-            UInt32 TokenInformationLength,
-            out UInt32 ReturnLength);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern bool ImpersonateLoggedOnUser(
-            SafeNativeHandle hToken);
-
-        [DllImport("Advapi32.dll")]
-        public static extern bool ImpersonateSelf(
-            SecurityImpersonationLevel ImpersonationLevel);
-
-        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        public static extern bool LookupPrivilegeNameW(
-            string lpSystemName,
-            ref NativeHelpers.LUID lpLuid,
-            StringBuilder lpName,
-            ref UInt32 cchName);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern SafeNativeHandle OpenProcess(
-            ProcessAccessFlags dwDesiredAccess,
-            bool bInheritHandle,
-            UInt32 dwProcessId);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern bool OpenProcessToken(
-            SafeNativeHandle ProcessHandle,
-            TokenAccessLevels DesiredAccess,
-            out SafeNativeHandle TokenHandle);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern bool RevertToSelf();
-
-
-
-
-
-
         [DllImport("Secur32.dll")]
         public static extern UInt32 AcceptSecurityContext(
             ServerCredential phCredential,
@@ -173,6 +119,19 @@ namespace Authentication
             IntPtr pvGetKeyArgument,
             IntPtr phCredential,
             out Int64 ptsExpiry);
+
+        [DllImport("Advapi32.dll", SetLastError = true)]
+        public static extern bool AdjustTokenPrivileges(
+            IntPtr TokenHandle,
+            [MarshalAs(UnmanagedType.Bool)] bool DisableAllPrivileges,
+            IntPtr NewState,
+            UInt32 BufferLength,
+            IntPtr PreviousState,
+            out UInt32 ReturnLength);
+
+        [DllImport("Kernel32.dll", SetLastError = true)]
+        public static extern bool CloseHandle(
+            IntPtr hObject);
 
         [DllImport("Secur32.dll")]
         public static extern UInt32 CompleteAuthToken(
@@ -198,10 +157,50 @@ namespace Authentication
         public static extern UInt32 FreeCredentialsHandle(
             IntPtr phCredential);
 
+        [DllImport("Kernel32.dll")]
+        public static extern IntPtr GetCurrentProcess();
+
+        [DllImport("Advapi32.dll", SetLastError = true)]
+        public static extern bool GetTokenInformation(
+            IntPtr TokenHandle,
+            NativeHelpers.TokenInformationClass TokenInformationClass,
+            SafeMemoryBuffer TokenInformation,
+            UInt32 TokenInformationLength,
+            out UInt32 ReturnLength);
+
+        [DllImport("Advapi32.dll", SetLastError = true)]
+        public static extern bool ImpersonateLoggedOnUser(
+            IntPtr hToken);
+
+        [DllImport("Advapi32.dll")]
+        public static extern bool ImpersonateSelf(
+            SecurityImpersonationLevel ImpersonationLevel);
+
+        [DllImport("Advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern bool LookupPrivilegeValueW(
+            string lpSystemName,
+            string lpName,
+            ref NativeHelpers.LUID lpLuid);
+
+        [DllImport("Kernel32.dll", SetLastError = true)]
+        public static extern SafeNativeHandle OpenProcess(
+            ProcessAccessFlags dwDesiredAccess,
+            bool bInheritHandle,
+            UInt32 dwProcessId);
+
+        [DllImport("Advapi32.dll", SetLastError = true)]
+        public static extern bool OpenProcessToken(
+            IntPtr ProcessHandle,
+            TokenAccessLevels DesiredAccess,
+            out SafeNativeHandle TokenHandle);
+
         [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
         public static extern UInt32 QuerySecurityPackageInfoW(
             string pPackageName,
             ref IntPtr ppPackageInfo);
+
+        [DllImport("Advapi32.dll", SetLastError = true)]
+        public static extern bool RevertToSelf();
     }
 
     internal class SafeMemoryBuffer : SafeHandleZeroOrMinusOneIsInvalid
@@ -224,6 +223,17 @@ namespace Authentication
         }
     }
 
+    internal class SafeNativeHandle : SafeHandleZeroOrMinusOneIsInvalid
+    {
+        public SafeNativeHandle() : base(true) { }
+
+        [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
+        protected override bool ReleaseHandle()
+        {
+            return NativeMethods.CloseHandle(handle);
+        }
+    }
+
     public class Win32Exception : System.ComponentModel.Win32Exception
     {
         private string _msg;
@@ -236,18 +246,6 @@ namespace Authentication
 
         public override string Message { get { return _msg; } }
         public static explicit operator Win32Exception(string message) { return new Win32Exception(message); }
-    }
-
-    public class SafeNativeHandle : SafeHandleZeroOrMinusOneIsInvalid
-    {
-        public SafeNativeHandle() : base(true) { }
-        public SafeNativeHandle(IntPtr handle) : base(true) { this.handle = handle; }
-
-        [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
-        protected override bool ReleaseHandle()
-        {
-            return NativeMethods.CloseHandle(handle);
-        }
     }
 
     public class ServerCredential : SafeHandleZeroOrMinusOneIsInvalid
@@ -489,9 +487,73 @@ namespace Authentication
 
     public class PrivilegeEnabler : IDisposable
     {
+        private NativeHelpers.LUID LookupPrivilegeValue(string privilege)
+        {
+            NativeHelpers.LUID luid = new NativeHelpers.LUID();
+            if (!NativeMethods.LookupPrivilegeValueW(null, privilege, ref luid))
+                throw new Win32Exception(String.Format("LookupPrivilegeValueW({0}) failed", privilege));
+
+            return luid;
+        }
+
         public PrivilegeEnabler(List<string> privileges)
         {
+            int tokenPrivLength = Marshal.SizeOf(typeof(NativeHelpers.TOKEN_PRIVILEGES));
+            int luidAttrLength = luidAttrLength = Marshal.SizeOf(
+                typeof(NativeHelpers.LUID_AND_ATTRIBUTES)) * (privileges.Count - 1);
 
+            byte[] newStateBytes = new byte[tokenPrivLength + luidAttrLength];
+            using (SafeMemoryBuffer buffer = new SafeMemoryBuffer(tokenPrivLength + luidAttrLength))
+            {
+                IntPtr ptrOffset = buffer.DangerousGetHandle();
+                NativeHelpers.TOKEN_PRIVILEGES tokenPrivileges = new NativeHelpers.TOKEN_PRIVILEGES()
+                {
+                    PrivilegeCount = (UInt32)privileges.Count,
+                    Privileges = new NativeHelpers.LUID_AND_ATTRIBUTES[1],
+                };
+                tokenPrivileges.Privileges[0].Attributes = PrivilegeAttributes.Enabled;
+                tokenPrivileges.Privileges[0].Luid = LookupPrivilegeValue(privileges[0]);
+
+                Marshal.StructureToPtr(tokenPrivileges, ptrOffset, false);
+                ptrOffset = IntPtr.Add(ptrOffset, Marshal.SizeOf(tokenPrivileges));
+
+                for (int i = 1; i < privileges.Count; i++)
+                {
+                    NativeHelpers.LUID_AND_ATTRIBUTES luidAttr = new NativeHelpers.LUID_AND_ATTRIBUTES()
+                    {
+                        Attributes = PrivilegeAttributes.Enabled,
+                        Luid = LookupPrivilegeValue(privileges[i]),
+                    };
+                    Marshal.StructureToPtr(luidAttr, ptrOffset, false);
+                    ptrOffset = IntPtr.Add(ptrOffset, Marshal.SizeOf(luidAttr));
+                }
+
+                if (!NativeMethods.ImpersonateSelf(SecurityImpersonationLevel.SecurityImpersonation))
+                    throw new Win32Exception("ImpersonateSelf() failed");
+                try
+                {
+                    IntPtr currentProcess = NativeMethods.GetCurrentProcess();
+                    SafeNativeHandle token;
+                    if (!NativeMethods.OpenProcessToken(currentProcess, TokenAccessLevels.AdjustPrivileges, out token))
+                        throw new Win32Exception("OpenProcessToken() failed");
+
+                    using (token)
+                    {
+                        UInt32 returnLength;
+                        bool res = NativeMethods.AdjustTokenPrivileges(token.DangerousGetHandle(), false,
+                            buffer.DangerousGetHandle(), 0, IntPtr.Zero, out returnLength);
+                        int lastError = Marshal.GetLastWin32Error();
+
+                        if (!res || lastError == 0x00000514)  // ERROR_NOT_ALL_ASSIGNED
+                            throw new Win32Exception(lastError, "AdjustTokenPrivileges() failed");
+                    }
+                }
+                catch
+                {
+                    NativeMethods.RevertToSelf();
+                    throw;
+                }
+            }
         }
 
         public void Dispose()
@@ -516,6 +578,72 @@ namespace Authentication
         public Int32 MaxToken;
         public string Name;
         public string Comment;
+    }
+
+    public class UserImpersonation : IDisposable
+    {
+        public UserImpersonation(IdentityReference account)
+        {
+            TokenAccessLevels tokenAccess = TokenAccessLevels.Duplicate | TokenAccessLevels.Impersonate |
+                TokenAccessLevels.Query;
+
+            foreach (Process process in Process.GetProcesses())
+            {
+                using (SafeNativeHandle processHandle = NativeMethods.OpenProcess(ProcessAccessFlags.QueryInformation, false,
+                    (UInt32)process.Id))
+                {
+                    if (processHandle.IsInvalid)
+                        continue;
+
+                    SafeNativeHandle token;
+
+                    if (!NativeMethods.OpenProcessToken(processHandle.DangerousGetHandle(), tokenAccess, out token))
+                        continue;
+
+                    using (token)
+                    using (SafeMemoryBuffer tokenUser = GetTokenInformation(token,
+                        NativeHelpers.TokenInformationClass.TokenUser))
+                    {
+                        NativeHelpers.TOKEN_USER user = (NativeHelpers.TOKEN_USER)Marshal.PtrToStructure(
+                            tokenUser.DangerousGetHandle(), typeof(NativeHelpers.TOKEN_USER));
+
+                        SecurityIdentifier actualUser = new SecurityIdentifier(user.User.Sid);
+                        if (!actualUser.Equals(account.Translate(typeof(SecurityIdentifier))))
+                            continue;
+
+                        if (!NativeMethods.ImpersonateLoggedOnUser(token.DangerousGetHandle()))
+                            continue;
+
+                        return;
+                    }
+                }
+            }
+
+            throw new Exception(String.Format("Failed to get access to a token for {0}", account.ToString()));
+        }
+
+        private SafeMemoryBuffer GetTokenInformation(SafeHandle handle, NativeHelpers.TokenInformationClass infoClass)
+        {
+            UInt32 bufferLength;
+            NativeMethods.GetTokenInformation(handle.DangerousGetHandle(), infoClass,
+                new SafeMemoryBuffer(IntPtr.Zero), 0, out bufferLength);
+
+            SafeMemoryBuffer buffer = new SafeMemoryBuffer((int)bufferLength);
+            if (!NativeMethods.GetTokenInformation(handle.DangerousGetHandle(), infoClass, buffer, bufferLength,
+                out bufferLength))
+            {
+                throw new Win32Exception(String.Format("GetTokenInformation({0}) failed", infoClass.ToString()));
+            }
+
+            return buffer;
+        }
+
+        public void Dispose()
+        {
+            NativeMethods.RevertToSelf();
+            GC.SuppressFinalize(this);
+        }
+        ~UserImpersonation() { this.Dispose(); }
     }
 
     [Flags]
@@ -551,12 +679,14 @@ namespace Authentication
         AttrMask = 0xF0000000,
     }
 
-    public enum SecurityImpersonationLevel : uint
+    [Flags]
+    public enum PrivilegeAttributes : uint
     {
-        SecurityAnonymous = 0,
-        SecurityIdentification = 1,
-        SecurityImpersonation = 2,
-        SecurityDelegation = 3,
+        Disabled = 0x00000000,
+        EnabledByDefault = 0x00000001,
+        Enabled = 0x00000002,
+        Removed = 0x00000004,
+        UsedForAccess = 0x80000000,
     }
 
     [Flags]
@@ -580,6 +710,14 @@ namespace Authentication
         WriteOwner = 0x00080000,
         Synchronize = 0x00100000,
     }
+
+    public enum SecurityImpersonationLevel : uint
+    {
+        SecurityAnonymous = 0,
+        SecurityIdentification = 1,
+        SecurityImpersonation = 2,
+        SecurityDelegation = 3,
+    }
 }
 
 namespace SSPI
@@ -588,49 +726,53 @@ namespace SSPI
     {
         static void Main(string[] args)
         {
-            IPAddress localhost = new IPAddress(0);
-            IPEndPoint localEndpoint = new IPEndPoint(localhost, 16854);
-            Socket listener = new Socket(localhost.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            listener.Bind(localEndpoint);
-            listener.Listen(1);
-
-            Socket handler = listener.Accept();
-
-            string package = Encoding.UTF8.GetString(ReceiveData(handler));
-
-            using (Authentication.ServerCredential credential = new Authentication.ServerCredential(package))
-            using (Authentication.SecurityContext context = new Authentication.SecurityContext(credential))
+            using (new Pyspnego.PrivilegeEnabler(new List<string>() { "SeDebugPrivilege" }))
+            using (new Pyspnego.UserImpersonation(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)))
             {
-                while (!context.Complete)
+                IPAddress localhost = new IPAddress(0);
+                IPEndPoint localEndpoint = new IPEndPoint(localhost, 16854);
+                Socket listener = new Socket(localhost.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                listener.Bind(localEndpoint);
+                listener.Listen(1);
+
+                Socket handler = listener.Accept();
+
+                string package = Encoding.UTF8.GetString(ReceiveData(handler));
+
+                using (Pyspnego.ServerCredential credential = new Pyspnego.ServerCredential(package))
+                using (Pyspnego.SecurityContext context = new Pyspnego.SecurityContext(credential))
                 {
-                    byte[] data = ReceiveData(handler);
-                    if (data.Length == 0)
-                        return;
-
-                    List<Authentication.SecurityBuffer> inputBuffers = new List<Authentication.SecurityBuffer>()
+                    while (!context.Complete)
                     {
-                        new Authentication.SecurityBuffer()
+                        byte[] data = ReceiveData(handler);
+                        if (data.Length == 0)
+                            return;
+
+                        List<Pyspnego.SecurityBuffer> inputBuffers = new List<Pyspnego.SecurityBuffer>()
                         {
-                            BufferType = Authentication.BufferType.Token,
-                            Data = data,
-                        },
-                    };
+                            new Pyspnego.SecurityBuffer()
+                            {
+                                BufferType = Pyspnego.BufferType.Token,
+                                Data = data,
+                            },
+                        };
 
-                    Authentication.SecurityBuffer response = context.Step(inputBuffers);
+                        Pyspnego.SecurityBuffer response = context.Step(inputBuffers);
 
-                    handler.Send(BitConverter.GetBytes(response.Data.Length));
-                    if (response.Data.Length > 0)
-                        handler.Send(response.Data);
+                        handler.Send(BitConverter.GetBytes(response.Data.Length));
+                        if (response.Data.Length > 0)
+                            handler.Send(response.Data);
+                    }
+
+                    byte[] encryptedData = ReceiveData(handler);
+                    byte[] decryptedData = context.Unwrap(encryptedData);
+
+                    handler.Send(BitConverter.GetBytes(decryptedData.Length));
+                    handler.Send(decryptedData);
+
+                    handler.Shutdown(SocketShutdown.Both);
+                    handler.Close();
                 }
-
-                byte[] encryptedData = ReceiveData(handler);
-                byte[] decryptedData = context.Unwrap(encryptedData);
-
-                handler.Send(BitConverter.GetBytes(decryptedData.Length));
-                handler.Send(decryptedData);
-
-                handler.Shutdown(SocketShutdown.Both);
-                handler.Close();
             }
         }
 
