@@ -24,6 +24,12 @@ import sys
 
 from datetime import datetime, timedelta
 
+from spnego._text import (
+    to_bytes,
+    to_native,
+    to_text,
+)
+
 try:
     import argcomplete
 except ImportError:
@@ -33,14 +39,6 @@ try:
     from ruamel import yaml
 except ImportError:
     yaml = None
-
-PY2 = sys.version_info[0] == 2
-if PY2:
-    text_type = unicode
-    binary_type = str
-else:
-    text_type = str
-    binary_type = bytes
 
 
 class ContextFlags:
@@ -271,30 +269,6 @@ class ContextSpecific:
         self.tag_number = tag_number
 
 
-def _to_bytes(obj, encoding='utf-8'):
-    if isinstance(obj, binary_type):
-        return obj
-    elif isinstance(obj, text_type):
-        return obj.encode(encoding)
-    else:
-        return _to_bytes(str(text_type), encoding=encoding)
-
-
-def _to_text(obj, encoding='utf-8'):
-    if isinstance(obj, text_type):
-        return obj
-    elif isinstance(obj, binary_type):
-        return obj.decode(encoding)
-    else:
-        return _to_text(str(obj), encoding=encoding)
-
-
-if PY2:
-    _to_native = _to_bytes
-else:
-    _to_native = _to_text
-
-
 def _get_flag_ids(value, enum_class):
     flags = []
     for k, v in dict(vars(enum_class)).items():
@@ -479,9 +453,9 @@ def _parse_asn1(b_data):
                     value = dict((v.tag_number, v.value) for v in value)
             elif tag_number == 24:  # GeneralizedTime
                 try:
-                    value = datetime.strptime(_to_text(b_value), '%Y%m%d%H%M%S.%f%z')
+                    value = datetime.strptime(to_text(b_value), '%Y%m%d%H%M%S.%f%z')
                 except ValueError:
-                    value = datetime.strptime(_to_text(b_value), '%Y%m%d%H%M%S%z')
+                    value = datetime.strptime(to_text(b_value), '%Y%m%d%H%M%S%z')
             elif tag_number == 27:  # GeneralString
                 pass  # The raw byte string is what we want here.
             else:
@@ -508,7 +482,7 @@ def _parse_kerberos_enc_data(raw_data, b_secret=None):
         'etype': _get_enum_id(raw_data[0], KerberosEncryptionTypes),
         'etype_raw': raw_data[0],
         'kvno': raw_data.get(1, None),
-        'cipher': _to_text(base64.b16encode(raw_data[2])),
+        'cipher': to_text(base64.b16encode(raw_data[2])),
     }
 
     if b_secret:
@@ -557,14 +531,14 @@ def _parse_kerberos_principal_name(raw_data, encoding):
     return {
         'name-type': _get_enum_id(raw_data[0], KerberosPrincipalNameType),
         'name-type_raw': raw_data[0],
-        'name-string': [_to_text(b, encoding=encoding) for b in raw_data[1]],
+        'name-string': [to_text(b, encoding=encoding) for b in raw_data[1]],
     }
 
 
 def _parse_kerberos_as_req(raw_data, encoding):
     padata = []
     for data in raw_data[3]:
-        value = _to_text(base64.b16encode(data[2])),
+        value = to_text(base64.b16encode(data[2])),
         if data[1] == KerberosPADataType.ENC_TIMESTAMP:
             enc_timestamp = _parse_asn1(data[2])[0]
             value = _parse_kerberos_enc_data(enc_timestamp)
@@ -603,7 +577,7 @@ def _parse_kerberos_ap_req(raw_data, encoding):
     raw_ticket = raw_data[3].value[0]
     ticket = {
         'tkt-vno': raw_ticket[0],
-        'realm': _to_text(raw_ticket[1], encoding=encoding),
+        'realm': to_text(raw_ticket[1], encoding=encoding),
         'sname': _parse_kerberos_principal_name(raw_ticket[2], encoding),
         'enc-part': _parse_kerberos_enc_data(raw_ticket[3]),
     }
@@ -674,12 +648,12 @@ def _parse_kerberos_krb_error(raw_data, encoding):
         'susec': raw_data[5],
         'error-code': _get_enum_id(raw_data[6], KerberosErrorCode),
         'error-code_raw': raw_data[6],
-        'crealm': _to_text(raw_data[7], encoding=encoding) if 7 in raw_data else None,
+        'crealm': to_text(raw_data.get(7, None), encoding=encoding, nonstring='passthru'),
         'cname': _parse_kerberos_principal_name(raw_data.get(8, None), encoding),
-        'realm': _to_text(raw_data[9], encoding=encoding),
+        'realm': to_text(raw_data[9], encoding=encoding),
         'sname': _parse_kerberos_principal_name(raw_data[10], encoding),
-        'e-text': _to_text(raw_data[11], encoding=encoding) if 11 in raw_data else None,
-        'e-data': _to_text(base64.b16encode(raw_data[12])) if 12 in raw_data else None,
+        'e-text': to_text(raw_data.get(11, None), encoding=encoding, nonstring='passthru'),
+        'e-data': to_text(base64.b16encode(raw_data[12])) if 12 in raw_data else None,
     }
     return msg
 
@@ -719,13 +693,13 @@ def _parse_ntlm_target_info(b_data):
             # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/f221c061-cc40-4471-95da-d2ff71c85c5b
             av_value = {
                 'Size': struct.unpack("<I", b_av_value[:4])[0],
-                'Z4': _to_text(base64.b16encode(b_av_value[4:8])),
-                'CustomData': _to_text(base64.b16encode(b_av_value[8:12])),
-                'MachineID': _to_text(base64.b16encode(b_av_value[12:44])),
+                'Z4': to_text(base64.b16encode(b_av_value[4:8])),
+                'CustomData': to_text(base64.b16encode(b_av_value[8:12])),
+                'MachineID': to_text(base64.b16encode(b_av_value[12:44])),
             }
         else:
             # We shouldn't hit this but just in case
-            av_value = _to_text(base64.b16encode(b_av_value))
+            av_value = to_text(base64.b16encode(b_av_value))
 
         info.append({
             'AvId': _get_enum_id(av_id, NtlmAvId),
@@ -773,8 +747,8 @@ def _parse_ntlm_challenge(b_data, oem_cp):
         'NegotiateFlagsRaw': flags,
         'NegotiateFlags': _get_flag_ids(flags, NtlmNegotiateFlags),
         'TargetName': None,
-        'ServerChallenge': _to_text(base64.b16encode(b_data[24:32])),
-        'Reserved': _to_text(base64.b16encode(b_data[32:40])),
+        'ServerChallenge': to_text(base64.b16encode(b_data[24:32])),
+        'Reserved': to_text(base64.b16encode(b_data[32:40])),
         'TargetInfo': None,
         'Version': None,
     }
@@ -811,7 +785,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
         'Workstation': None,
         'EncryptedRandomSessionKey': None,
         'Version': None,
-        'MIC': _to_text(base64.b16encode(b_data[72:88])),
+        'MIC': to_text(base64.b16encode(b_data[72:88])),
     }
 
     encoding = 'utf-16-le' if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_UNICODE != 0 else oem_cp
@@ -829,11 +803,11 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
 
         if len(lm_response_data) == 24:
             lm_response['ResponseType'] = 'LMv1'
-            lm_response['LMProofStr'] = _to_text(base64.b16encode(lm_response_data)),
+            lm_response['LMProofStr'] = to_text(base64.b16encode(lm_response_data)),
         else:
             lm_response['ResponseType'] = 'LMv2'
-            lm_response['LMProofStr'] = _to_text(base64.b16encode(lm_response_data[:16])),
-            lm_response['ChallengeFromClient'] = _to_text(base64.b16encode(lm_response_data[16:])),
+            lm_response['LMProofStr'] = to_text(base64.b16encode(lm_response_data[:16])),
+            lm_response['ChallengeFromClient'] = to_text(base64.b16encode(lm_response_data[16:])),
 
     nt_challenge_len = struct.unpack("<H", b_data[20:22])[0]
     if nt_challenge_len != 0:
@@ -848,10 +822,10 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
 
         if len(nt_response_data) == 24:
             nt_response['ResponseType'] = 'NTLMv1'
-            nt_response['NTProofStr'] = _to_text(base64.b16encode(nt_response_data)),
+            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data)),
         else:
             nt_response['ResponseType'] = 'NTLMv2'
-            nt_response['NTProofStr'] = _to_text(base64.b16encode(nt_response_data[:16])),
+            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data[:16])),
 
             b_challenge = nt_response_data[16:]
             client_challenge = {
@@ -860,7 +834,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
                 'Reserved1': struct.unpack("<H", b_challenge[2:4])[0],
                 'Reserved2': struct.unpack("<I", b_challenge[4:8])[0],
                 'TimeStamp': _filetime_to_datetime(struct.unpack("<Q", b_challenge[8:16])[0]).isoformat(),
-                'ChallengeFromClient': _to_text(base64.b16encode(b_challenge[16:24])),
+                'ChallengeFromClient': to_text(base64.b16encode(b_challenge[16:24])),
                 'Reserved3': struct.unpack("<I", b_challenge[24:28])[0],
                 'AvPairs': _parse_ntlm_target_info(b_challenge[28:]),
             }
@@ -889,7 +863,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
     if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_KEY_EXCH != 0:
         key_len = struct.unpack("<H", b_data[52:54])[0]
         key_offset = struct.unpack("<I", b_data[56:60])[0]
-        msg['EncryptedRandomSessionKey'] = _to_text(base64.b16encode(b_data[key_offset:key_offset + key_len]))
+        msg['EncryptedRandomSessionKey'] = to_text(base64.b16encode(b_data[key_offset:key_offset + key_len]))
 
     if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_VERSION != 0:
         msg['Version'] = _parse_ntlm_version(b_data[64:72])
@@ -919,8 +893,8 @@ def _parse_spnego_init(raw_data, encoding=None):
         except Exception as e:
             mech_token = {
                 'MessageType': 'Unknown - Failed to parse see Data for more details.',
-                'Data': 'Failed to parse SPNEGO token: %s' % _to_native(e),
-                'RawData': _to_text(base64.b16encode(raw_data[2])),
+                'Data': 'Failed to parse SPNEGO token: %s' % to_native(e),
+                'RawData': to_text(base64.b16encode(raw_data[2])),
             }
 
     msg = {
@@ -928,7 +902,7 @@ def _parse_spnego_init(raw_data, encoding=None):
         'reqFlags': _get_flag_ids(struct.unpack("<I", raw_data[1])[0], ContextFlags) if 1 in raw_data else None,
         'reqFlags_raw': struct.unpack("<I", raw_data[1])[0] if 1 in raw_data else None,
         'mechToken': mech_token,
-        'mechListMIC': _to_text(base64.b16encode(raw_data[3])) if 3 in raw_data else None,
+        'mechListMIC': to_text(base64.b16encode(raw_data.get[3])) if 3 in raw_data else None,
     }
     return msg
 
@@ -941,8 +915,8 @@ def _parse_spnego_resp(raw_data, encoding=None):
         except Exception as e:
             response_token = {
                 'MessageType': 'Unknown - Failed to parse see Data for more details.',
-                'Data': 'Failed to parse SPNEGO token: %s' % _to_native(e),
-                'RawData': _to_text(base64.b16encode(raw_data[2])),
+                'Data': 'Failed to parse SPNEGO token: %s' % to_native(e),
+                'RawData': to_text(base64.b16encode(raw_data[2])),
             }
 
     msg = {
@@ -950,7 +924,7 @@ def _parse_spnego_resp(raw_data, encoding=None):
         'negstate_raw': raw_data[0],
         'supportedMech': _get_enum_id(raw_data[1], MechTypes) if 1 in raw_data else None,
         'responseToken': response_token,
-        'mechListMIC': _to_text(base64.b16encode(raw_data[3])) if 3 in raw_data else None,
+        'mechListMIC': to_text(base64.b16encode(raw_data.get(3)), nonstring='passthru'),
     }
     return msg
 
@@ -964,9 +938,9 @@ def main():
     else:
         if args.file:
             file_path = os.path.abspath(os.path.expanduser(os.path.expandvars(args.file)))
-            b_file_path = _to_bytes(file_path)
+            b_file_path = to_bytes(file_path)
             if not os.path.exists(b_file_path):
-                raise ValueError("Cannot find file at path '%s'" % _to_native(b_file_path))
+                raise ValueError("Cannot find file at path '%s'" % to_native(b_file_path))
 
             with open(b_file_path, mode='rb') as fd:
                 b_data = fd.read()
@@ -1128,7 +1102,7 @@ def parse_gssapi_message(b_data, encoding=None):
     msg = {
         'MessageType': '%s - %s' % (message_type, _get_enum_id(mech_type, MechTypes)),
         'Data': data,
-        'RawData': _to_text(base64.b16encode(b_data)),
+        'RawData': to_text(base64.b16encode(b_data)),
     }
     return msg
 
@@ -1158,9 +1132,9 @@ def parse_ntlm_message(b_data, oem_cp=None):
 
     msg = {
         'MessageType': "%s (%d)" % (message_type_name, message_type),
-        'Signature': _to_text(b_data[0:8], encoding='ascii'),
+        'Signature': to_text(b_data[0:8], encoding='ascii'),
         'Data': parse_func(b_data, oem_cp),
-        'RawData': _to_text(base64.b16encode(b_data)),
+        'RawData': to_text(base64.b16encode(b_data)),
     }
     return msg
 

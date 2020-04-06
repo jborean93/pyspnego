@@ -88,7 +88,6 @@ class GSSAPI(SecurityContext):
 
     @requires_context
     def wrap(self, data):
-        # return self._context.wrap(data, True).message
         # TODO use self._context.wrap(data, True).message when self._context.mech == NTLM.
         # FIXME: requests-credssp doesn't use IOV, will need to see if this still works there.
         iov = IOV(IOVBufferType.header, data, IOVBufferType.padding, std_layout=False)

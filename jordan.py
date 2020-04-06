@@ -48,8 +48,11 @@ def ntlm_auth(server, username, password):
     enc_data = enc_header + enc_data
     s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
 
-    dec_msg_len = struct.unpack("<I", s.recv(4))[0]
-    dec_meg = s.recv(dec_msg_len)
+    server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
+    server_enc_msg = s.recv(server_enc_msg_len)
+    header_length = struct.unpack("<I", server_enc_msg[:4])[0]
+
+    dec_msg = n.unwrap(server_enc_msg[4:4 + header_length], server_enc_msg[4 + header_length:])
     a = ''
 
 
@@ -79,12 +82,17 @@ def gssapi_auth(server, username, password):
         else:
             in_token = None
 
-    enc_header, enc_data = n.wrap(b"Hello world")
-    enc_data = enc_header + enc_data
+    # enc_header, enc_data = n.wrap(b"Hello world")
+    # enc_data = enc_header + enc_data
+
+    enc_data = n.wrap(b"Hello world")
     s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
 
-    dec_msg_len = struct.unpack("<I", s.recv(4))[0]
-    dec_meg = s.recv(dec_msg_len)
+    server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
+    server_enc_msg = s.recv(server_enc_msg_len)
+    header_length = struct.unpack("<I", server_enc_msg[:4])[0]
+
+    dec_msg = n.unwrap(server_enc_msg[4:4 + header_length], server_enc_msg[4 + header_length:])
     a = ''
 
 

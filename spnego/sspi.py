@@ -16,6 +16,10 @@ from spnego._context import (
     split_username,
 )
 
+from spnego._text import (
+    to_text,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -49,10 +53,10 @@ class SSPI(SecurityContext):
         in_token = None
         while not self.complete:
             out_token = self._step(in_token)
-            log.debug("InitializeSecurityContext output: %s", lambda: base64.b64encode(out_token))
+            log.debug("InitializeSecurityContext output: %s", to_text(base64.b64encode(out_token)))
 
             in_token = yield out_token if out_token else None
-            log.debug("InitializeSecurityContext input: %s", lambda: base64.b64encode(in_token))
+            log.debug("InitializeSecurityContext input: %s", to_text(base64.b64encode(in_token)))
 
         # FIXME: requests-credssp has this.
         yield None

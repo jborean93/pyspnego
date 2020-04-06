@@ -1,3 +1,14 @@
+using namespace System.Management.Automation.Runspaces
+
+[CmdletBinding()]
+param (
+    [int]
+    $Port = 16854
+)
+
+$ErrorActionPreference = 'Stop'
+
+Add-Type -TypeDefinition @'
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
@@ -61,15 +72,6 @@ namespace Pyspnego
         {
             public UIntPtr dwLower;
             public UIntPtr dwUpper;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct SecPkgContextSizes
-        {
-            public Int32 cbMaxToken;
-            public Int32 cbMaxSignature;
-            public Int32 cbBlockSize;
-            public Int32 cbSecurityTrailer;
         }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -159,13 +161,6 @@ namespace Pyspnego
             IntPtr phContext);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 EncryptMessage(
-            IntPtr phContext,
-            UInt32 fQOP,
-            ref NativeHelpers.SecBufferDesc pMessage,
-            UInt32 MessageSeqNo);
-
-        [DllImport("Secur32.dll")]
         public static extern UInt32 FreeContextBuffer(
             IntPtr pvContextBuffer);
 
@@ -209,12 +204,6 @@ namespace Pyspnego
             IntPtr ProcessHandle,
             TokenAccessLevels DesiredAccess,
             out SafeNativeHandle TokenHandle);
-
-        [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
-        public static extern UInt32 QueryContextAttributesW(
-            IntPtr phContext,
-            SecPackageAttribute ulAttribute,
-            IntPtr pBuffer);
 
         [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
         public static extern UInt32 QuerySecurityPackageInfoW(
@@ -348,9 +337,6 @@ namespace Pyspnego
 
         private ServerCredential _credential;
         private bool _initialized = false;
-        private UInt32 _sequenceEncrypt = 0;
-        private UInt32 _sequenceDecrypt = 0;
-        private int _trailerSize;
 
         public bool Complete = false;
         public UInt32 ContextAttributes;
@@ -403,16 +389,12 @@ namespace Pyspnego
                     out Expiry);
 
                 _initialized = true;
+                Complete = res == SEC_E_OK || res == SEC_I_COMPLETE_NEEDED;
 
                 if (new List<UInt32>() { SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED }.Contains(res))
                     res = NativeMethods.CompleteAuthToken(this.handle, ref outputBuffer);
 
-                if (res == SEC_E_OK)
-                {
-                    Complete = true;
-                    GetSecPkgSizes();
-                }
-                else if (res != SEC_I_CONTINUE_NEEDED)
+                if (!new List<UInt32>() { SEC_E_OK, SEC_I_CONTINUE_NEEDED }.Contains(res))
                     throw new Exception(String.Format("AcceptSecurityContext() failed {0} - 0x{0:X8}", res));
 
                 outputToken = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(outputBuffer.pBuffers,
@@ -459,11 +441,9 @@ namespace Pyspnego
                 Marshal.StructureToPtr(dataBuffer, dataBufferPtr, false);
 
                 UInt32 qop = 0;
-                UInt32 res = NativeMethods.DecryptMessage(this.handle, ref inputInfo, _sequenceDecrypt, ref qop);
+                UInt32 res = NativeMethods.DecryptMessage(this.handle, ref inputInfo, 0, ref qop);
                 if (res != SEC_E_OK)
                     throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
-
-                _sequenceDecrypt++;
 
                 dataBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(dataBufferPtr,
                     typeof(NativeHelpers.SecBuffer));
@@ -472,59 +452,6 @@ namespace Pyspnego
                 Marshal.Copy(dataBuffer.pvBuffer, decryptedData, 0, decryptedData.Length);
 
                 return decryptedData;
-            }
-        }
-
-        public byte[] Wrap(byte[] data)
-        {
-            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
-            int tokenLength = _trailerSize + Marshal.SizeOf(typeof(UInt32));
-
-            using (SafeMemoryBuffer buffer = new SafeMemoryBuffer((bufferLength * 2) + tokenLength + data.Length))
-            {
-                NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc()
-                {
-                    cBuffers = 2,
-                    pBuffers = buffer.DangerousGetHandle(),
-                };
-
-                NativeHelpers.SecBuffer tokenBuffer = new NativeHelpers.SecBuffer()
-                {
-                    BufferType = BufferType.Token,
-                    cbBuffer = tokenLength,
-                    pvBuffer = IntPtr.Add(inputInfo.pBuffers, bufferLength * 2),
-                };
-                Marshal.StructureToPtr(tokenBuffer, inputInfo.pBuffers, false);
-
-                NativeHelpers.SecBuffer dataBuffer = new NativeHelpers.SecBuffer()
-                {
-                    BufferType = BufferType.Data,
-                    cbBuffer = data.Length,
-                    pvBuffer = IntPtr.Add(tokenBuffer.pvBuffer, tokenBuffer.cbBuffer),
-                };
-                IntPtr dataBufferPtr = IntPtr.Add(inputInfo.pBuffers, bufferLength);
-                Marshal.Copy(data, 0, dataBuffer.pvBuffer, data.Length);
-                Marshal.StructureToPtr(dataBuffer, dataBufferPtr, false);
-
-                UInt32 res = NativeMethods.EncryptMessage(this.handle, 0, ref inputInfo, _sequenceEncrypt);
-                if (res != SEC_E_OK)
-                    throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
-
-                _sequenceEncrypt++;
-
-                tokenBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(inputInfo.pBuffers,
-                    typeof(NativeHelpers.SecBuffer));
-                dataBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(dataBufferPtr,
-                    typeof(NativeHelpers.SecBuffer));
-
-                byte[] headerLength = BitConverter.GetBytes(tokenBuffer.cbBuffer);
-                byte[] encData = new byte[headerLength.Length + tokenBuffer.cbBuffer + dataBuffer.cbBuffer];
-                headerLength.CopyTo(encData, 0);
-                Marshal.Copy(tokenBuffer.pvBuffer, encData, headerLength.Length, tokenBuffer.cbBuffer);
-                Marshal.Copy(dataBuffer.pvBuffer, encData, headerLength.Length + tokenBuffer.cbBuffer,
-                    dataBuffer.cbBuffer);
-
-                return encData;
             }
         }
 
@@ -555,31 +482,6 @@ namespace Pyspnego
             }
 
             return securityBuffer;
-        }
-
-        private void GetSecPkgSizes()
-        {
-            using (SafeMemoryBuffer sizePtr = new SafeMemoryBuffer(Marshal.SizeOf(
-                typeof(NativeHelpers.SecPkgContextSizes))))
-            {
-                UInt32 res = NativeMethods.QueryContextAttributesW(this.handle, SecPackageAttribute.Sizes,
-                    sizePtr.DangerousGetHandle());
-                if (res != SEC_E_OK)
-                    throw new Exception(String.Format("QueryContextAttributesW() failed {0} - 0x{0:X8}", res));
-
-                try
-                {
-                    NativeHelpers.SecPkgContextSizes sizes = (NativeHelpers.SecPkgContextSizes)Marshal.PtrToStructure(
-                        sizePtr.DangerousGetHandle(), typeof(NativeHelpers.SecPkgContextSizes));
-
-                    _trailerSize = sizes.cbSecurityTrailer;
-                }
-                finally
-                {
-                    res = 0;
-                    //NativeMethods.FreeContextBuffer(sizePtr.DangerousGetHandle());
-                }
-            }
         }
 
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
@@ -820,20 +722,6 @@ namespace Pyspnego
         Synchronize = 0x00100000,
     }
 
-    public enum SecPackageAttribute : uint
-    {
-        ServerAuthFlags = 0x80000083,
-        AccessToken = 0x80000012,
-        Creds = 0x80000080,
-        NegotiationPackage = 0x80000081,
-        FullAccessToken = 0x80000082,
-        CertTrustStatus = 0x80000084,
-        Creds2 = 0x80000086,
-        Sizes = 0x00000000,
-        PackageInfo = 0x0000000A,
-        SubjectSecurityAttributes = 0x0000007C,
-    }
-
     public enum SecurityImpersonationLevel : uint
     {
         SecurityAnonymous = 0,
@@ -842,74 +730,273 @@ namespace Pyspnego
         SecurityDelegation = 3,
     }
 }
+'@
 
-namespace SSPI
-{
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            using (new Pyspnego.PrivilegeEnabler("SeDebugPrivilege"))
-            using (new Pyspnego.UserImpersonation(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)))
-            {
-                IPAddress localhost = new IPAddress(0);
-                IPEndPoint localEndpoint = new IPEndPoint(localhost, 16854);
-                Socket listener = new Socket(localhost.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                listener.Bind(localEndpoint);
-                listener.Listen(1);
+Function Write-Verbose {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [String]
+        $Message
+    )
 
-                Socket handler = listener.Accept();
+    $msg = "{0} - RID[{1}] USER[{2}] - {3}" -f (
+        (Get-Date).ToString('o'),
+        [Runspace]::DefaultRunspace.Id,
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+        $Message
+    )
+    Microsoft.PowerShell.Utility\Write-Verbose -Message $msg
+}
 
-                string package = Encoding.UTF8.GetString(ReceiveData(handler));
+$clientProcessor = {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [System.Net.Sockets.TcpClient]$Client
+    )
 
-                using (Pyspnego.ServerCredential credential = new Pyspnego.ServerCredential(package))
-                using (Pyspnego.SecurityContext context = new Pyspnego.SecurityContext(credential))
-                {
-                    while (!context.Complete)
-                    {
-                        byte[] data = ReceiveData(handler);
-                        if (data.Length == 0)
-                            return;
+    trap {
+        $msg = "Uncaught exception, exiting listener`n$($_ | Out-String)`n$($_.ScriptStackTrace)"
+        Write-Verbose -Message $msg
+        return
+    }
 
-                        List<Pyspnego.SecurityBuffer> inputBuffers = new List<Pyspnego.SecurityBuffer>()
-                        {
-                            new Pyspnego.SecurityBuffer()
-                            {
-                                BufferType = Pyspnego.BufferType.Token,
-                                Data = data,
-                            },
-                        };
+    Function Get-StreamData {
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory=$true)]
+            [System.IO.Stream]
+            $Stream
+        )
 
-                        Pyspnego.SecurityBuffer response = context.Step(inputBuffers);
+        Write-Verbose -Message "Reading data from $clientIp"
+        $data = [byte[]]::new(4)
+        $null = $Stream.Read($data, 0, $data.Length)
+        $length = [System.BitConverter]::ToInt32($data, 0)
 
-                        handler.Send(BitConverter.GetBytes(response.Data.Length));
-                        if (response.Data.Length > 0)
-                            handler.Send(response.Data);
-                    }
+        Write-Verbose -Message "Trying to read $length bytes from $clientIp"
+        $data = [byte[]]::new($length)
+        $null = $Stream.Read($data, 0, $data.Length)
 
-                    byte[] encryptedData = ReceiveData(handler);
-                    byte[] decryptedData = context.Unwrap(encryptedData);
+        ,$data
+    }
 
-                    byte[] encryptedMessage = context.Wrap(decryptedData);
+    Function Set-StreamData {
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory=$true)]
+            [System.IO.Stream]
+            $Stream,
 
-                    handler.Send(BitConverter.GetBytes(encryptedMessage.Length));
-                    handler.Send(encryptedMessage);
+            [Parameter(Mandatory=$true)]
+            [AllowEmptyCollection()]
+            [byte[]]
+            $Data
+        )
 
-                    handler.Shutdown(SocketShutdown.Both);
-                    handler.Close();
-                }
-            }
-        }
-
-        private static byte[] ReceiveData(Socket socket)
-        {
-            byte[] data = new byte[4];
-            socket.Receive(data);
-
-            data = new byte[BitConverter.ToInt32(data, 0)];
-            socket.Receive(data, data.Length, SocketFlags.None);
-
-            return data;
+        Write-Verbose -Message "Writing $($Data.Length) bytes to $clientIp"
+        $length = [BitConverter]::GetBytes($Data.Length)
+        $Stream.Write($length, 0, $length.Length)
+        if ($Data.Length -gt 0) {
+            $Stream.Write($Data, 0, $Data.Length)
         }
     }
+
+    Function Use-UserImpersonation {
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory=$true)]
+            [System.Security.Principal.IdentityReference]
+            $Account,
+
+            [Parameter(Mandatory=$true)]
+            [ScriptBlock]
+            $ScriptBlock,
+
+            [System.Collections.IDictionary]
+            $Parameters = @{}
+        )
+
+        # SeDebugPrivilege is used to make sure we can interrogate each process on the system.
+        $privEnabler = [Pyspnego.PrivilegeEnabler]::new('SeDebugPrivilege')
+        try {
+            $accountName = $Account.Translate([System.Security.Principal.NTAccount]).Value
+            Write-Verbose -Message "Attempting to impersonate existing token for $accountName"
+            $userImpersonation = [Pyspnego.UserImpersonation]::new($Account)
+            try {
+                .$ScriptBlock @Parameters
+            } finally {
+                $userImpersonation.Dispose()
+            }
+        } finally {
+            $privEnabler.Dispose()
+        }
+    }
+
+    $process = {
+        param (
+            [Parameter(Mandatory=$true)]
+            [System.IO.Stream]
+            $Stream
+        )
+        # Get the new context data, i.e. protocol to use and initial token
+        $data = Get-StreamData -Stream $Stream
+        $protocol = [System.Text.Encoding]::UTF8.GetString($data)
+
+        $data = Get-StreamData -Stream $Stream
+
+        Write-Verbose -Message "Creating server credential with the protocol $protocol"
+        $cred = [Pyspnego.ServerCredential]::new($protocol)
+        try {
+            Write-Verbose -Message "Creating server context"
+            $context = [Pyspnego.SecurityContext]::new($cred)
+            try {
+                while (-not $context.Complete) {
+                    $inputBuffers = [System.Collections.Generic.List`1[Pyspnego.SecurityBuffer]]::new()
+                    $inputBuffers.Add([Pyspnego.SecurityBuffer]@{
+                        BufferType = 'Token'
+                        Data = $data
+                    })
+
+                    Write-Verbose -Message "Process token from client"
+                    $output = $context.Step($inputBuffers)
+
+                    Set-StreamData -Stream $Stream -Data $output.Data
+                    $data = Get-StreamData -Stream $Stream
+                }
+
+                while ($true) {
+                    if ($data.Length -eq 0) {
+                        Write-Verbose -Message "Received empty msg from the server, exiting client context"
+                        return
+                    }
+
+                    Write-Verbose -Message "Unwrapping message from client"
+                    $output = $context.Unwrap($data)
+
+                    Write-Verbose -Message "Wrapping message for client"
+                    $output = $context.Wrap($output)
+
+                    Set-StreamData -Stream $Stream -Data $output
+                    $data = Get-StreamData -Stream $Stream
+                }
+            } finally {
+                Write-Verbose -Message "Closing server context"
+                $context.Dispose()
+            }
+        } finally {
+            Write-Verbose -Message "Closing server credential"
+            $cred.Dispose()
+        }
+    }
+
+    $clientIp = $Client.Client.RemoteEndPoint
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new(
+        [System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+
+    try {
+        Write-Verbose -Message "Started client pipeline for $clientIp"
+        $stream = $Client.GetStream()
+        try {
+            Use-UserImpersonation -Account $systemSid -ScriptBlock $process -Parameters @{Stream = $stream}
+        } finally {
+            Write-Verbose -Message "Disposing stream for $clientIp"
+            $stream.Dispose()
+        }
+    } finally {
+        Write-Verbose -Message "Disposing client socket for $clientIp"
+        $Client.Dispose()
+    }
+}
+
+$serverListener = {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [System.Management.Automation.Runspaces.RunspacePool]
+        $RunspacePool,
+
+        [Parameter(Mandatory=$true)]
+        [System.Net.Sockets.TcpListener]
+        $Listener
+    )
+
+    Write-Verbose -Message "Starting TCP listener"
+    $Listener.Start()
+    $jobList = [System.Collections.Generic.List[PSObject]]@()
+
+    while ($true) {
+        Write-Verbose -Message "Waiting for client connection"
+        try {
+            $client = $Listener.AcceptTcpClient()
+        } catch {
+            # The parent runspace closed the listener, just exit this pipeline.
+            break
+        }
+
+        Write-Verbose -Message "Client connected from $($client.Client.RemoteEndPoint), starting pipeline"
+
+        $clientPs = [PowerShell]::Create()
+        $clientPs.RunspacePool = $RunspacePool
+        $null = $clientPs.AddScript($ClientProcessor, $true).AddParameter('Client', $client)
+        $handle = $clientPs.BeginInvoke()
+
+        $jobList.Add([PSCustomObject]@{
+            PowerShell = $clientPs
+            Handle = $handle
+            Client = $client
+        })
+    }
+
+    Write-Verbose -Message "TCP Server has ended, ensure client connection jobs have ended"
+    foreach ($job in $jobList) {
+        $jobId = $job.PowerShell.InstanceId
+        Write-Verbose -Message "Encding client on $jobId"
+        $job.Client.Dispose()
+
+        Write-Verbose -Message "Calling EndInvoke() on $jobId"
+        $null = $job.PowerShell.EndInvoke($job.Handle)
+
+        Write-Verbose -Message "Disposing client pipeline $jobId"
+        $job.PowerShell.Dispose()
+    }
+
+    Write-Verbose -Message "Ending TCP listener"
+}
+
+$ss = [InitialSessionState]::CreateDefault()
+$ss.Variables.Add([SessionStateVariableEntry]::new('ErrorActionPreference', $ErrorActionPreference, $null))
+$ss.Variables.Add([SessionStateVariableEntry]::new('VerbosePreference', $VerbosePreference, $null))
+$ss.Variables.Add([SessionStateVariableEntry]::new('ClientProcessor', $clientProcessor, $null))
+$ss.Commands.Add([SessionStateFunctionEntry]::new('Write-Verbose', (Get-Content function:\Write-Verbose)))
+
+Write-Verbose -Message "Creating runspace pool"
+$pool = [RunspaceFactory]::CreateRunspacePool(2, 4, $ss, $Host)
+$pool.Open()
+
+try {
+    Write-Verbose -Message "Creating TCP listener on port $Port"
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::new(0), $Port)
+
+    Write-Verbose -Message "Creating TCP server pipeline"
+    $serverPs = [PowerShell]::Create()
+    $serverPs.RunspacePool = $pool
+    $null = $serverPs.AddScript($serverListener, $true).AddParameter('RunspacePool', $pool)
+    $null = $serverPs.AddParameter('Listener', $listener)
+    $handle = $serverPs.BeginInvoke()
+
+    try {
+        # Wait until user input before killing the server.
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    } finally {
+        # Stop the listener so the serverPs runspace will stop running.
+        $listener.Stop()
+
+        $null = $serverPs.EndInvoke($handle)
+        $serverPs.Dispose()
+    }
+} finally {
+    Write-Verbose -Message "Stopping runspace pool"
+    $pool.Dispose()
 }
