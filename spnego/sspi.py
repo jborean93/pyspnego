@@ -25,20 +25,27 @@ log = logging.getLogger(__name__)
 
 class SSPI(SecurityContext):
 
-    VALID_PROTOCOLS = {'negotiate', 'ntlm', 'kerberos'}
-
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
                  confidentiality=None, protocol='negotiate'):
         super(SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
                                    protocol)
         domain, username = split_username(self.username)
 
-        self._context = sspi.ClientAuth(
-            pkg_name=None,
-            auth_info=(username, domain, self.password),
-            targetspn=None,
-            scflags=None
-        )
+        flags = sspicon.ISC_REQ_INTEGRITY | sspicon.ISC_REQ_REPLAY_DETECT | sspicon.ISC_REQ_SEQUENCE_DETECT | \
+            sspicon.ISC_REQ_MUTUAL_AUTH
+
+        if delegate:
+            flags |= sspi.ISC_REQ_DELEGATE
+
+        if confidentiality:
+            flags |= sspi.ISC_REQ_CONFIDENTIALITY
+
+        self._context = sspi.ClientAuth(pkg_name=protocol, auth_info=(username, domain, self.password),
+                                        targetspn='%s/%s' % (service.upper(), hostname), scflags=flags)
+
+    @classmethod
+    def supported_protocols(cls):
+        return ['kerberos', 'negotiate', 'ntlm']
 
     @property
     def complete(self):
@@ -67,15 +74,14 @@ class SSPI(SecurityContext):
         return header, enc_data
 
     @requires_context
-    def unwrap(self, header, data):
-        dec_data = self._context.decrypt(data, header)
+    def unwrap(self, data):
+        # TODO: get header from data
+        dec_data = self._context.decrypt(data, b"")
         return dec_data
 
     def _step(self, token):
         success_codes = [
             sspicon.SEC_E_OK,
-            sspicon.SEC_I_COMPLETE_AND_CONTINUE,
-            sspicon.SEC_I_COMPLETE_NEEDED,
             sspicon.SEC_I_CONTINUE_NEEDED
         ]
 
@@ -104,7 +110,7 @@ class SSPI(SecurityContext):
                         value == rc:
                     rc_name = name
                     break
-            # FIXME: ensure hex is 8 chars long.
-            raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s" % (rc, rc_name, format(rc, 'x')))
+
+            raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s" % (rc, rc_name, format(rc, '08X')))
 
         return out_buffer[0].Buffer

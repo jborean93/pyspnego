@@ -10,6 +10,7 @@ import logging
 
 from gssapi.raw import acquire_cred_with_password
 from gssapi.raw import set_sec_context_option
+from gssapi.raw import inquire_sec_context_by_oid
 from gssapi.raw import ChannelBindings
 
 wrap_iov = None
@@ -30,50 +31,106 @@ from spnego._text import (
 
 log = logging.getLogger(__name__)
 
+_KERBEROS_OID = gssapi.OID.from_int_seq('1.2.840.113554.1.2.2')
+_NTLM_OID = gssapi.OID.from_int_seq('1.3.6.1.4.1.311.2.2.10')
+_SPNEGO_OID = gssapi.OID.from_int_seq('1.3.6.1.5.5.2')
+
+_GSS_C_INQ_SSPI_SESSION_KEY = gssapi.OID.from_int_seq("1.2.840.113554.1.2.2.5.5")
+
+# https://github.com/simo5/gss-ntlmssp/blob/bfc7232dbb2259072a976fc9cdb6ae4bfd323304/src/gssapi_ntlmssp.h#L68
+_GSS_NTLMSSP_RESET_CRYPTO_OID = gssapi.OID.from_int_seq('1.3.6.1.4.1.7165.655.1.3')
+
+
+def _get_credential(mech, username=None, password=None):
+    if username is not None:
+        name_type = getattr(gssapi.NameType, 'kerberos_principal' if mech == _KERBEROS_OID else 'user')
+        username = gssapi.Name(base=username, name_type=name_type)
+
+    cred = None
+    if mech == _KERBEROS_OID or (mech == _SPNEGO_OID and not (username or password)):
+        try:
+            cred = gssapi.Credentials(name=username, usage='initial', mechs=[mech])
+
+            # Raises ExpiredCredentialsError if it has expired, we don't care about the actual value.
+            _ = cred.lifetime
+        except gssapi.raw.GSSError:
+            # If we can't acquire a cred from the cache then we need an explicit password so raise the cache error
+            # if none is set.
+            if password is None:
+                raise
+
+            cred = None
+    elif not (username or password):
+        raise ValueError("Can only use implicit credentials with kerberos or negotiate authentication")
+
+    if cred is None:
+        cred = acquire_cred_with_password(username, to_bytes(password), usage='initiate', mechs=[mech]).creds
+
+    return cred
+
 
 class GSSAPI(SecurityContext):
 
-    VALID_PROTOCOLS = {'negotiate', 'ntlm', 'kerberos'}
-
-    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
+    def __init__(self, username, password, hostname, service=None, channel_bindings=None, delegate=None,
                  confidentiality=None, protocol='negotiate'):
 
-        if confidentiality and not wrap_iov:
+        # Negotiate and Kerberos requires wrap_iov for encryption. This function is not present on all systems (macOS)
+        # is one so raise an error if confidentiality is required.
+        # FIXME: CredSSP with Kerberos can work without wrap_iov here
+        if protocol != 'ntlm' and confidentiality and not wrap_iov:
             raise ValueError("The GSSAPI auth provider does not support confidentiality on this host.")
 
         super(GSSAPI, self).__init__(username, password, hostname, service, channel_bindings, delegate,
                                      confidentiality, protocol)
 
-        # TODO: accept all these options.
-        server_name = gssapi.Name('%s@%s' % (service, hostname), name_type=gssapi.NameType.hostbased_service)
-
-        name_type = gssapi.NameType.kerberos_principal
         mech = {
-            'kerberos': gssapi.OID.from_int_seq('1.2.840.113554.1.2.2'),
-            'negotiate': gssapi.OID.from_int_seq('1.3.6.1.5.5.2'),
-            'ntlm': gssapi.OID.from_int_seq('1.3.6.1.4.1.311.2.2.10'),
+            'kerberos': _KERBEROS_OID,
+            'negotiate': _SPNEGO_OID,
+            'ntlm': _NTLM_OID
         }[protocol]
-        cred = gssapi.raw.acquire_cred_with_password(gssapi.Name(base=username, name_type=name_type),
-                                                     to_bytes(password), usage='initiate', mechs=[mech]).creds
 
-        flags = gssapi.RequirementFlag.mutual_authentication | gssapi.RequirementFlag.out_of_sequence_detection | \
-            gssapi.RequirementFlag.confidentiality
+        flags = gssapi.RequirementFlag.mutual_authentication | gssapi.RequirementFlag.out_of_sequence_detection
+        if delegate:
+            flags |= gssapi.RequirementFlag.delegate_to_peer
+        if confidentiality:
+            flags |= gssapi.RequirementFlag.confidentiality
 
-        self._context = gssapi.SecurityContext(name=server_name, creds=cred, usage='initiate', mech=mech, flags=flags,
+        target_spn = gssapi.Name('%s@%s' % (service.lower(), hostname), name_type=gssapi.NameType.hostbased_service)
+        cred = _get_credential(mech, username=username, password=password)
+        self._context = gssapi.SecurityContext(name=target_spn, creds=cred, usage='initiate', mech=mech, flags=flags,
                                                channel_bindings=self.channel_bindings)
+
+    @classmethod
+    def supported_protocols(cls):
+        protocols = ['kerberos']
+
+        # TODO: with our newly created parser, try and find out why Heimdal on macOS fails with NTLM.
+        # While Heimdal has a valid NTLM implementation it doesn't support encryption when running over SPNEGO. The
+        # only known provider that works right now is gssapi_ntlmssp. We query it's presence by creating a fake user
+        # context and see if it implements GSS_NTLMSSP_RESET_CRYPTO_OID.
+        try:
+            # This can be anything, the first NTLM message doesn't need a valid target name or credential.
+            target_name = gssapi.Name('http@server', name_type=gssapi.NameType.hostbased_service)
+            cred = _get_credential(_NTLM_OID, username='user', password='pass')
+
+            context = gssapi.SecurityContext(name=target_name, creds=cred, usage='initiate', mech=_NTLM_OID)
+            context.step()  # Need to at least have a context set up before we can call gss_set_sec_context_option.
+            set_sec_context_option(_GSS_NTLMSSP_RESET_CRYPTO_OID, context=context, value=b"\x00\x00\x00\x00")
+
+            protocols.extend(['negotiate', 'ntlm'])
+        except gssapi.raw.GSSError as err:
+            pass
+
+        return protocols
 
     @property
     def complete(self):
-        # FIXME: requests-credssp requires knowing early that the NTLM auth is complete before sending the last token.
         return self._context.complete
 
     @property
     @requires_context
     def session_key(self):
-        session_key_oid = gssapi.OID.from_int_seq("1.2.840.113554.1.2.2.5.5") # GSS_C_INQ_SSPI_SESSION_KEY
-        context_data = gssapi.raw.inquire_sec_context_by_oid(self._context, session_key_oid)
-
-        return context_data[0]
+        return inquire_sec_context_by_oid(self._context, _GSS_C_INQ_SSPI_SESSION_KEY)[0]
 
     def step(self):
         in_token = None
@@ -84,19 +141,23 @@ class GSSAPI(SecurityContext):
             in_token = yield out_token
             log.debug("GSSAPI gss_init_sec_context() input: %s", to_text(base64.b64encode(in_token)))
 
-        # FIXME: requests-credssp returns a final token with mechListMIC when using NTLM which yields nothing.
-
     @requires_context
     def wrap(self, data):
-        # TODO use self._context.wrap(data, True).message when self._context.mech == NTLM.
-        # FIXME: requests-credssp doesn't use IOV, will need to see if this still works there.
+        # NTLM does not support gss_wrap_iov but luckily it has a fixed signature size of 16 bytes so we can use
+        # gss_wrap() and just split it ourselves.
+        if self._context.mech == _NTLM_OID:
+            enc_data = self._context.wrap(data, True).message
+            return enc_data[:16], enc_data[16:]
+
         iov = IOV(IOVBufferType.header, data, IOVBufferType.padding, std_layout=False)
         wrap_iov(self._context, iov, confidential=True)
+        # TODO: investigate padding and whether this is a valid scenario.
         return iov[0].value, iov[1].value + (iov[2].value or b"")
 
     @requires_context
-    def unwrap(self, header, data):
-        return self._context.unwrap(header + data)[0]
+    def unwrap(self, data):
+        # Because we have 1 stream of data we don't care about the placement and can just use gss_unwrap.
+        return self._context.unwrap(data)[0]
 
     @staticmethod
     def convert_channel_bindings(bindings):

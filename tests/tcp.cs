@@ -41,11 +41,87 @@ namespace Pyspnego
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct SecBufferDesc
+        public class SecBufferDesc : IDisposable
         {
             public UInt32 ulVersion;
             public UInt32 cBuffers;
-            public IntPtr pBuffers;
+            public IntPtr pBuffers {
+                get { return this._buffer.DangerousGetHandle(); }
+            }
+
+            private SafeMemoryBuffer _buffer;
+
+            public SecBufferDesc(List<SecurityBuffer> buffers)
+            {
+                cBuffers = (UInt32)buffers.Count;
+                _buffer = new SafeMemoryBuffer(IntPtr.Zero);
+
+                if (cBuffers > 0)
+                {
+                    int bufferLength = Marshal.SizeOf(typeof(SecBuffer));
+                    int bufferDataOffset = bufferLength * buffers.Count;
+                    int bufferDataLength = buffers.Sum(i => i.Data == null ? 0 : i.Data.Length);
+
+                    _buffer = new SafeMemoryBuffer(bufferDataOffset + bufferDataLength);
+                    IntPtr inputBufferPtr = _buffer.DangerousGetHandle();
+                    IntPtr inputBufferDataPtr = IntPtr.Add(inputBufferPtr, bufferDataOffset);
+
+                    foreach (SecurityBuffer buffer in buffers)
+                    {
+                        SecBuffer bufferElement = new SecBuffer()
+                        {
+                            BufferType = buffer.BufferType,
+                        };
+
+                        if (buffer.Data == null)
+                        {
+                            bufferElement.cbBuffer = 0;
+                            bufferElement.pvBuffer = IntPtr.Zero;
+                        }
+                        else
+                        {
+                            bufferElement.cbBuffer = buffer.Data.Length;
+                            bufferElement.pvBuffer = inputBufferDataPtr;
+                            Marshal.Copy(buffer.Data, 0, inputBufferDataPtr, buffer.Data.Length);
+                            inputBufferDataPtr = IntPtr.Add(inputBufferDataPtr, buffer.Data.Length);
+                        }
+
+                        Marshal.StructureToPtr(bufferElement, inputBufferPtr, false);
+                        inputBufferPtr = IntPtr.Add(inputBufferPtr, bufferLength);
+                    }
+                }
+            }
+
+            public static explicit operator List<SecurityBuffer>(SecBufferDesc b)
+            {
+                List<SecurityBuffer> buffers = new List<SecurityBuffer>();
+                if (b.cBuffers == 0)
+                    return buffers;
+
+                for (int i = 0; i < b.cBuffers; i++)
+                {
+                    SecBuffer entry = (SecBuffer)Marshal.PtrToStructure(
+                        IntPtr.Add(b.pBuffers, i * Marshal.SizeOf(typeof(SecBuffer))), typeof(SecBuffer));
+
+                    byte[] entryData = new byte[entry.cbBuffer];
+                    Marshal.Copy(entry.pvBuffer, entryData, 0, entry.cbBuffer);
+
+                    buffers.Add(new SecurityBuffer()
+                    {
+                        BufferType = entry.BufferType,
+                        Data = entryData,
+                    });
+                }
+
+                return buffers;
+            }
+
+            public void Dispose()
+            {
+                _buffer.Dispose();
+                GC.SuppressFinalize(this);
+            }
+            ~SecBufferDesc() { this.Dispose(); }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -109,11 +185,11 @@ namespace Pyspnego
         public static extern UInt32 AcceptSecurityContext(
             ServerCredential phCredential,
             IntPtr phContext,
-            ref NativeHelpers.SecBufferDesc pInput,
+            NativeHelpers.SecBufferDesc pInput,
             UInt32 fContextReq,
             UInt32 TargetDataRep,
             IntPtr phNewContext,
-            ref NativeHelpers.SecBufferDesc pOutput,
+            NativeHelpers.SecBufferDesc pOutput,
             out UInt32 pfContextAttr,
             out Int64 ptsExpiry);
 
@@ -145,12 +221,12 @@ namespace Pyspnego
         [DllImport("Secur32.dll")]
         public static extern UInt32 CompleteAuthToken(
             IntPtr phContext,
-            ref NativeHelpers.SecBufferDesc pToken);
+            NativeHelpers.SecBufferDesc pToken);
 
         [DllImport("Secur32.dll")]
         public static extern UInt32 DecryptMessage(
             IntPtr phContext,
-            ref NativeHelpers.SecBufferDesc pMessage,
+            NativeHelpers.SecBufferDesc pMessage,
             UInt32 MessageSeqNo,
             ref UInt32 pfQOP);
 
@@ -162,7 +238,7 @@ namespace Pyspnego
         public static extern UInt32 EncryptMessage(
             IntPtr phContext,
             UInt32 fQOP,
-            ref NativeHelpers.SecBufferDesc pMessage,
+            NativeHelpers.SecBufferDesc pMessage,
             UInt32 MessageSeqNo);
 
         [DllImport("Secur32.dll")]
@@ -351,6 +427,7 @@ namespace Pyspnego
         private UInt32 _sequenceEncrypt = 0;
         private UInt32 _sequenceDecrypt = 0;
         private int _trailerSize;
+        private int _blockSize;
 
         public bool Complete = false;
         public UInt32 ContextAttributes;
@@ -362,50 +439,44 @@ namespace Pyspnego
             base.SetHandle(Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeHelpers.SecHandle))));
         }
 
-        public SecurityBuffer Step(List<SecurityBuffer> input)
+        public byte[] Step(byte[] token)
         {
-            IntPtr contextPtr = _initialized ? this.handle : IntPtr.Zero;
-            int maxTokenSize = _credential.PackageInfo.MaxToken;
-            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
-
-            using (SafeMemoryBuffer inputBufferPtr = CreateSecBufferArray(input))
-            using (SafeMemoryBuffer outputBufferPtr = new SafeMemoryBuffer(bufferLength + maxTokenSize))
+            List<SecurityBuffer> input = new List<SecurityBuffer>()
             {
-                NativeHelpers.SecBufferDesc inputBuffer = new NativeHelpers.SecBufferDesc()
-                {
-                    cBuffers = (UInt32)input.Count,
-                    pBuffers = inputBufferPtr.DangerousGetHandle(),
-                };
-
-                NativeHelpers.SecBufferDesc outputBuffer = new NativeHelpers.SecBufferDesc()
-                {
-                    cBuffers = 1,
-                    pBuffers = outputBufferPtr.DangerousGetHandle(),
-                };
-
-                NativeHelpers.SecBuffer outputToken = new NativeHelpers.SecBuffer()
+                new SecurityBuffer()
                 {
                     BufferType = BufferType.Token,
-                    cbBuffer = maxTokenSize,
-                    pvBuffer = IntPtr.Add(outputBuffer.pBuffers, bufferLength),
-                };
-                Marshal.StructureToPtr(outputToken, outputBuffer.pBuffers, false);
+                    Data = token,
+                },
+            };
 
+            List<SecurityBuffer> output = new List<SecurityBuffer>()
+            {
+                new SecurityBuffer()
+                {
+                    BufferType = BufferType.Token,
+                    Data = new byte[_credential.PackageInfo.MaxToken],
+                },
+            };
+
+            using (NativeHelpers.SecBufferDesc inputBuffer = new NativeHelpers.SecBufferDesc(input))
+            using (NativeHelpers.SecBufferDesc outputBuffer = new NativeHelpers.SecBufferDesc(output))
+            {
                 UInt32 res = NativeMethods.AcceptSecurityContext(
                     _credential,
-                    contextPtr,
-                    ref inputBuffer,
+                    _initialized ? this.handle : IntPtr.Zero,
+                    inputBuffer,
                     0,
                     0x00000010,  // SECURITY_NATIVE_DREP
                     this.handle,
-                    ref outputBuffer,
+                    outputBuffer,
                     out ContextAttributes,
                     out Expiry);
 
                 _initialized = true;
 
                 if (new List<UInt32>() { SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED }.Contains(res))
-                    res = NativeMethods.CompleteAuthToken(this.handle, ref outputBuffer);
+                    res = NativeMethods.CompleteAuthToken(this.handle, outputBuffer);
 
                 if (res == SEC_E_OK)
                 {
@@ -415,146 +486,80 @@ namespace Pyspnego
                 else if (res != SEC_I_CONTINUE_NEEDED)
                     throw new Exception(String.Format("AcceptSecurityContext() failed {0} - 0x{0:X8}", res));
 
-                outputToken = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(outputBuffer.pBuffers,
-                    typeof(NativeHelpers.SecBuffer));
-                SecurityBuffer output = new SecurityBuffer()
-                {
-                    BufferType = outputToken.BufferType,
-                    Data = new byte[outputToken.cbBuffer],
-                };
-                Marshal.Copy(outputToken.pvBuffer, output.Data, 0, output.Data.Length);
-
-                return output;
+                output = (List<SecurityBuffer>)outputBuffer;
+                return output[0].Data;
             }
         }
 
         public byte[] Unwrap(byte[] data)
         {
-            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
-
-            using (SafeMemoryBuffer buffer = new SafeMemoryBuffer((bufferLength * 2) + data.Length))
+            List<SecurityBuffer> input = new List<SecurityBuffer>()
             {
-                NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc()
-                {
-                    cBuffers = 2,
-                    pBuffers = buffer.DangerousGetHandle(),
-                };
-
-                NativeHelpers.SecBuffer streamBuffer = new NativeHelpers.SecBuffer()
+                new SecurityBuffer()
                 {
                     BufferType = BufferType.Stream,
-                    cbBuffer = data.Length,
-                    pvBuffer = IntPtr.Add(inputInfo.pBuffers, bufferLength * 2),
-                };
-                Marshal.Copy(data, 0, streamBuffer.pvBuffer, data.Length);
-                Marshal.StructureToPtr(streamBuffer, inputInfo.pBuffers, false);
-
-                NativeHelpers.SecBuffer dataBuffer = new NativeHelpers.SecBuffer()
+                    Data = data,
+                },
+                new SecurityBuffer()
                 {
                     BufferType = BufferType.Data,
-                    cbBuffer = 0,
-                    pvBuffer = IntPtr.Zero,
-                };
-                IntPtr dataBufferPtr = IntPtr.Add(inputInfo.pBuffers, bufferLength);
-                Marshal.StructureToPtr(dataBuffer, dataBufferPtr, false);
+                    Data = null,
+                },
+            };
 
+            using (NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc(input))
+            {
                 UInt32 qop = 0;
-                UInt32 res = NativeMethods.DecryptMessage(this.handle, ref inputInfo, _sequenceDecrypt, ref qop);
+                UInt32 res = NativeMethods.DecryptMessage(this.handle, inputInfo, _sequenceDecrypt, ref qop);
                 if (res != SEC_E_OK)
                     throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
-
                 _sequenceDecrypt++;
 
-                dataBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(dataBufferPtr,
-                    typeof(NativeHelpers.SecBuffer));
-
-                byte[] decryptedData = new byte[dataBuffer.cbBuffer];
-                Marshal.Copy(dataBuffer.pvBuffer, decryptedData, 0, decryptedData.Length);
-
-                return decryptedData;
+                List<SecurityBuffer> output = (List<SecurityBuffer>)inputInfo;
+                return output[1].Data;
             }
         }
 
         public byte[] Wrap(byte[] data)
         {
-            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
-            int tokenLength = _trailerSize + Marshal.SizeOf(typeof(UInt32));
-
-            using (SafeMemoryBuffer buffer = new SafeMemoryBuffer((bufferLength * 2) + tokenLength + data.Length))
+            List<SecurityBuffer> input = new List<SecurityBuffer>()
             {
-                NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc()
-                {
-                    cBuffers = 2,
-                    pBuffers = buffer.DangerousGetHandle(),
-                };
-
-                NativeHelpers.SecBuffer tokenBuffer = new NativeHelpers.SecBuffer()
+                new SecurityBuffer()
                 {
                     BufferType = BufferType.Token,
-                    cbBuffer = tokenLength,
-                    pvBuffer = IntPtr.Add(inputInfo.pBuffers, bufferLength * 2),
-                };
-                Marshal.StructureToPtr(tokenBuffer, inputInfo.pBuffers, false);
-
-                NativeHelpers.SecBuffer dataBuffer = new NativeHelpers.SecBuffer()
+                    Data = new byte[_trailerSize],
+                },
+                new SecurityBuffer()
                 {
                     BufferType = BufferType.Data,
-                    cbBuffer = data.Length,
-                    pvBuffer = IntPtr.Add(tokenBuffer.pvBuffer, tokenBuffer.cbBuffer),
-                };
-                IntPtr dataBufferPtr = IntPtr.Add(inputInfo.pBuffers, bufferLength);
-                Marshal.Copy(data, 0, dataBuffer.pvBuffer, data.Length);
-                Marshal.StructureToPtr(dataBuffer, dataBufferPtr, false);
+                    Data = data,
+                },
+                new SecurityBuffer()
+                {
+                    BufferType = BufferType.Padding,
+                    Data = new byte[_blockSize],
+                },
+            };
 
-                UInt32 res = NativeMethods.EncryptMessage(this.handle, 0, ref inputInfo, _sequenceEncrypt);
+            using (NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc(input))
+            {
+                UInt32 res = NativeMethods.EncryptMessage(this.handle, 0, inputInfo, _sequenceEncrypt);
                 if (res != SEC_E_OK)
                     throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
-
                 _sequenceEncrypt++;
 
-                tokenBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(inputInfo.pBuffers,
-                    typeof(NativeHelpers.SecBuffer));
-                dataBuffer = (NativeHelpers.SecBuffer)Marshal.PtrToStructure(dataBufferPtr,
-                    typeof(NativeHelpers.SecBuffer));
+                List<SecurityBuffer> output = (List<SecurityBuffer>)inputInfo;
 
-                byte[] headerLength = BitConverter.GetBytes(tokenBuffer.cbBuffer);
-                byte[] encData = new byte[headerLength.Length + tokenBuffer.cbBuffer + dataBuffer.cbBuffer];
-                headerLength.CopyTo(encData, 0);
-                Marshal.Copy(tokenBuffer.pvBuffer, encData, headerLength.Length, tokenBuffer.cbBuffer);
-                Marshal.Copy(dataBuffer.pvBuffer, encData, headerLength.Length + tokenBuffer.cbBuffer,
-                    dataBuffer.cbBuffer);
+                byte[] encData = new byte[output.Sum(i => i.Data.Length)];
+                int offset = 0;
+                foreach (SecurityBuffer buffer in output)
+                {
+                    Buffer.BlockCopy(buffer.Data, 0, encData, offset, buffer.Data.Length);
+                    offset += buffer.Data.Length;
+                }
 
                 return encData;
             }
-        }
-
-        private static SafeMemoryBuffer CreateSecBufferArray(List<SecurityBuffer> buffers)
-        {
-            int bufferLength = Marshal.SizeOf(typeof(NativeHelpers.SecBuffer));
-            int bufferDataLength = buffers.Sum(i => i.Data.Length);
-            int bufferDataOffset = bufferLength * buffers.Count;
-
-            SafeMemoryBuffer securityBuffer = new SafeMemoryBuffer(bufferDataOffset + bufferDataLength);
-
-            IntPtr inputBufferPtr = securityBuffer.DangerousGetHandle();
-            IntPtr inputBufferDataPtr = IntPtr.Add(inputBufferPtr, bufferDataOffset);
-
-            foreach (SecurityBuffer buffer in buffers)
-            {
-                NativeHelpers.SecBuffer bufferElement = new NativeHelpers.SecBuffer()
-                {
-                    BufferType = buffer.BufferType,
-                    cbBuffer = buffer.Data.Length,
-                    pvBuffer = inputBufferDataPtr,
-                };
-                Marshal.Copy(buffer.Data, 0, inputBufferDataPtr, buffer.Data.Length);
-                IntPtr.Add(inputBufferDataPtr, buffer.Data.Length);
-
-                Marshal.StructureToPtr(bufferElement, inputBufferPtr, false);
-                inputBufferPtr = IntPtr.Add(inputBufferPtr, bufferLength);
-            }
-
-            return securityBuffer;
         }
 
         private void GetSecPkgSizes()
@@ -567,18 +572,11 @@ namespace Pyspnego
                 if (res != SEC_E_OK)
                     throw new Exception(String.Format("QueryContextAttributesW() failed {0} - 0x{0:X8}", res));
 
-                try
-                {
-                    NativeHelpers.SecPkgContextSizes sizes = (NativeHelpers.SecPkgContextSizes)Marshal.PtrToStructure(
-                        sizePtr.DangerousGetHandle(), typeof(NativeHelpers.SecPkgContextSizes));
+                NativeHelpers.SecPkgContextSizes sizes = (NativeHelpers.SecPkgContextSizes)Marshal.PtrToStructure(
+                    sizePtr.DangerousGetHandle(), typeof(NativeHelpers.SecPkgContextSizes));
 
-                    _trailerSize = sizes.cbSecurityTrailer;
-                }
-                finally
-                {
-                    res = 0;
-                    //NativeMethods.FreeContextBuffer(sizePtr.DangerousGetHandle());
-                }
+                _blockSize = sizes.cbBlockSize;
+                _trailerSize = sizes.cbSecurityTrailer;
             }
         }
 
@@ -596,15 +594,6 @@ namespace Pyspnego
 
     public class PrivilegeEnabler : IDisposable
     {
-        private NativeHelpers.LUID LookupPrivilegeValue(string privilege)
-        {
-            NativeHelpers.LUID luid = new NativeHelpers.LUID();
-            if (!NativeMethods.LookupPrivilegeValueW(null, privilege, ref luid))
-                throw new Win32Exception(String.Format("LookupPrivilegeValueW({0}) failed", privilege));
-
-            return luid;
-        }
-
         public PrivilegeEnabler(params string[] privileges)
         {
             int tokenPrivLength = Marshal.SizeOf(typeof(NativeHelpers.TOKEN_PRIVILEGES));
@@ -663,6 +652,15 @@ namespace Pyspnego
                     throw;
                 }
             }
+        }
+
+        private NativeHelpers.LUID LookupPrivilegeValue(string privilege)
+        {
+            NativeHelpers.LUID luid = new NativeHelpers.LUID();
+            if (!NativeMethods.LookupPrivilegeValueW(null, privilege, ref luid))
+                throw new Win32Exception(String.Format("LookupPrivilegeValueW({0}) failed", privilege));
+
+            return luid;
         }
 
         public void Dispose()
@@ -871,20 +869,11 @@ namespace SSPI
                         if (data.Length == 0)
                             return;
 
-                        List<Pyspnego.SecurityBuffer> inputBuffers = new List<Pyspnego.SecurityBuffer>()
-                        {
-                            new Pyspnego.SecurityBuffer()
-                            {
-                                BufferType = Pyspnego.BufferType.Token,
-                                Data = data,
-                            },
-                        };
+                        byte[] response = context.Step(data);
 
-                        Pyspnego.SecurityBuffer response = context.Step(inputBuffers);
-
-                        handler.Send(BitConverter.GetBytes(response.Data.Length));
-                        if (response.Data.Length > 0)
-                            handler.Send(response.Data);
+                        handler.Send(BitConverter.GetBytes(response.Length));
+                        if (response.Length > 0)
+                            handler.Send(response);
                     }
 
                     byte[] encryptedData = ReceiveData(handler);

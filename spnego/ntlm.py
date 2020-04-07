@@ -30,8 +30,6 @@ log = logging.getLogger(__name__)
 
 class NTLM(SecurityContext):
 
-    VALID_PROTOCOLS = {'negotiate', 'ntlm'}
-
     def __init__(self, username, password, channel_bindings=None, protocol='ntlm', workstation=None,
                  ntlm_compatibility=3):
         """
@@ -61,6 +59,10 @@ class NTLM(SecurityContext):
         self._context = NtlmContext(username, self.password, domain=domain, workstation=workstation,
                                     cbt_data=self.channel_bindings, ntlm_compatibility=ntlm_compatibility)
 
+    @classmethod
+    def supported_protocols(cls):
+        return ['negotiate', 'ntlm']
+
     @property
     def complete(self):
         return self._context.complete
@@ -89,11 +91,12 @@ class NTLM(SecurityContext):
     @requires_context
     def wrap(self, data):
         wrapped_data = self._context.wrap(data)
+        # NTLM always has a signature size of 16, so we can just hardcode this.
         return wrapped_data[:16], wrapped_data[16:]
 
     @requires_context
-    def unwrap(self, header, data):
-        return self._context.unwrap(header + data)
+    def unwrap(self, data):
+        return self._context.unwrap(data)
 
     @staticmethod
     def convert_channel_bindings(bindings):

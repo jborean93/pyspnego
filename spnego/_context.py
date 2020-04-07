@@ -50,8 +50,6 @@ def add_metaclass(metaclass):
 @add_metaclass(ABCMeta)
 class SecurityContext:
 
-    VALID_PROTOCOLS = {}
-
     def __init__(self, username, password, hostname, service, channel_bindings, delegate, confidentiality, protocol):
         """
         Base class for a security context. Various parameters may or may not be used by each implementing class.
@@ -78,10 +76,16 @@ class SecurityContext:
         self.delegate = delegate
         self.confidentiality = confidentiality
 
-        self.provider = protocol
-        if protocol not in self.VALID_PROTOCOLS:
+        supported_protocols = self.supported_protocols()
+        self.protocol = protocol
+        if protocol not in supported_protocols:
             raise ValueError("Specified protocol %s is not supported by this security context, valid protocols: %s"
-                             % (protocol, ", ".join(self.VALID_PROTOCOLS)))
+                             % (protocol, ", ".join(supported_protocols)))
+
+    @classmethod
+    @abstractmethod
+    def supported_protocols(cls):
+        pass
 
     @property
     @abstractmethod
@@ -102,12 +106,14 @@ class SecurityContext:
         pass
 
     @requires_context
+    @abstractmethod
     def wrap(self, data):
         """ Wraps the data similar to EncryptMessage() in SSPI. """
         pass
 
     @requires_context
-    def unwrap(self, header, data):
+    @abstractmethod
+    def unwrap(self, data):
         """ Unwraps the data similar to DecryptMessage() in SSPI. """
         pass
 
