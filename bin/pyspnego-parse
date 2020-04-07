@@ -16,6 +16,8 @@ __metaclass__ = type
 
 import argparse
 import base64
+import hashlib
+import hmac
 import json
 import os.path
 import re
@@ -23,6 +25,8 @@ import struct
 import sys
 
 from datetime import datetime, timedelta
+
+from ntlm_auth.des import DES
 
 from spnego._text import (
     to_bytes,
@@ -39,6 +43,13 @@ try:
     from ruamel import yaml
 except ImportError:
     yaml = None
+
+NTLM_CRYPTO = True
+try:
+    from cryptography.hazmat.primitives.ciphers import algorithms, Cipher
+    from cryptography.hazmat.backends import default_backend
+except ImportError:
+    NTLM_CRYPTO = False
 
 
 class ContextFlags:
@@ -303,6 +314,28 @@ def _filetime_to_datetime(filetime):
     epoch_filetime = 116444736000000000  # EPOCH representing in filetime (100 nanoseconds since 1601-01-01
     epoch_time_ms = (filetime - epoch_filetime) / 10
     return datetime(1970, 1, 1) + timedelta(microseconds=epoch_time_ms)
+
+
+def _lmowfv1(password):
+    # Fix the password to upper case and pad the length to exactly 14 bytes.
+    b_password = to_bytes(password.upper()).ljust(14, b"\x00")[:14]
+
+    lm_hash = b""
+    for start, end in [(0, 7), (7, 14)]:
+        des = DES(DES.key56_to_key64(b_password[start:end]))
+        lm_hash += des.encrypt(b"KGS!@#$%")
+
+    return lm_hash
+
+
+def _ntowfv1(password):
+    return hashlib.new('md4', to_bytes(password, encoding='utf-16-le')).digest()
+
+
+def _ntowfv2(username, password, domain_name):
+    digest = _ntowfv1(password)
+    user = to_bytes((username or u"").upper() + (domain_name or u""), encoding='utf-16-le')
+    return hmac.new(digest, user, digestmod=hashlib.md5).digest()
 
 
 def _to_bits(b):
@@ -771,7 +804,7 @@ def _parse_ntlm_challenge(b_data, oem_cp):
     return msg
 
 
-def _parse_ntlm_authenticate(b_data, oem_cp):
+def _parse_ntlm_authenticate(b_data, oem_cp, password):
     # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/033d32cc-88f9-4483-9bf2-b273055038ce
     flags = struct.unpack("<I", b_data[60:64])[0]
 
@@ -789,7 +822,22 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
     }
 
     encoding = 'utf-16-le' if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_UNICODE != 0 else oem_cp
+    key_exchange_key = None
 
+    # Do the domain and user before the challenge messages so the values are used to derive the session keys.
+    domain_len = struct.unpack("<H", b_data[28:30])[0]
+    if domain_len != 0:
+        domain_offset = struct.unpack("<I", b_data[32:36])[0]
+        domain_end = domain_offset + domain_len
+        msg['DomainName'] = b_data[domain_offset:domain_end].decode(encoding)
+
+    user_len = struct.unpack("<H", b_data[36:38])[0]
+    if user_len != 0:
+        user_offset = struct.unpack("<I", b_data[40:44])[0]
+        user_end = user_offset + user_len
+        msg['UserName'] = b_data[user_offset:user_end].decode(encoding)
+
+    lm_response_data = None
     lm_challenge_len = struct.unpack("<H", b_data[12:14])[0]
     if lm_challenge_len != 0:
         lm_challenge_offset = struct.unpack("<I", b_data[16:20])[0]
@@ -809,6 +857,8 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
             lm_response['LMProofStr'] = to_text(base64.b16encode(lm_response_data[:16])),
             lm_response['ChallengeFromClient'] = to_text(base64.b16encode(lm_response_data[16:])),
 
+        msg['LmChallengeResponse'] = lm_response
+
     nt_challenge_len = struct.unpack("<H", b_data[20:22])[0]
     if nt_challenge_len != 0:
         nt_challenge_offset = struct.unpack("<I", b_data[24:28])[0]
@@ -823,9 +873,29 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
         if len(nt_response_data) == 24:
             nt_response['ResponseType'] = 'NTLMv1'
             nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data)),
+
+            if password and lm_response_data:
+                session_base_key = _ntowfv1(password)
+                key_exchange_key = session_base_key
+
+                if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY != 0:
+                    # TODO: Find a sane way to get the server challenge here.
+                    key_exchange_key = None
+                    #key_exchange_key = hmac.new(session_base_key, server_challenge + lm_response_data[:8],
+                    #                            digestmod=hashlib.md5).digest()
+                elif flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_LM_KEY != 0:
+                    lm_hash = _lmowfv1(password)
+
+                    key_exchange_key = b""
+                    for b_input in [lm_hash[:7], lm_hash[7:8] + b"\xbd\xbd\xbd\xbd\xbd\xbd"]:
+                        des = DES(DES.key56_to_key64(b_input))
+                        key_exchange_key += des.encrypt(lm_response_data[:8])
+                elif flags & NtlmNegotiateFlags.NTLMSSP_REQUEST_NON_NT_SESSION_KEY:
+                    key_exchange_key = _lmowfv1(password)[:8] + b"\x00" * 8
         else:
+            nt_proof_str = nt_response_data[:16]
             nt_response['ResponseType'] = 'NTLMv2'
-            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data[:16])),
+            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_proof_str)),
 
             b_challenge = nt_response_data[16:]
             client_challenge = {
@@ -836,23 +906,16 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
                 'TimeStamp': _filetime_to_datetime(struct.unpack("<Q", b_challenge[8:16])[0]).isoformat(),
                 'ChallengeFromClient': to_text(base64.b16encode(b_challenge[16:24])),
                 'Reserved3': struct.unpack("<I", b_challenge[24:28])[0],
-                'AvPairs': _parse_ntlm_target_info(b_challenge[28:]),
+                'AvPairs': _parse_ntlm_target_info(b_challenge[28:-4]),
+                'Reserved4': struct.unpack("<I", b_challenge[-4:])[0],
             }
             nt_response['ClientChallenge'] = client_challenge
 
+            if password:
+                response_key_nt = _ntowfv2(msg['UserName'], password, msg['DomainName'])
+                key_exchange_key = hmac.new(response_key_nt, nt_proof_str, digestmod=hashlib.md5).digest()
+
         msg['NtChallengeResponse'] = nt_response
-
-    domain_len = struct.unpack("<H", b_data[28:30])[0]
-    if domain_len != 0:
-        domain_offset = struct.unpack("<I", b_data[32:36])[0]
-        domain_end = domain_offset + domain_len
-        msg['DomainName'] = b_data[domain_offset:domain_end].decode(encoding)
-
-    user_len = struct.unpack("<H", b_data[36:38])[0]
-    if user_len != 0:
-        user_offset = struct.unpack("<I", b_data[40:44])[0]
-        user_end = user_offset + user_len
-        msg['UserName'] = b_data[user_offset:user_end].decode(encoding)
 
     workstation_len = struct.unpack("<H", b_data[44:46])[0]
     if workstation_len != 0:
@@ -863,7 +926,19 @@ def _parse_ntlm_authenticate(b_data, oem_cp):
     if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_KEY_EXCH != 0:
         key_len = struct.unpack("<H", b_data[52:54])[0]
         key_offset = struct.unpack("<I", b_data[56:60])[0]
-        msg['EncryptedRandomSessionKey'] = to_text(base64.b16encode(b_data[key_offset:key_offset + key_len]))
+        b_enc_key = b_data[key_offset:key_offset + key_len]
+        msg['EncryptedRandomSessionKey'] = to_text(base64.b16encode(b_enc_key))
+
+        session_key = None
+        if key_exchange_key and NTLM_CRYPTO:
+            arc4 = algorithms.ARC4(key_exchange_key)
+            cipher = Cipher(arc4, mode=None, backend=default_backend())
+            decryptor = cipher.decryptor()
+            session_key = decryptor.update(b_enc_key)
+    else:
+        session_key = key_exchange_key
+
+    msg['SessionKey'] = to_text(base64.b16encode(session_key)) if session_key else 'Failed to derive'
 
     if flags & NtlmNegotiateFlags.NTLMSSP_NEGOTIATE_VERSION != 0:
         msg['Version'] = _parse_ntlm_version(b_data[64:72])
@@ -950,7 +1025,7 @@ def main():
         if re.match(b'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$', b_data):
             b_data = base64.b64decode(b_data.strip())
 
-    token_info = parse_token(b_data, encoding=args.encoding)
+    token_info = parse_token(b_data, secret=args.secret, encoding=args.encoding)
 
     if args.output_format == 'yaml':
         y = yaml.YAML()
@@ -989,6 +1064,12 @@ def parse_args():
                         type=lambda s: s.lower(),
                         help='Set the output format of the token, default is (json).')
 
+    parser.add_argument('--secret', '--password',
+                        dest='secret',
+                        default=None,
+                        help='Optional info that is the secret information for a protocol that can be used to decrypt '
+                             'encrypted fields and/or derive the unique session key in the exchange.')
+
     if argcomplete:
         argcomplete.autocomplete(parser)
 
@@ -1000,16 +1081,17 @@ def parse_args():
     return args
 
 
-def parse_token(b_data, encoding=None):
+def parse_token(b_data, secret=None, encoding=None):
     """
     :param b_data: A byte string of the token to parse. This can be a NTLM or GSSAPI (SPNEGO/Kerberos) token.
+    :param secret: The secret data used to decrypt fields and/or derive session keys.
     :param encoding: The encoding to use for token fields that represent text. This is only used for fields where there
         is no negotiation for the encoding of that particular field. Defaults to 'windows-1252' for NTLM and 'utf-8'
         for Kerberos.
     :return: A dict containing the parsed token data.
     """
     if b_data.startswith(b'NTLMSSP\x00'):
-        token_info = parse_ntlm_message(b_data, oem_cp=encoding)
+        token_info = parse_ntlm_message(b_data, password=secret, oem_cp=encoding)
     else:
         token_info = parse_gssapi_message(b_data, encoding=encoding)
 
@@ -1107,12 +1189,14 @@ def parse_gssapi_message(b_data, encoding=None):
     return msg
 
 
-def parse_ntlm_message(b_data, oem_cp=None):
+def parse_ntlm_message(b_data, password=None, oem_cp=None):
     """
     Parse an NTLM token and return a dict containing the structured values for easier parsing. The values inside the
     'Data' key are dynamic and are based on the MessageType that is being parsed.
 
     :param b_data: A byte string of the NTLM token to parse.
+    :param password: The password for the user that was authenticated, this is used to derive the session key in the
+        exchange.
     :param oem_cp: Override the OEM codepage for NTLM messages that are not Unicode aware.
     :return: A dict containing the parsed NTLM message.
     """
@@ -1122,18 +1206,18 @@ def parse_ntlm_message(b_data, oem_cp=None):
     message_type = struct.unpack("<I", b_data[8:12])[0]
     if message_type == 1:
         message_type_name = "NtlmNegotiate"
-        parse_func = _parse_ntlm_negotiate
+        data = _parse_ntlm_negotiate(b_data, oem_cp)
     elif message_type == 2:
         message_type_name = "NtlmChallenge"
-        parse_func = _parse_ntlm_challenge
+        data = _parse_ntlm_challenge(b_data, oem_cp)
     else:
         message_type_name = "NtlmAuthenticate"
-        parse_func = _parse_ntlm_authenticate
+        data = _parse_ntlm_authenticate(b_data, oem_cp, password)
 
     msg = {
         'MessageType': "%s (%d)" % (message_type_name, message_type),
         'Signature': to_text(b_data[0:8], encoding='ascii'),
-        'Data': parse_func(b_data, oem_cp),
+        'Data': data,
         'RawData': to_text(base64.b16encode(b_data)),
     }
     return msg

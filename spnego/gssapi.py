@@ -104,10 +104,13 @@ class GSSAPI(SecurityContext):
     def supported_protocols(cls):
         protocols = ['kerberos']
 
-        # TODO: with our newly created parser, try and find out why Heimdal on macOS fails with NTLM.
-        # While Heimdal has a valid NTLM implementation it doesn't support encryption when running over SPNEGO. The
-        # only known provider that works right now is gssapi_ntlmssp. We query it's presence by creating a fake user
-        # context and see if it implements GSS_NTLMSSP_RESET_CRYPTO_OID.
+        # While Heimdal on macOS has a valid NTLM implementation it doesn't seem to actually work. Their SPNEGO
+        # implementation also fails when trying to acquire the credentials with the mech not being the Kerberos OID.
+        # This should only support ntlm and negotiate if the gssapi_ntlmssp provider is installed as that is known to
+        # work. We check its presence by creating a fake user context and see if it implements
+        # GSS_NTLMSSP_RESET_CRYPTO_OID. Some recent commits to Heimdal seems to indicate this is now implemented in
+        # there but macOS seems to be quite far behind.
+        # TODO: Build Heimdal on Linux and see if this works.
         try:
             # This can be anything, the first NTLM message doesn't need a valid target name or credential.
             target_name = gssapi.Name('http@server', name_type=gssapi.NameType.hostbased_service)
