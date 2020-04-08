@@ -13,11 +13,16 @@ from gssapi.raw import set_sec_context_option
 from gssapi.raw import inquire_sec_context_by_oid
 from gssapi.raw import ChannelBindings
 
-wrap_iov = None
+HAS_IOV = True
 try:
-    from gssapi.raw import wrap_iov, IOV, IOVBufferType
+    from gssapi.raw import (
+        IOV,
+        IOVBufferType,
+        unwrap_iov,
+        wrap_iov,
+    )
 except ImportError:
-    pass
+    HAS_IOV = False
 
 from spnego._context import (
     SecurityContext,
@@ -73,13 +78,6 @@ class GSSAPI(SecurityContext):
 
     def __init__(self, username, password, hostname, service=None, channel_bindings=None, delegate=None,
                  confidentiality=None, protocol='negotiate'):
-
-        # Negotiate and Kerberos requires wrap_iov for encryption. This function is not present on all systems (macOS)
-        # is one so raise an error if confidentiality is required.
-        # FIXME: CredSSP with Kerberos can work without wrap_iov here
-        if protocol != 'ntlm' and confidentiality and not wrap_iov:
-            raise ValueError("The GSSAPI auth provider does not support confidentiality on this host.")
-
         super(GSSAPI, self).__init__(username, password, hostname, service, channel_bindings, delegate,
                                      confidentiality, protocol)
 
@@ -145,22 +143,24 @@ class GSSAPI(SecurityContext):
             log.debug("GSSAPI gss_init_sec_context() input: %s", to_text(base64.b64encode(in_token)))
 
     @requires_context
-    def wrap(self, data):
-        # NTLM does not support gss_wrap_iov but luckily it has a fixed signature size of 16 bytes so we can use
-        # gss_wrap() and just split it ourselves.
-        if self._context.mech == _NTLM_OID:
-            enc_data = self._context.wrap(data, True).message
-            return enc_data[:16], enc_data[16:]
+    def wrap(self, data, confidential=True):
+        return self._context.wrap(data, confidential).message
 
-        iov = IOV(IOVBufferType.header, data, IOVBufferType.padding, std_layout=False)
-        wrap_iov(self._context, iov, confidential=True)
-        # TODO: investigate padding and whether this is a valid scenario.
-        return iov[0].value, iov[1].value + (iov[2].value or b"")
+    @requires_context
+    def wrap_iov(self, *iov, confidential=True):
+        iov = IOV(*[(IOVBufferType(i[0]), i[1], i[2]) for i in iov], std_layout=False)
+        wrap_iov(self._context, iov, confidential=confidential)
+        return [i.value or b"" for i in iov]
 
     @requires_context
     def unwrap(self, data):
-        # Because we have 1 stream of data we don't care about the placement and can just use gss_unwrap.
         return self._context.unwrap(data)[0]
+
+    @requires_context
+    def unwrap_iov(self, *iov):
+        iov = IOV(*[(IOVBufferType(i[0]), i[1], i[2]) for i in iov], std_layout=False)
+        unwrap_iov(self._context, iov)
+        return [i.value or b"" for i in iov]
 
     @staticmethod
     def convert_channel_bindings(bindings):

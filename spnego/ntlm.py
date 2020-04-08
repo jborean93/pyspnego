@@ -95,8 +95,16 @@ class NTLM(SecurityContext):
         return wrapped_data[:16], wrapped_data[16:]
 
     @requires_context
+    def wrap_iov(self, *iov, confidential=True):
+        raise NotImplementedError("NTLM does not support wrap_iov")
+
+    @requires_context
     def unwrap(self, data):
         return self._context.unwrap(data)
+
+    @requires_context
+    def unwrap_iov(self, *iov):
+        raise NotImplementedError("NTLM does not support unwrap_iov")
 
     @staticmethod
     def convert_channel_bindings(bindings):

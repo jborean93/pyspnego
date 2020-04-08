@@ -71,13 +71,21 @@ class SSPI(SecurityContext):
     @requires_context
     def wrap(self, data):
         enc_data, header = self._context.encrypt(data)
-        return header, enc_data
+        return header + enc_data
+
+    @requires_context
+    def wrap_iov(self, *iov, confidential=True):
+        raise NotImplementedError()
 
     @requires_context
     def unwrap(self, data):
         # TODO: get header from data
         dec_data = self._context.decrypt(data, b"")
         return dec_data
+
+    @requires_context
+    def unwrap_iov(self, *iov):
+        raise NotImplementedError()
 
     def _step(self, token):
         success_codes = [

@@ -107,14 +107,26 @@ class SecurityContext:
 
     @requires_context
     @abstractmethod
-    def wrap(self, data):
+    def wrap(self, data, confidential=True):
         """ Wraps the data similar to EncryptMessage() in SSPI. """
+        pass
+
+    @requires_context
+    @abstractmethod
+    def wrap_iov(self, *iov, confidential=True):
+        """ Wraps the data similar to EncryptMessage() in SSPI but with fine grain control over the input buffers. """
         pass
 
     @requires_context
     @abstractmethod
     def unwrap(self, data):
         """ Unwraps the data similar to DecryptMessage() in SSPI. """
+        pass
+
+    @requires_context
+    @abstractmethod
+    def unwrap_iov(self, *iov):
+        """ Wraps the data similar to DecryptMessage() in SSPI but with fine grain control over the input buffers. """
         pass
 
     @staticmethod
