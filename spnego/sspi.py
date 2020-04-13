@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 class SSPI(SecurityContext):
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=None, protocol='negotiate'):
+                 confidentiality=True, protocol='negotiate'):
         super(SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
                                    protocol)
         domain, username = split_username(self.username)
@@ -35,13 +35,14 @@ class SSPI(SecurityContext):
             sspicon.ISC_REQ_MUTUAL_AUTH
 
         if delegate:
-            flags |= sspi.ISC_REQ_DELEGATE
+            flags |= sspicon.ISC_REQ_DELEGATE
 
         if confidentiality:
-            flags |= sspi.ISC_REQ_CONFIDENTIALITY
+            flags |= sspicon.ISC_REQ_CONFIDENTIALITY
 
         self._context = sspi.ClientAuth(pkg_name=protocol, auth_info=(username, domain, self.password),
                                         targetspn='%s/%s' % (service.upper(), hostname), scflags=flags)
+        self.__seq_num = 0
 
     @classmethod
     def supported_protocols(cls):
@@ -69,9 +70,18 @@ class SSPI(SecurityContext):
         yield None
 
     @requires_context
-    def wrap(self, data):
-        enc_data, header = self._context.encrypt(data)
-        return header + enc_data
+    def wrap(self, data, confidential=True):
+        qop = 0 if confidential else 0x80000001  # SECQOP_WRAP_NO_ENCRYPT
+
+        buffer = win32security.PySecBufferDescType()
+        buffer.append(win32security.PySecBufferType(self._attr_sizes['SecurityTrailer'], sspicon.SECBUFFER_TOKEN))
+        buffer.append(win32security.PySecBufferType(len(data), sspicon.SECBUFFER_DATA))
+        buffer.append(win32security.PySecBufferType(self._attr_sizes['BlockSize'], sspicon.SECBUFFER_PADDING))
+        buffer[1].Buffer = data
+
+        self._context.ctxt.EncryptMessage(qop, buffer, self._seq_num)
+
+        return buffer[0].Buffer + buffer[1].Buffer + buffer[2].Buffer
 
     @requires_context
     def wrap_iov(self, *iov, confidential=True):
@@ -79,13 +89,27 @@ class SSPI(SecurityContext):
 
     @requires_context
     def unwrap(self, data):
-        # TODO: get header from data
-        dec_data = self._context.decrypt(data, b"")
-        return dec_data
+        # Causes a heap corruption error, using a custom build that allows you to pass in a bool to avoid the buffer
+        # being freed.
+        # https://github.com/mhammond/pywin32/issues/1498
+        buffer = win32security.PySecBufferDescType()
+        buffer.append(win32security.PySecBufferType(len(data), sspicon.SECBUFFER_STREAM))
+        buffer.append(win32security.PySecBufferType(0, sspicon.SECBUFFER_DATA, False))
+        buffer[0].Buffer = data
+
+        self._context.ctxt.DecryptMessage(buffer, self._seq_num)
+
+        return buffer[1].Buffer
 
     @requires_context
     def unwrap_iov(self, *iov):
         raise NotImplementedError()
+
+    @property
+    def _seq_num(self):
+        num = self.__seq_num
+        self.__seq_num += 1
+        return num
 
     def _step(self, token):
         success_codes = [
@@ -120,5 +144,7 @@ class SSPI(SecurityContext):
                     break
 
             raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s" % (rc, rc_name, format(rc, '08X')))
+        elif rc == sspicon.SEC_E_OK:
+            self._attr_sizes = self._context.ctxt.QueryContextAttributes(sspicon.SECPKG_ATTR_SIZES)
 
         return out_buffer[0].Buffer

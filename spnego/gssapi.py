@@ -77,7 +77,7 @@ def _get_credential(mech, username=None, password=None):
 class GSSAPI(SecurityContext):
 
     def __init__(self, username, password, hostname, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=None, protocol='negotiate'):
+                 confidentiality=True, protocol='negotiate'):
         super(GSSAPI, self).__init__(username, password, hostname, service, channel_bindings, delegate,
                                      confidentiality, protocol)
 
