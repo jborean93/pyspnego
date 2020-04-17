@@ -16,16 +16,39 @@ cdef extern from "Windows.h":
     ctypedef LPWSTR LPTSTR;
     ctypedef LPCWSTR LPCTSTR
 
-    # Structs
+    ctypedef void *PVOID
+    ctypedef PVOID HANDLE
 
     # Defs
     cdef UINT CP_UTF8
+    cdef HANDLE INVALID_HANDLE_VALUE
+
+    # Structs
+    struct SECURITY_ATTRIBUTES:
+        pass
+    ctypedef SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES
 
     # Functions
+    BOOL CloseHandle(
+        HANDLE hObject
+    )
+
+    HANDLE CreateFileW(
+        LPCWSTR lpFileName,
+        DWORD dwDesiredAccess,
+        DWORD dwShareMode,
+        LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+        DWORD dwCreationDisposition,
+        DWORD dwFlagsAndAttributes,
+        HANDLE hTemplateFile
+    )
+
     DWORD GetConsoleTitle(
         LPTSTR lpConsoleTitle,
         DWORD nSize
     )
+
+    DWORD GetLastError()
 
     int MultiByteToWideChar(
         UINT CodePage,

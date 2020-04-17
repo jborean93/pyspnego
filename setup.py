@@ -32,6 +32,18 @@ extensions = [
         libraries=['Kernel32'],
         define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
     ),
+    Extension(
+        name='spnego.sspi.text',
+        sources=['spnego/sspi/text.pyx'],
+        libraries=['Kernel32'],
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+    ),
+    Extension(
+        name='spnego.sspi.fileapi',
+        sources=['spnego/sspi/fileapi.pyx'],
+        libraries=['Kernel32'],
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+    ),
 ]
 
 setup(
