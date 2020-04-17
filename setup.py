@@ -5,20 +5,43 @@
 
 import os.path
 
-from setuptools import setup
+from setuptools import Extension, setup
+from Cython.Build import cythonize
 
 
-with open(os.path.join(os.path.dirname(__file__), 'README.md'), encoding='utf-8') as fd:
-    long_description = fd.read()
+with open(os.path.join(os.path.dirname(__file__), 'README.md'), mode='rb') as fd:
+    long_description = fd.read().decode('utf-8')
 
+
+extensions = [
+    Extension(
+        name='spnego.sspi.console',
+        sources=['spnego/sspi/console.pyx'],
+        libraries=['Kernel32'],
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+    ),
+    Extension(
+        name='spnego.sspi.secur32',
+        sources=['spnego/sspi/secur32.pyx'],
+        libraries=['Secur32'],
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+    ),
+    Extension(
+        name='spnego.sspi.text',
+        sources=['spnego/sspi/text.pyx'],
+        libraries=['Kernel32'],
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+    ),
+]
 
 setup(
     name='pyspnego',
     version='0.0.1.dev0',
-    packages=['spnego'],
+    packages=['spnego', 'spnego.sspi'],
     scripts=[
         'bin/pyspnego-parse',
     ],
+    ext_modules=cythonize(extensions, language_level=3),
     include_package_data=True,
     install_requires=[
         'ntlm-auth>=1.2.0',

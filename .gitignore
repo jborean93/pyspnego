@@ -1,8 +1,3 @@
-# pypsrp testing files
-cert.pem
-cert_key.pem
-
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -118,3 +113,7 @@ ENV/
 
 # Vagrant
 .vagrant/
+
+# Cython
+.c
+.pyd
