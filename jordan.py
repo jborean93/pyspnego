@@ -101,4 +101,12 @@ def gssapi_auth(server, username, password):
 
 
 # ntlm_auth(server, username, password)
-gssapi_auth(server, username, password)
+# gssapi_auth(server, username, password)
+
+from spnego.sspi.sspi import acquire_credentials_handle, SecBuffer, SecBufferDesc
+
+a = acquire_credentials_handle(None, u"NTLM")
+b = SecBuffer(1, b"abc")
+c = SecBufferDesc(["a"])
+
+z = ''

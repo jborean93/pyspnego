@@ -19,9 +19,10 @@ cdef class WideChar:
     def __cinit__(WideChar self, size_t length):
         self._length = length
 
-        self.buffer = <LPWSTR>PyMem_Malloc(length * sizeof(WCHAR))
-        if not self.buffer:
-            raise MemoryError()
+        if length:
+            self.buffer = <LPWSTR>PyMem_Malloc(length * sizeof(WCHAR))
+            if not self.buffer:
+                raise MemoryError("Cannot malloc for WideChar")
 
     def __len__(WideChar self):
         return self._length
@@ -35,6 +36,9 @@ cdef class WideChar:
 
     @staticmethod
     cdef WideChar from_text(unicode text):
+        if not text:
+            return WideChar(0)
+
         b_text = text.encode('utf-8', 'strict')
 
         # Get the expected length of the text as a wide_char array and allocate it

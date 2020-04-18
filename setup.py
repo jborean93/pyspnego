@@ -18,31 +18,31 @@ extensions = [
         name='spnego.sspi.console',
         sources=['spnego/sspi/console.pyx'],
         libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
     ),
     Extension(
-        name='spnego.sspi.secur32',
-        sources=['spnego/sspi/secur32.pyx'],
+        name='spnego.sspi.sspi',
+        sources=['spnego/sspi/sspi.pyx'],
         libraries=['Secur32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1'), ('SECURITY_WIN32', '1')],
     ),
     Extension(
         name='spnego.sspi.text',
         sources=['spnego/sspi/text.pyx'],
         libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
     ),
     Extension(
         name='spnego.sspi.text',
         sources=['spnego/sspi/text.pyx'],
         libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
     ),
     Extension(
         name='spnego.sspi.fileapi',
         sources=['spnego/sspi/fileapi.pyx'],
         libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')]
+        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
     ),
 ]
 

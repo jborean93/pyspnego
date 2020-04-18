@@ -6,6 +6,7 @@ from libc.stddef cimport wchar_t
 
 cdef extern from "Windows.h":
     # Types
+    ctypedef long LONG
     ctypedef unsigned long UINT
     ctypedef unsigned long DWORD
     ctypedef int BOOL
@@ -53,7 +54,7 @@ cdef extern from "Windows.h":
     int MultiByteToWideChar(
         UINT CodePage,
         DWORD dwFlags,
-        char* lpMultiByteStr,
+        char *lpMultiByteStr,
         int cbMultiByte,
         LPWSTR lpWideCharStr,
         int cchWideChar
