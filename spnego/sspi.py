@@ -6,14 +6,27 @@ __metaclass__ = type
 
 import base64
 import logging
-import sspi
-import sspicon
-import win32security
 
 from spnego._context import (
     SecurityContext,
     requires_context,
     split_username,
+)
+
+from spnego._sspi_raw import (
+    acquire_credentials_handle,
+    ClientContextReq,
+    decrypt_message,
+    encrypt_message,
+    initialize_security_context,
+    query_context_attributes,
+    SecBuffer,
+    SecBufferDesc,
+    SecBufferType,
+    SecPkgAttr,
+    SecStatus,
+    SecurityContext as SSPISecContext,
+    WinNTAuthIdentity,
 )
 
 from spnego._text import (
@@ -31,17 +44,25 @@ class SSPI(SecurityContext):
                                    protocol)
         domain, username = split_username(self.username)
 
-        flags = sspicon.ISC_REQ_INTEGRITY | sspicon.ISC_REQ_REPLAY_DETECT | sspicon.ISC_REQ_SEQUENCE_DETECT | \
-            sspicon.ISC_REQ_MUTUAL_AUTH
+        self._target_spn = u'%s/%s' % (service.upper(), hostname)
+
+        self._flags = ClientContextReq.integrity | ClientContextReq.replay_detect | \
+            ClientContextReq.sequence_detect | ClientContextReq.mutual_auth
 
         if delegate:
-            flags |= sspicon.ISC_REQ_DELEGATE
+            self._flags |= ClientContextReq.delegate
 
         if confidentiality:
-            flags |= sspicon.ISC_REQ_CONFIDENTIALITY
+            self._flags |= ClientContextReq.confidentiality
 
-        self._context = sspi.ClientAuth(pkg_name=protocol, auth_info=(username, domain, self.password),
-                                        targetspn='%s/%s' % (service.upper(), hostname), scflags=flags)
+        auth_data = None
+        if username:
+            auth_data = WinNTAuthIdentity(username, domain, password)
+
+        self._attr_sizes = None
+        self._completed = False
+        self._credential = acquire_credentials_handle(None, protocol, auth_data=auth_data)
+        self._context = SSPISecContext()
         self.__seq_num = 0
 
     @classmethod
@@ -50,12 +71,12 @@ class SSPI(SecurityContext):
 
     @property
     def complete(self):
-        return self._context.authenticated
+        return self._completed
 
     @property
     @requires_context
     def session_key(self):
-        return self._context.ctxt.QueryContextAttributes(sspicon.SECPKG_ATTR_SESSION_KEY)
+        return query_context_attributes(self._context, SecPkgAttr.session_key)
 
     def step(self):
         in_token = None
@@ -73,15 +94,14 @@ class SSPI(SecurityContext):
     def wrap(self, data, confidential=True):
         qop = 0 if confidential else 0x80000001  # SECQOP_WRAP_NO_ENCRYPT
 
-        buffer = win32security.PySecBufferDescType()
-        buffer.append(win32security.PySecBufferType(self._attr_sizes['SecurityTrailer'], sspicon.SECBUFFER_TOKEN))
-        buffer.append(win32security.PySecBufferType(len(data), sspicon.SECBUFFER_DATA))
-        buffer.append(win32security.PySecBufferType(self._attr_sizes['BlockSize'], sspicon.SECBUFFER_PADDING))
-        buffer[1].Buffer = data
+        buffer = SecBufferDesc([
+            SecBuffer(SecBufferType.token, b"\x00" * self._attr_sizes.security_trailer),
+            SecBuffer(SecBufferType.data, data),
+            SecBuffer(SecBufferType.padding, b"\x00" * self._attr_sizes.block_size),
+        ])
+        encrypt_message(self._context, buffer, seq_no=self._seq_num, qop=qop)
 
-        self._context.ctxt.EncryptMessage(qop, buffer, self._seq_num)
-
-        return buffer[0].Buffer + buffer[1].Buffer + buffer[2].Buffer
+        return buffer[0].buffer, buffer[1].buffer, buffer[2].buffer
 
     @requires_context
     def wrap_iov(self, *iov, confidential=True):
@@ -89,17 +109,13 @@ class SSPI(SecurityContext):
 
     @requires_context
     def unwrap(self, data):
-        # Causes a heap corruption error, using a custom build that allows you to pass in a bool to avoid the buffer
-        # being freed.
-        # https://github.com/mhammond/pywin32/issues/1498
-        buffer = win32security.PySecBufferDescType()
-        buffer.append(win32security.PySecBufferType(len(data), sspicon.SECBUFFER_STREAM))
-        buffer.append(win32security.PySecBufferType(0, sspicon.SECBUFFER_DATA, False))
-        buffer[0].Buffer = data
+        buffer = SecBufferDesc([
+            SecBuffer(SecBufferType.stream, data),
+            SecBuffer(SecBufferType.data, alloc_type='pointer'),
+        ])
+        decrypt_message(self._context, buffer, seq_no=self._seq_num)
 
-        self._context.ctxt.DecryptMessage(buffer, self._seq_num)
-
-        return buffer[1].Buffer
+        return buffer[1].buffer
 
     @requires_context
     def unwrap_iov(self, *iov):
@@ -112,39 +128,31 @@ class SSPI(SecurityContext):
         return num
 
     def _step(self, token):
-        success_codes = [
-            sspicon.SEC_E_OK,
-            sspicon.SEC_I_CONTINUE_NEEDED
-        ]
-
         sec_tokens = []
         if token is not None:
-            sec_token = win32security.PySecBufferType(self._context.pkg_info['MaxToken'], sspicon.SECBUFFER_TOKEN)
-            sec_token.Buffer = token
-            sec_tokens.append(sec_token)
+            sec_tokens.append(SecBuffer(SecBufferType.token, token))
         if self.channel_bindings:
-            sec_token = win32security.PySecBufferType(len(self.channel_bindings), sspicon.SECBUFFER_CHANNEL_BINDINGS)
-            sec_token.Buffer = self.channel_bindings
-            sec_tokens.append(sec_token)
+            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self.channel_bindings))
+        sec_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
 
-        if len(sec_tokens) > 0:
-            sec_buffer = win32security.PySecBufferDescType()
-            for sec_token in sec_tokens:
-                sec_buffer.append(sec_token)
-        else:
-            sec_buffer = None
+        out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token, alloc_type='system')])
 
-        rc, out_buffer = self._context.authorize(sec_buffer_in=sec_buffer)
-        if rc not in success_codes:
+        try:
+            res = initialize_security_context(self._credential, self._context, self._target_spn, self._flags,
+                                              input_buffer=sec_buffer, output_buffer=out_buffer)
+        except WindowsError as err:
+            res = err.winerror
             rc_name = "Unknown Error"
-            for name, value in vars(sspicon).items():
-                if isinstance(value, int) and name.startswith("SEC_") and \
-                        value == rc:
+            for name, value in vars(SecStatus).items():
+                if isinstance(value, int) and name.startswith("SEC_") and value == res:
                     rc_name = name
                     break
 
-            raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s" % (rc, rc_name, format(rc, '08X')))
-        elif rc == sspicon.SEC_E_OK:
-            self._attr_sizes = self._context.ctxt.QueryContextAttributes(sspicon.SECPKG_ATTR_SIZES)
+            raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s - %s"
+                               % (res, rc_name, format(res & 0xFFFFFFFF, '08X'), err.strerror))
 
-        return out_buffer[0].Buffer
+        if res == SecStatus.SEC_E_OK:
+            self._completed = True
+            self._attr_sizes = query_context_attributes(self._context, SecPkgAttr.sizes)
+
+        return out_buffer[0].buffer

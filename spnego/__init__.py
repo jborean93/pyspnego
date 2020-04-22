@@ -19,7 +19,7 @@ except ImportError:
 
 SSPI = None
 try:
-    from spnego.sspi import SSPI
+    from spnego._sspi_raw import SSPI
 except ImportError:
     pass
 

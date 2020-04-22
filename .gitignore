@@ -115,5 +115,5 @@ ENV/
 .vagrant/
 
 # Cython
-*.c
-*.pyd
+.c
+.pyd
