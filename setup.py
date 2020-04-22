@@ -15,32 +15,14 @@ with open(os.path.join(os.path.dirname(__file__), 'README.md'), mode='rb') as fd
 
 extensions = [
     Extension(
-        name='spnego.sspi.console',
-        sources=['spnego/sspi/console.pyx'],
-        libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
-    ),
-    Extension(
-        name='spnego.sspi.sspi',
-        sources=['spnego/sspi/sspi.pyx'],
+        name='spnego._sspi_raw.sspi',
+        sources=['spnego/_sspi_raw/sspi.pyx'],
         libraries=['Secur32'],
         define_macros=[('UNICODE', '1'), ('_UNICODE', '1'), ('SECURITY_WIN32', '1')],
     ),
     Extension(
-        name='spnego.sspi.text',
-        sources=['spnego/sspi/text.pyx'],
-        libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
-    ),
-    Extension(
-        name='spnego.sspi.text',
-        sources=['spnego/sspi/text.pyx'],
-        libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
-    ),
-    Extension(
-        name='spnego.sspi.fileapi',
-        sources=['spnego/sspi/fileapi.pyx'],
+        name='spnego._sspi_raw.text',
+        sources=['spnego/_sspi_raw/text.pyx'],
         libraries=['Kernel32'],
         define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
     ),
@@ -49,7 +31,7 @@ extensions = [
 setup(
     name='pyspnego',
     version='0.0.1.dev0',
-    packages=['spnego', 'spnego.sspi'],
+    packages=['spnego', 'spnego._sspi_raw'],
     scripts=[
         'bin/pyspnego-parse',
     ],
