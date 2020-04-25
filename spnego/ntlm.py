@@ -28,12 +28,13 @@ from spnego._text import (
 log = logging.getLogger(__name__)
 
 
-class NTLM(SecurityContext):
+class NTLMClient(SecurityContext):
 
     def __init__(self, username, password, channel_bindings=None, protocol='ntlm', workstation=None,
                  ntlm_compatibility=3):
         """
-        Generates an NTLM backed context through either raw NTLM or SPNEGO tokens.
+        Generates an NTLM backed context through either raw NTLM or SPNEGO tokens. This provider only supports client
+        side authentication.
 
         :param username: The username to authenticate with.
         :param password: The password for the user.
@@ -49,7 +50,7 @@ class NTLM(SecurityContext):
             2: NTLMv1, and NTLMv1 with Extended Session Security
             3: NTLMv2 Only
         """
-        super(NTLM, self).__init__(username, password, None, None, channel_bindings, None, None, protocol)
+        super(NTLMClient, self).__init__(username, password, None, None, channel_bindings, None, None, protocol)
         domain, username = split_username(self.username)
 
         if username and not password:
@@ -75,28 +76,36 @@ class NTLM(SecurityContext):
         # (>=1.4.0).
         return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
 
-    def step(self):
+    def step(self, in_token=None):
         # TODO: wrap/unwrap each token in an SPNEGO structure when self.provider == 'negotiate'.
-        msg1 = self._context.step()
-        log.debug("NTLM Negotiate: %s", to_text(base64.b64encode(msg1)))
+        if not in_token:
+            out_token = self._context.step()
+            log.debug("NTLM Negotiate: %s", to_text(base64.b64encode(out_token)))
+        else:
+            log.debug("NTLM Challenge: %s", to_text(base64.b64encode(in_token)))
+            out_token = self._context.step(in_token)
+            log.debug("NTLM Authenticate: %s", to_text(base64.b64encode(out_token)))
 
-        msg2 = yield msg1
-        log.debug("NTLM Challenge: %s", to_text(base64.b64encode(msg2)))
-
-        msg3 = self._context.step(msg2)
-        log.debug("NTLM Authenticate: %s", to_text(base64.b64encode(msg3)))
-
-        yield msg3
+        return out_token
 
     @requires_context
-    def wrap(self, data):
+    def wrap(self, data, confidential=True):
+        if not confidential:
+            raise NotImplementedError("NTLMClient does not support non-confidential wrapping")
+
         wrapped_data = self._context.wrap(data)
-        # NTLM always has a signature size of 16, so we can just hardcode this.
-        return wrapped_data[:16], wrapped_data[16:]
+
+        return wrapped_data
 
     @requires_context
     def wrap_iov(self, *iov, confidential=True):
-        raise NotImplementedError("NTLM does not support wrap_iov")
+        raise NotImplementedError("NTLMClient does not support IOV wrapping")
+
+    @requires_context
+    def wrap_winrm(self, data, confidential=True):
+        wrapped_data = self.wrap(data, confidential=confidential)
+        # NTLM always has a signature size of 16 with no padding, so we can just hardcode this.
+        return wrapped_data[:16], wrapped_data[16:], b""
 
     @requires_context
     def unwrap(self, data):
@@ -104,7 +113,14 @@ class NTLM(SecurityContext):
 
     @requires_context
     def unwrap_iov(self, *iov):
-        raise NotImplementedError("NTLM does not support unwrap_iov")
+        raise NotImplementedError("NTLMClient does not support IOV wrapping")
+
+    @requires_context
+    def unwrap_winrm(self, header, data):
+        return self.unwrap(header + data)
+
+    def iov_buffer(self, buffer_type, data):
+        raise NotImplementedError("NTLMClient does not support IOV wrapping")
 
     @staticmethod
     def convert_channel_bindings(bindings):

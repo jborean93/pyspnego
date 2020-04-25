@@ -9,17 +9,17 @@ import logging
 import logging.config
 import os
 
-from spnego.ntlm import NTLM
+from spnego.ntlm import NTLMClient
 
 GSSAPI = None
 try:
-    from spnego.gssapi import GSSAPI
+    from spnego.gssapi import GSSAPIClient, GSSAPIServer
 except ImportError:
     pass
 
 SSPI = None
 try:
-    from spnego._sspi_raw import SSPI
+    from spnego.sspi import SSPIClient, SSPIServer
 except ImportError:
     pass
 

@@ -14,8 +14,10 @@ from spnego._context import (
 )
 
 from spnego._sspi_raw import (
+    accept_security_context,
     acquire_credentials_handle,
     ClientContextReq,
+    CredentialUse,
     decrypt_message,
     encrypt_message,
     initialize_security_context,
@@ -36,14 +38,14 @@ from spnego._text import (
 log = logging.getLogger(__name__)
 
 
-class SSPI(SecurityContext):
+class _SSPI(SecurityContext):
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=True, protocol='negotiate'):
-        super(SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
-                                   protocol)
-        domain, username = split_username(self.username)
+                 confidentiality=True, protocol='negotiate', is_client=True):
+        super(_SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
+                                    protocol)
 
+        self._is_client = is_client
         self._target_spn = u'%s/%s' % (service.upper(), hostname)
 
         self._flags = ClientContextReq.integrity | ClientContextReq.replay_detect | \
@@ -55,13 +57,9 @@ class SSPI(SecurityContext):
         if confidentiality:
             self._flags |= ClientContextReq.confidentiality
 
-        auth_data = None
-        if username:
-            auth_data = WinNTAuthIdentity(username, domain, password)
-
         self._attr_sizes = None
         self._completed = False
-        self._credential = acquire_credentials_handle(None, protocol, auth_data=auth_data)
+        self._credential = None
         self._context = SSPISecContext()
         self.__seq_num = 0
 
@@ -78,68 +76,22 @@ class SSPI(SecurityContext):
     def session_key(self):
         return query_context_attributes(self._context, SecPkgAttr.session_key)
 
-    def step(self):
-        in_token = None
-        while not self.complete:
-            out_token = self._step(in_token)
-            log.debug("InitializeSecurityContext output: %s", to_text(base64.b64encode(out_token)))
+    def step(self, in_token=None):
+        method_name = 'InitializeSecurityContext()' if self._is_client else 'AcceptSecurityContext()'
 
-            in_token = yield out_token if out_token else None
-            log.debug("InitializeSecurityContext input: %s", to_text(base64.b64encode(in_token)))
-
-        # FIXME: requests-credssp has this.
-        yield None
-
-    @requires_context
-    def wrap(self, data, confidential=True):
-        qop = 0 if confidential else 0x80000001  # SECQOP_WRAP_NO_ENCRYPT
-
-        buffer = SecBufferDesc([
-            SecBuffer(SecBufferType.token, b"\x00" * self._attr_sizes.security_trailer),
-            SecBuffer(SecBufferType.data, data),
-            SecBuffer(SecBufferType.padding, b"\x00" * self._attr_sizes.block_size),
-        ])
-        encrypt_message(self._context, buffer, seq_no=self._seq_num, qop=qop)
-
-        return buffer[0].buffer, buffer[1].buffer, buffer[2].buffer
-
-    @requires_context
-    def wrap_iov(self, *iov, confidential=True):
-        raise NotImplementedError()
-
-    @requires_context
-    def unwrap(self, data):
-        buffer = SecBufferDesc([
-            SecBuffer(SecBufferType.stream, data),
-            SecBuffer(SecBufferType.data, alloc_type='pointer'),
-        ])
-        decrypt_message(self._context, buffer, seq_no=self._seq_num)
-
-        return buffer[1].buffer
-
-    @requires_context
-    def unwrap_iov(self, *iov):
-        raise NotImplementedError()
-
-    @property
-    def _seq_num(self):
-        num = self.__seq_num
-        self.__seq_num += 1
-        return num
-
-    def _step(self, token):
         sec_tokens = []
-        if token is not None:
-            sec_tokens.append(SecBuffer(SecBufferType.token, token))
+        if in_token:
+            log.debug("%s input: %s", method_name, to_text(base64.b64encode(in_token)))
+            sec_tokens.append(SecBuffer(SecBufferType.token, in_token))
+
         if self.channel_bindings:
             sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self.channel_bindings))
-        sec_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
 
+        in_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
         out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token, alloc_type='system')])
 
         try:
-            res = initialize_security_context(self._credential, self._context, self._target_spn, self._flags,
-                                              input_buffer=sec_buffer, output_buffer=out_buffer)
+            res = self._step(input_buffer=in_buffer, output_buffer=out_buffer)
         except WindowsError as err:
             res = err.winerror
             rc_name = "Unknown Error"
@@ -148,11 +100,103 @@ class SSPI(SecurityContext):
                     rc_name = name
                     break
 
-            raise RuntimeError("InitializeSecurityContext failed: (%d) %s 0x%s - %s"
-                               % (res, rc_name, format(res & 0xFFFFFFFF, '08X'), err.strerror))
+            raise RuntimeError("%s failed: (%d) %s 0x%s - %s" % (method_name, res, rc_name,
+                                                                 format(res & 0xFFFFFFFF, '08X'), err.strerror))
 
         if res == SecStatus.SEC_E_OK:
             self._completed = True
             self._attr_sizes = query_context_attributes(self._context, SecPkgAttr.sizes)
 
-        return out_buffer[0].buffer
+        out_token = out_buffer[0].buffer
+        log.debug("%s output: %s", method_name, to_text(base64.b64encode(out_token)))
+
+        return out_token
+
+    def _step(self, input_buffer, output_buffer):
+        raise NotImplementedError()
+
+    @requires_context
+    def wrap(self, data, confidential=True):
+        return b"".join(self.wrap_winrm(data, confidential=confidential))
+
+    @requires_context
+    def wrap_iov(self, iov, confidential=True):
+        qop = 0 if confidential else 0x80000001  # SECQOP_WRAP_NO_ENCRYPT
+
+        buffer = SecBufferDesc(self._build_iov(iov))
+        encrypt_message(self._context, buffer, seq_no=self._seq_num, qop=qop)
+
+        return tuple([b.buffer for b in buffer])
+
+    @requires_context
+    def unwrap(self, data):
+        iov = [
+            (SecBufferType.stream, data),
+            SecBufferType.data,
+        ]
+        return self.unwrap_iov(iov)[1]
+
+    @requires_context
+    def unwrap_iov(self, iov):
+        buffer = SecBufferDesc(self._build_iov(iov))
+        decrypt_message(self._context, buffer, seq_no=self._seq_num)
+
+        return tuple([b.buffer for b in buffer])
+
+    @property
+    def _seq_num(self):
+        num = self.__seq_num
+        self.__seq_num += 1
+        return num
+
+    def iov_buffer(self, buffer_type, data):
+        buffer_kwargs = {}
+        if data:
+            buffer_kwargs['buffer'] = data
+        else:
+            if buffer_type in [SecBufferType.token, SecBufferType.stream_header]:
+                buffer_kwargs['length'] = self._attr_sizes.security_trailer
+            elif buffer_type == SecBufferType.padding:
+                buffer_kwargs['length'] = self._attr_sizes.block_size
+            else:
+                buffer_kwargs['alloc_type'] = 'pointer'
+
+        return SecBuffer(buffer_type, **buffer_kwargs)
+
+
+class SSPIClient(_SSPI):
+
+    def __init__(self, username, password, hostname, service='HOST', channel_bindings=None, delegate=None,
+                 confidentiality=True, protocol='negotiate'):
+        super(SSPIClient, self).__init__(username, password, hostname, service, channel_bindings, delegate,
+                                         confidentiality, protocol)
+
+        domain, username = split_username(self.username)
+        auth_data = None
+        if username:
+            auth_data = WinNTAuthIdentity(to_text(username, nonstring='passthru'),
+                                          to_text(domain, nonstring='passthru'),
+                                          to_text(password, nonstring='passthru'))
+
+        self._credential = acquire_credentials_handle(None, to_text(protocol, nonstring='passthru'),
+                                                      auth_data=auth_data, credential_use=CredentialUse.outbound)
+
+    def _step(self, input_buffer, output_buffer):
+        return initialize_security_context(self._credential, self._context, self._target_spn, context_req=self._flags,
+                                           input_buffer=input_buffer, output_buffer=output_buffer)
+
+
+class SSPIServer(_SSPI):
+
+    def __init__(self, hostname, service='HOST', channel_bindings=None, delegate=None, confidentiality=True,
+                 protocol='negotiate'):
+        super(SSPIServer, self).__init__(None, None, hostname, service, channel_bindings, delegate, confidentiality,
+                                         protocol, is_client=False)
+
+        self._is_client = False
+        self._credential = acquire_credentials_handle(self._target_spn, to_text(protocol, nonstring='passthru'),
+                                                      credential_use=CredentialUse.inbound)
+
+    def _step(self, input_buffer, output_buffer):
+        return accept_security_context(self._credential, self._context, input_buffer, context_req=self._flags,
+                                       output_buffer=output_buffer)

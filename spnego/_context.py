@@ -9,6 +9,10 @@ from abc import (
     abstractmethod,
 )
 
+from spnego.iov import (
+    BufferType,
+)
+
 
 def split_username(username):
     if username is None:
@@ -101,7 +105,7 @@ class SecurityContext:
         pass
 
     @abstractmethod
-    def step(self):
+    def step(self, in_token=None):
         """ A generator that yields authentication tokens and processes input tokens from the server. """
         pass
 
@@ -113,9 +117,18 @@ class SecurityContext:
 
     @requires_context
     @abstractmethod
-    def wrap_iov(self, *iov, confidential=True):
+    def wrap_iov(self, iov, confidential=True):
         """ Wraps the data similar to EncryptMessage() in SSPI but with fine grain control over the input buffers. """
         pass
+
+    @requires_context
+    def wrap_winrm(self, data, confidential=True):
+        """ Wraps the data for use with WinRM. """
+        return self.wrap_iov([
+            BufferType.header,
+            data,
+            BufferType.padding,
+        ], confidential=confidential)
 
     @requires_context
     @abstractmethod
@@ -125,9 +138,44 @@ class SecurityContext:
 
     @requires_context
     @abstractmethod
-    def unwrap_iov(self, *iov):
+    def unwrap_iov(self, iov):
         """ Wraps the data similar to DecryptMessage() in SSPI but with fine grain control over the input buffers. """
         pass
+
+    @requires_context
+    def unwrap_winrm(self, header, data):
+        """ Unwraps the data for use with WinRM. """
+        return self.unwrap_iov([
+            (2, header),
+            data,
+            1,
+        ])[1]
+
+    @abstractmethod
+    def iov_buffer(self, buffer_type, data):
+        """ Create a provider specific IOVBuffer that is used to build the IOV collection for wrapping/unwrapping. """
+        pass
+
+    def _build_iov(self, iov):
+        buffers = []
+        for i in iov:
+            if isinstance(i, tuple):
+                if len(i) != 2:
+                    raise ValueError("IOV buffer tuple must contain 2 entries")
+
+                buff_type, data = i
+            elif isinstance(i, bytes):
+                buff_type = 1
+                data = i
+            elif isinstance(i, int):
+                buff_type = i
+                data = None
+            else:
+                raise ValueError("IOV Buffer entry must be a tuple, bytes, or int")
+
+            buffers.append(self.iov_buffer(buff_type, data))
+
+        return buffers
 
     @staticmethod
     def convert_channel_bindings(bindings):

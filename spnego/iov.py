@@ -7,21 +7,16 @@ __metaclass__ = type
 from collections import namedtuple
 
 
-class IOVBufferType:
-    GSS_IOV_BUFFER_TYPE_EMPTY = 0
-    GSS_IOV_BUFFER_TYPE_DATA = 1
-    GSS_IOV_BUFFER_TYPE_HEADER = 2
-    GSS_IOV_BUFFER_TYPE_MECH_PARAMS = 3
-    GSS_IOV_BUFFER_TYPE_TRAILER = 7
-    GSS_IOV_BUFFER_TYPE_PADDING = 9
-    GSS_IOV_BUFFER_TYPE_STREAM = 10
-    GSS_IOV_BUFFER_TYPE_SIGN_ONLY = 11
+class BufferType:
+    empty = 0  # SECBUFFER_EMPTY | GSS_IOV_BUFFER_TYPE_EMPTY
+    data = 1  # SECBUFFER_DATA | GSS_IOV_BUFFER_TYPE_DATA
+    header = 2  # SECBUFFER_TOKEN | GSS_IOV_BUFFER_TYPE_HEADER
+    pkg_params = 3  # SECBUFFER_PKG_PARAMS | GSS_IOV_BUFFER_TYPE_MECH_PARAMS
+    trailer = 7  # SECBUFFER_STREAM_HEADER | GSS_IOV_BUFFER_TYPE_TRAILER
+    padding = 9  # SECBUFFER_PADDING | GSS_IOV_BUFFER_TYPE_PADDING
+    stream = 10  # SECBUFFER_STREAM | GSS_IOV_BUFFER_TYPE_STREAM
+    sign_only = 11  # SECBUFFER_MECHLIST | GSS_IOV_BUFFER_TYPE_SIGN_ONLY
+    mic_token = 12  # SECBUFFER_MECHLIST_SIGNATURE | GSS_IOV_BUFFER_TYPE_MIC_TOKEN
 
 
-IOVBuffer = namedtuple('IOVBuffer', ['type', 'allocate', 'data'])
-
-
-class IOV:
-
-    def __init__(self, *args):
-        a = ''
+IOVBuffer = namedtuple('IOVBuffer', ['type', 'data'])

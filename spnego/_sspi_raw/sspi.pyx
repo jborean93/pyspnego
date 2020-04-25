@@ -434,11 +434,15 @@ cdef class SecBufferDesc:
 
 cdef class SecBuffer:
 
-    def __cinit__(SecBuffer self, unsigned long buffer_type, bytes buffer=None, str alloc_type='managed'):
+    def __cinit__(SecBuffer self, unsigned long buffer_type, bytes buffer=None, unsigned long length=0,
+        str alloc_type='managed'):
+
         if alloc_type not in ['managed', 'system', 'pointer']:
             raise ValueError("alloc_type must be managed, system, or pointer")
         elif buffer and alloc_type != 'managed':
             raise ValueError("Can only set a buffer when alloc_type='managed'")
+        elif buffer and length:
+            raise ValueError("Only an empty buffer can be created with length")
 
         self.alloc_type = alloc_type
         self._is_owner = 1
@@ -450,6 +454,8 @@ cdef class SecBuffer:
         self.buffer_type = buffer_type
         if buffer:
             self.buffer = buffer
+        elif length:
+            self._alloc_buffer(length)
 
     cdef replace_ptr(SecBuffer self, PSecBuffer ptr):
         free(self.c_value)
@@ -473,18 +479,21 @@ cdef class SecBuffer:
 
     @buffer.setter
     def buffer(SecBuffer self, bytes value):
+        value_len = len(value)
+        self._alloc_buffer(value_len)
+        memcpy(self.c_value.pvBuffer, <char *>value, value_len)
+
+    def _alloc_buffer(SecBuffer self, unsigned long length):
         if self.alloc_type != 'managed':
-            raise ValueError("Cannot set a buffer value for a alloc_type='managed' SecBuffer")
+            raise ValueError("Can only alloc a buffer when alloc_type='managed'")
 
         if self.c_value.pvBuffer:
             free(self.c_value.pvBuffer)
 
-        self.c_value.pvBuffer = malloc(len(value))
+        self.c_value.pvBuffer = malloc(length)
         if not self.c_value.pvBuffer:
             raise MemoryError("Cannot malloc SecBuffer buffer")
-
-        memcpy(self.c_value.pvBuffer, <char *>value, len(value))
-        self.c_value.cbBuffer = <unsigned long>len(value)
+        self.c_value.cbBuffer = length
 
     def __dealloc__(SecBuffer self):
         if self.c_value != NULL:
