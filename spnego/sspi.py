@@ -88,7 +88,7 @@ class _SSPI(SecurityContext):
             sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self.channel_bindings))
 
         in_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
-        out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token, alloc_type='system')])
+        out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
 
         try:
             res = self._step(input_buffer=in_buffer, output_buffer=out_buffer)
@@ -158,8 +158,6 @@ class _SSPI(SecurityContext):
                 buffer_kwargs['length'] = self._attr_sizes.security_trailer
             elif buffer_type == SecBufferType.padding:
                 buffer_kwargs['length'] = self._attr_sizes.block_size
-            else:
-                buffer_kwargs['alloc_type'] = 'pointer'
 
         return SecBuffer(buffer_type, **buffer_kwargs)
 

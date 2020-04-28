@@ -411,7 +411,6 @@ cdef class SecBufferDesc:
         return self._buffers[key]
 
     def __setitem__(SecBufferDesc self, key, SecBuffer value not None):
-        memcpy(&self._c_value.pBuffers[key], value.c_value, sizeof(NativeSecBuffer))
         value.replace_ptr(&self._c_value.pBuffers[key])
 
     def __iter__(SecBufferDesc self):
@@ -434,17 +433,11 @@ cdef class SecBufferDesc:
 
 cdef class SecBuffer:
 
-    def __cinit__(SecBuffer self, unsigned long buffer_type, bytes buffer=None, unsigned long length=0,
-        str alloc_type='managed'):
-
-        if alloc_type not in ['managed', 'system', 'pointer']:
-            raise ValueError("alloc_type must be managed, system, or pointer")
-        elif buffer and alloc_type != 'managed':
-            raise ValueError("Can only set a buffer when alloc_type='managed'")
-        elif buffer and length:
+    def __cinit__(SecBuffer self, unsigned long buffer_type, bytes buffer=None, unsigned long length=0):
+        if buffer and length:
             raise ValueError("Only an empty buffer can be created with length")
 
-        self.alloc_type = alloc_type
+        self.sys_alloc = 0
         self._is_owner = 1
 
         self.c_value = <PSecBuffer>calloc(1, sizeof(NativeSecBuffer))
@@ -458,9 +451,20 @@ cdef class SecBuffer:
             self._alloc_buffer(length)
 
     cdef replace_ptr(SecBuffer self, PSecBuffer ptr):
+        # Copy the existing C buffer to the new pointer and free the memory this object was managing.
+        memcpy(ptr, self.c_value, sizeof(NativeSecBuffer))
         free(self.c_value)
+
+        # Make sure that this obj does not try and free the new pointer that was passed in (it is up to the caller to
+        # do that).
         self._is_owner = 0
         self.c_value = ptr
+
+    def __len__(SecBuffer self):
+        if self.c_value:
+            return self.c_value.cbBuffer
+        else:
+            return 0
 
     @property
     def buffer_type(SecBuffer self):
@@ -484,28 +488,36 @@ cdef class SecBuffer:
         memcpy(self.c_value.pvBuffer, <char *>value, value_len)
 
     def _alloc_buffer(SecBuffer self, unsigned long length):
-        if self.alloc_type != 'managed':
-            raise ValueError("Can only alloc a buffer when alloc_type='managed'")
+        self._dealloc_buffer()
 
-        if self.c_value.pvBuffer:
-            free(self.c_value.pvBuffer)
-
-        self.c_value.pvBuffer = malloc(length)
-        if not self.c_value.pvBuffer:
+        # We store our allocated memory pointer so we know when we free we are freeing what we allocated.
+        self._p_buffer = malloc(length)
+        if not self._p_buffer:
             raise MemoryError("Cannot malloc SecBuffer buffer")
+
+        self.c_value.pvBuffer = self._p_buffer
         self.c_value.cbBuffer = length
 
+    def _dealloc_buffer(SecBuffer self):
+        # We do need to check if the actual C struct pvBuffer was allocated by Windows and call FreeContextBuffer on
+        # that.
+        if self.c_value != NULL and self.c_value.pvBuffer != NULL and self.sys_alloc:
+            FreeContextBuffer(self.c_value.pvBuffer)
+        self.c_value.pvBuffer = NULL
+
+        # Because the C struct pvBuffer may have a pointer set by Windows we track our allocated memory using an
+        # internal attribute which we free().
+        if self._p_buffer:
+            free(self._p_buffer)
+        self._p_buffer = NULL
+
     def __dealloc__(SecBuffer self):
-        if self.c_value != NULL:
-            if self.alloc_type == 'system' and self.c_value.pvBuffer:
-                FreeContextBuffer(self.c_value.pvBuffer)
-            elif self.alloc_type == 'managed' and self.c_value.pvBuffer:
-                free(self.c_value.pvBuffer)
+        self._dealloc_buffer()
 
-            if self._is_owner:
-                free(self.c_value)
+        if self.c_value != NULL and self._is_owner:
+            free(self.c_value)
 
-            self.c_value = NULL
+        self.c_value = NULL
 
 
 cdef class _AuthIdentityBase:
@@ -570,9 +582,9 @@ def accept_security_context(Credential credential not None, SecurityContext cont
     cdef SECURITY_INTEGER expiry
 
     for buffer in (output_buffer or []):
-        if (<SecBuffer>buffer).alloc_type == 'system':
+        if len((<SecBuffer>buffer)) == 0:
             context_req |= ISC_REQ_ALLOCATE_MEMORY
-            break
+            (<SecBuffer>buffer).sys_alloc = 1
 
     res = AcceptSecurityContext(&credential.handle, input_context, input_buffer.__c_value__(), context_req,
         target_data_rep, &context.handle, output, &context.context_attr, &expiry)
@@ -637,9 +649,9 @@ def initialize_security_context(Credential credential not None, SecurityContext 
     cdef SECURITY_INTEGER expiry
 
     for buffer in (output_buffer or []):
-        if (<SecBuffer>buffer).alloc_type == 'system':
+        if len((<SecBuffer>buffer)) == 0:
             context_req |= ISC_REQ_ALLOCATE_MEMORY
-            break
+            (<SecBuffer>buffer).sys_alloc = 1
 
     res = InitializeSecurityContextW(&credential.handle, input_context, w_target_name.buffer, context_req, 0,
         target_data_rep, input, 0, &context.handle, output, &context.context_attr, &expiry)

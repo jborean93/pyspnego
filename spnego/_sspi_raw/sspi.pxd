@@ -38,8 +38,9 @@ cdef class SecBufferDesc:
 
 cdef class SecBuffer:
     cdef PSecBuffer c_value
-    cdef str alloc_type
+    cdef object sys_alloc
     cdef object _is_owner
+    cdef void *_p_buffer
 
     cdef replace_ptr(SecBuffer self, PSecBuffer ptr)
 
