@@ -1,9 +1,11 @@
 import base64
 import logging
+import os
 import re
 import socket
 import struct
 import sys
+import tempfile
 
 
 root = logging.getLogger()
@@ -21,42 +23,6 @@ username = 'vagrant-domain@DOMAIN.LOCAL'
 password = 'VagrantPass1'
 
 
-def ntlm_auth(server, username, password):
-    from spnego.ntlm import NTLMClient
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((server, 16854))
-
-    package = b"NTLM"
-    s.sendall(struct.pack("<I", len(package)) + package)
-
-    in_token = None
-    n = NTLMClient(username, password)
-
-    while not n.complete:
-        out_token = n.step(in_token)
-
-        s.sendall(struct.pack("<I", len(out_token)) + out_token)
-
-        in_token_len = struct.unpack("<I", s.recv(4))[0]
-        if in_token_len:
-            in_token = s.recv(in_token_len)
-        else:
-            in_token = None
-
-    enc_data = n.wrap(b"Hello world")
-
-    s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
-
-    server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
-    server_enc_msg = s.recv(server_enc_msg_len)
-
-    dec_msg = n.unwrap(server_enc_msg)
-    print(dec_msg.decode('utf-8'))
-    print("Session key: %s" % base64.b64encode(n.session_key).decode('utf-8'))
-    a = ''
-
-
 def gssapi_auth(server, username, password):
     from spnego.gssapi import GSSAPIClient
 
@@ -67,42 +33,49 @@ def gssapi_auth(server, username, password):
     s.sendall(struct.pack("<I", len(package)) + package)
 
     in_token = None
-    c = GSSAPIClient(username, password, server, protocol='negotiate')
+    with tempfile.NamedTemporaryFile() as temp_fd:
+        with open(temp_fd.name, mode='wb') as fd:
+            fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
-    while not c.complete:
-        out_token = c.step(in_token)
+        os.environ['NTLM_USER_FILE'] = temp_fd.name
+        # c = GSSAPIClient('domain\\vagrant-domain', password, 'fake', protocol='negotiate')
+        c = GSSAPIClient(username, password, server, protocol='negotiate')
 
-        if not out_token:
-            break
+        while not c.complete:
+            out_token = c.step(in_token)
 
-        s.sendall(struct.pack("<I", len(out_token)) + out_token)
+            if not out_token:
+                break
 
-        in_token_len = struct.unpack("<I", s.recv(4))[0]
-        if in_token_len:
-            in_token = s.recv(in_token_len)
-        else:
-            in_token = None
+            s.sendall(struct.pack("<I", len(out_token)) + out_token)
 
-    #enc_header, enc_data, padding = c.wrap_iov([(2, True, None), (1, False, b"Hello world"), (9, True, None)])
-    enc_header, enc_data, padding = c.wrap_winrm(b"Hello world")
-    enc_data = enc_header + enc_data + padding
+            in_token_len = struct.unpack("<I", s.recv(4))[0]
+            if in_token_len:
+                in_token = s.recv(in_token_len)
+            else:
+                in_token = None
 
-    #enc_data = c.wrap(b"Hello world")
+        #enc_header, enc_data, padding = c.wrap_iov([(2, True, None), (1, False, b"Hello world"), (9, True, None)])
+        enc_header, enc_data, padding = c.wrap_winrm(b"Hello world")
+        enc_data = enc_header + enc_data + padding
 
-    s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
+        #enc_data = c.wrap(b"Hello world")
 
-    server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
-    server_enc_msg = s.recv(server_enc_msg_len)
+        s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
 
-    # _, dec_msg, _ = n.unwrap_iov((2, False, header), (1, False, data), (1, True, None))
-    dec_msg = c.unwrap(server_enc_msg)
-    #dec_msg = c.unwrap_winrm(server_enc_msg[:16], server_enc_msg[16:])
-    print(dec_msg.decode('utf-8'))
+        server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
+        server_enc_msg = s.recv(server_enc_msg_len)
 
-    print("Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
+        # _, dec_msg, _ = n.unwrap_iov((2, False, header), (1, False, data), (1, True, None))
+        dec_msg = c.unwrap(server_enc_msg)
+        #dec_msg = c.unwrap_winrm(server_enc_msg[:16], server_enc_msg[16:])
+        print(dec_msg.decode('utf-8'))
 
-    s.close()
-    a = ''
+        print("Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
+        print("Protocol: %s" % c.negotiated_protocol)
+
+        s.close()
+        a = ''
 
 
 def gssapi_auth_local(server, username, password):
@@ -167,6 +140,7 @@ def sspi_auth(server, username, password):
     dec_msg = n.unwrap(server_enc_msg)
     print(dec_msg.decode('utf-8'))
     print("Session key: %s" % base64.b64encode(n.session_key).decode('utf-8'))
+    print("Protocol: %s" % n.negotiated_protocol)
 
     s.close()
     a = ''

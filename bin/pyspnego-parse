@@ -1009,7 +1009,7 @@ def main():
     args = parse_args()
 
     if args.token:
-        b_data = base64.b64decode(args.token)
+        b_data = to_bytes(args.token)
     else:
         if args.file:
             file_path = os.path.abspath(os.path.expanduser(os.path.expandvars(args.file)))
@@ -1022,8 +1022,12 @@ def main():
         else:
             b_data = sys.stdin.buffer.read()
 
-        if re.match(b'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$', b_data):
-            b_data = base64.b64decode(b_data.strip())
+    if re.match(b'^[a-fA-F0-9\\s]+$', b_data):
+        # Input data was a hex string.
+        b_data = base64.b16decode(re.sub(b'[\\s]', b'', b_data.strip().upper()))
+    if re.match(b'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$', b_data):
+        # Input data was a base64 string.
+        b_data = base64.b64decode(b_data.strip())
 
     token_info = parse_token(b_data, secret=args.secret, encoding=args.encoding)
 

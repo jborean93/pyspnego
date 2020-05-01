@@ -8,7 +8,7 @@ import base64
 import logging
 
 from spnego._context import (
-    SecurityContext,
+    SecurityContextBase,
     requires_context,
     split_username,
 )
@@ -28,6 +28,7 @@ from spnego._sspi_raw import (
     SecPkgAttr,
     SecStatus,
     SecurityContext as SSPISecContext,
+    ServerContextReq,
     WinNTAuthIdentity,
 )
 
@@ -38,24 +39,13 @@ from spnego._text import (
 log = logging.getLogger(__name__)
 
 
-class _SSPI(SecurityContext):
+class _SSPI(SecurityContextBase):
 
-    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=None,
-                 confidentiality=True, protocol='negotiate', is_client=True):
-        super(_SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, confidentiality,
-                                    protocol)
-
-        self._is_client = is_client
-        self._target_spn = u'%s/%s' % (service.upper(), hostname)
-
-        self._flags = ClientContextReq.integrity | ClientContextReq.replay_detect | \
-            ClientContextReq.sequence_detect | ClientContextReq.mutual_auth
-
-        if delegate:
-            self._flags |= ClientContextReq.delegate
-
-        if confidentiality:
-            self._flags |= ClientContextReq.confidentiality
+    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=False,
+                 mutual_auth=True, replay_detect=True, sequence_detect=True, confidentiality=True, integrity=True,
+                 protocol='negotiate', is_client=True):
+        super(_SSPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, mutual_auth,
+                                    replay_detect, sequence_detect, confidentiality, integrity, protocol, is_client)
 
         self._attr_sizes = None
         self._completed = False
@@ -63,13 +53,15 @@ class _SSPI(SecurityContext):
         self._context = SSPISecContext()
         self.__seq_num = 0
 
-    @classmethod
-    def supported_protocols(cls):
-        return ['kerberos', 'negotiate', 'ntlm']
-
     @property
     def complete(self):
         return self._completed
+
+    @property
+    @requires_context
+    def negotiated_protocol(self):
+        package_info = query_context_attributes(self._context, SecPkgAttr.package_info)
+        return package_info.name.lower()
 
     @property
     @requires_context
@@ -105,6 +97,7 @@ class _SSPI(SecurityContext):
 
         if res == SecStatus.SEC_E_OK:
             self._completed = True
+            self._context_attr = self._context.context_attr
             self._attr_sizes = query_context_attributes(self._context, SecPkgAttr.sizes)
 
         out_token = out_buffer[0].buffer
@@ -149,7 +142,10 @@ class _SSPI(SecurityContext):
         self.__seq_num += 1
         return num
 
-    def iov_buffer(self, buffer_type, data):
+    def _create_spn(self, service, principal):
+        return u'%s/%s' % (service.upper(), principal)
+
+    def _iov_buffer(self, buffer_type, data):
         buffer_kwargs = {}
         if data:
             buffer_kwargs['buffer'] = data
@@ -164,10 +160,21 @@ class _SSPI(SecurityContext):
 
 class SSPIClient(_SSPI):
 
-    def __init__(self, username, password, hostname, service='HOST', channel_bindings=None, delegate=None,
-                 confidentiality=True, protocol='negotiate'):
+    _CONTEXT_FLAG_MAP = {
+        'delegate': ClientContextReq.confidentiality,
+        'mutual_auth': ClientContextReq.mutual_auth,
+        'replay_detect': ClientContextReq.replay_detect,
+        'sequence_detect': ClientContextReq.sequence_detect,
+        'confidentiality': ClientContextReq.confidentiality,
+        'integrity': ClientContextReq.integrity,
+    }
+
+    def __init__(self, username, password, hostname, service='HOST', channel_bindings=None, delegate=False,
+                 mutual_auth=True, replay_detect=True, sequence_detect=True, confidentiality=True, integrity=True,
+                 protocol='negotiate'):
         super(SSPIClient, self).__init__(username, password, hostname, service, channel_bindings, delegate,
-                                         confidentiality, protocol)
+                                         mutual_auth, replay_detect, sequence_detect, confidentiality, integrity,
+                                         protocol, True)
 
         domain, username = split_username(self.username)
         auth_data = None
@@ -180,21 +187,30 @@ class SSPIClient(_SSPI):
                                                       auth_data=auth_data, credential_use=CredentialUse.outbound)
 
     def _step(self, input_buffer, output_buffer):
-        return initialize_security_context(self._credential, self._context, self._target_spn, context_req=self._flags,
-                                           input_buffer=input_buffer, output_buffer=output_buffer)
+        return initialize_security_context(self._credential, self._context, self._spn,
+                                           context_req=self._context_req, input_buffer=input_buffer,
+                                           output_buffer=output_buffer)
 
 
 class SSPIServer(_SSPI):
 
-    def __init__(self, hostname, service='HOST', channel_bindings=None, delegate=None, confidentiality=True,
-                 protocol='negotiate'):
-        super(SSPIServer, self).__init__(None, None, hostname, service, channel_bindings, delegate, confidentiality,
-                                         protocol, is_client=False)
+    _CONTEXT_FLAG_MAP = {
+        'delegate': ServerContextReq.confidentiality,
+        'mutual_auth': ServerContextReq.mutual_auth,
+        'replay_detect': ServerContextReq.replay_detect,
+        'sequence_detect': ServerContextReq.sequence_detect,
+        'confidentiality': ServerContextReq.confidentiality,
+        'integrity': ServerContextReq.integrity,
+    }
 
-        self._is_client = False
-        self._credential = acquire_credentials_handle(self._target_spn, to_text(protocol, nonstring='passthru'),
+    def __init__(self, hostname, service='HOST', channel_bindings=None, delegate=False, mutual_auth=True,
+                 replay_detect=True, sequence_detect=True, confidentiality=True, integrity=True, protocol='negotiate'):
+        super(SSPIServer, self).__init__(None, None, hostname, service, channel_bindings, delegate, mutual_auth,
+                                         replay_detect, sequence_detect, confidentiality, integrity, protocol, False)
+
+        self._credential = acquire_credentials_handle(self._spn, to_text(protocol, nonstring='passthru'),
                                                       credential_use=CredentialUse.inbound)
 
     def _step(self, input_buffer, output_buffer):
-        return accept_security_context(self._credential, self._context, input_buffer, context_req=self._flags,
+        return accept_security_context(self._credential, self._context, input_buffer, context_req=self._context_req,
                                        output_buffer=output_buffer)

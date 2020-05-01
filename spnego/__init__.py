@@ -9,13 +9,7 @@ import logging
 import logging.config
 import os
 
-from spnego.ntlm import NTLMClient
-
-GSSAPI = None
-try:
-    from spnego.gssapi import GSSAPIClient, GSSAPIServer
-except ImportError:
-    pass
+from spnego.gssapi import GSSAPIClient, GSSAPIServer
 
 SSPI = None
 try:
@@ -54,8 +48,5 @@ def initialize_security_context(username, password, hostname=None, service='HOST
     # FUTURE: See if we can pluginise each provider and add a method for someone to define their own.
     if provider not in ['negotiate', 'ntlm', 'kerberos']:
         raise ValueError("provider must be negotiate, ntlm, or kerberos")
-
-    if provider == 'ntlm':
-        return NTLM(username, password, channel_bindings=channel_bindings)
 
     return None
