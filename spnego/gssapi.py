@@ -31,6 +31,12 @@ from spnego._text import (
     to_text,
 )
 
+from spnego._spnego import (
+    pack_neg_token_init,
+    pack_neg_token_resp,
+    SPNEGO_OID,
+)
+
 
 HAS_GSSAPI = True
 GSSAPI_ERR = None
@@ -67,7 +73,6 @@ log = logging.getLogger(__name__)
 
 _KERBEROS_OID = '1.2.840.113554.1.2.2'
 _NTLM_OID = '1.3.6.1.4.1.311.2.2.10'
-_SPNEGO_OID = '1.3.6.1.5.5.2'
 
 _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
@@ -293,7 +298,7 @@ class _GSSAPI(SecurityContextBase):
                 gssapi_mech = gssapi.OID.from_int_seq(_NTLM_OID)
         elif ntlm_available:
             # Both Kerberos and NTLM are available through gssapi, we can rely on it to do the full SPNEGO negotiation.
-            gssapi_mech = gssapi.OID.from_int_seq(_SPNEGO_OID)
+            gssapi_mech = gssapi.OID.from_int_seq(SPNEGO_OID)
         else:
             # NTLM is not available through gssapi, try and use Kerberos first and then fallback to ntlm-auth later
             # if that fails.
@@ -386,8 +391,13 @@ class _GSSAPI(SecurityContextBase):
             token = self._step_ntlm(in_token=in_token)
 
         if self._wrap_spnego:
-            # TODO: wrap the raw token in our own SPNEGO token.
-            a = ''
+            if not in_token:
+                mech_list = [_NTLM_OID] if token.startswith(b"NTLMSSP\x00") else [_KERBEROS_OID, _NTLM_OID]
+                token = pack_neg_token_init(mech_list, mech_token=token)
+            else:
+                supported_mech = _NTLM_OID if token.startswith(b"NTLMSSP\x00") else _KERBEROS_OID
+                # TODO: create mech_list_MIC.
+                token = pack_neg_token_resp(neg_state=1, supported_mech=_NTLM_OID, response_token=token)
 
         return token
 

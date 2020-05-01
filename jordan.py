@@ -39,7 +39,7 @@ def gssapi_auth(server, username, password):
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
         # c = GSSAPIClient('domain\\vagrant-domain', password, 'fake', protocol='negotiate')
-        c = GSSAPIClient(username, password, server, protocol='negotiate')
+        c = GSSAPIClient(username, password, 'fake', protocol='negotiate')
 
         while not c.complete:
             out_token = c.step(in_token)
@@ -171,7 +171,7 @@ def sspi_auth_local(server, username, password):
 
 
 # ntlm_auth(server, username, password)
-# gssapi_auth(server, username, password)
+gssapi_auth(server, username, password)
 # gssapi_auth_local(server, u"username@domain", u"password")
 # sspi_auth(server, username, password)
 # sspi_auth_local(server, username, password)
