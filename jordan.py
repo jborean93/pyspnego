@@ -103,7 +103,7 @@ def gssapi_auth_local(server, username, password):
 
 
 def sspi_auth(server, username, password):
-    from spnego.sspi import SSPIClient as SSPI
+    from spnego.sspi import SSPIClient
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((server, 16854))
@@ -112,11 +112,10 @@ def sspi_auth(server, username, password):
     s.sendall(struct.pack("<I", len(package)) + package)
 
     in_token = None
-    n = SSPI(username, password, protocol='negotiate', hostname=server, service='HOST')
+    c = SSPIClient(username, password, protocol='negotiate', hostname=server, service='HOST')
 
-    token_gen = n.step()
-    while not n.complete:
-        out_token = token_gen.send(in_token)
+    while not c.complete:
+        out_token = c.step(in_token)
 
         if not out_token:
             break
@@ -129,7 +128,7 @@ def sspi_auth(server, username, password):
         else:
             in_token = None
 
-    enc_header, enc_data, padding = n.wrap(b"Hello world")
+    enc_header, enc_data, padding = c.wrap_winrm(b"Hello world")
     enc_data = enc_header + enc_data + padding
 
     s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
@@ -137,10 +136,10 @@ def sspi_auth(server, username, password):
     server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
     server_enc_msg = s.recv(server_enc_msg_len)
 
-    dec_msg = n.unwrap(server_enc_msg)
+    dec_msg = c.unwrap(server_enc_msg)
     print(dec_msg.decode('utf-8'))
-    print("Session key: %s" % base64.b64encode(n.session_key).decode('utf-8'))
-    print("Protocol: %s" % n.negotiated_protocol)
+    print("Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
+    print("Protocol: %s" % c.negotiated_protocol)
 
     s.close()
     a = ''
@@ -172,7 +171,7 @@ def sspi_auth_local(server, username, password):
 
 
 # ntlm_auth(server, username, password)
-gssapi_auth(server, username, password)
+# gssapi_auth(server, username, password)
 # gssapi_auth_local(server, u"username@domain", u"password")
 # sspi_auth(server, username, password)
 # sspi_auth_local(server, username, password)

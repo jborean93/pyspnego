@@ -5,7 +5,6 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import base64
-import gssapi
 import logging
 
 from ntlm_auth.gss_channel_bindings import (
@@ -36,6 +35,7 @@ from spnego._text import (
 HAS_GSSAPI = True
 GSSAPI_ERR = None
 try:
+    import gssapi
     from gssapi.raw import (
         acquire_cred_with_password,
         ChannelBindings,
@@ -73,6 +73,27 @@ _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
 # https://github.com/simo5/gss-ntlmssp/blob/bfc7232dbb2259072a976fc9cdb6ae4bfd323304/src/gssapi_ntlmssp.h#L68
 _GSS_NTLMSSP_RESET_CRYPTO_OID = '1.3.6.1.4.1.7165.655.1.3'
+
+if HAS_GSSAPI:
+    _BASE_CONTEXT_FLAG_MAP = {
+        'delegate': gssapi.RequirementFlag.delegate_to_peer,
+        'mutual_auth': gssapi.RequirementFlag.mutual_authentication,
+        'replay_detect': gssapi.RequirementFlag.replay_detection,
+        'sequence_detect': gssapi.RequirementFlag.out_of_sequence_detection,
+        'confidentiality': gssapi.RequirementFlag.confidentiality,
+        'integrity': gssapi.RequirementFlag.integrity,
+    }
+else:
+    # gssapi isn't available so we need to rely on a manual mapping. It doesn't really matter as ntlm-auth doesn't
+    # actually use any of these values.
+    _BASE_CONTEXT_FLAG_MAP = {
+        'delegate': 1,
+        'mutual_auth': 2,
+        'replay_detect': 4,
+        'sequence_detect': 8,
+        'confidentiality': 16,
+        'integrity': 32,
+    }
 
 
 def _gss_ntlmssp_available(session_key=False):
@@ -219,14 +240,7 @@ def _requires_iov(method):
 
 class _GSSAPI(SecurityContextBase):
 
-    _CONTEXT_FLAG_MAP = {
-        'delegate': gssapi.RequirementFlag.confidentiality,
-        'mutual_auth': gssapi.RequirementFlag.mutual_authentication,
-        'replay_detect': gssapi.RequirementFlag.replay_detection,
-        'sequence_detect': gssapi.RequirementFlag.out_of_sequence_detection,
-        'confidentiality': gssapi.RequirementFlag.confidentiality,
-        'integrity': gssapi.RequirementFlag.integrity,
-    }
+    _CONTEXT_FLAG_MAP = _BASE_CONTEXT_FLAG_MAP
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None, delegate=False,
                  mutual_auth=True, replay_detect=True, sequence_detect=True, confidentiality=True, integrity=True,
