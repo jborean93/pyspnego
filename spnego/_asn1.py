@@ -4,6 +4,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import struct
+
 
 class TagClass:
     universal = 0
@@ -53,14 +55,14 @@ class TypeTagNumber:
     relative_oid_iri = 36
 
 
-def pack_asn1(tag_class, primitive, tag_number, b_data):
+def pack_asn1(tag_class, constructed, tag_number, b_data):
     """
     Pack the contents into an ASN.1 structure. The structure is in the form.
 
     | Identifier Octet(s) | Length Octet(s) | Data Octet(s) |
 
     :param tag_class: The tag class of the data from 0 to 3.
-    :param primitive: Whether the data is primitive or constructed.
+    :param constructed: Whether the data is constructed or primitive.
     :param tag_number: The tag number of the content.
     :param b_data: The data to pack with the header.
     :return: The packed ASN.1 data as a byte string.
@@ -78,7 +80,7 @@ def pack_asn1(tag_class, primitive, tag_number, b_data):
         raise ValueError("tag_class must be between 0 and 3")
 
     identifier_octets = tag_class << 6
-    identifier_octets |= ((0 if primitive else 1) << 5)
+    identifier_octets |= ((1 if constructed else 0) << 5)
 
     if tag_number < 31:
         identifier_octets |= tag_number
@@ -119,7 +121,7 @@ def pack_asn1(tag_class, primitive, tag_number, b_data):
 def pack_asn1_enumerated(value, tag=True):
     b_data = pack_asn1_integer(value, tag=False)
     if tag:
-        b_data = pack_asn1(TagClass.universal, True, TypeTagNumber.enumerated, b_data)
+        b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.enumerated, b_data)
 
     return b_data
 
@@ -165,7 +167,7 @@ def pack_asn1_integer(value, tag=True):
     b_int.reverse()
     b_int = bytes(b_int)
     if tag:
-        b_int = pack_asn1(TagClass.universal, True, TypeTagNumber.integer, b_int)
+        b_int = pack_asn1(TagClass.universal, False, TypeTagNumber.integer, b_int)
 
     return b_int
 
@@ -191,7 +193,7 @@ def pack_asn1_object_identifier(oid, tag=True):
 
     b_oid = bytes(b_oid)
     if tag:
-        b_oid = pack_asn1(TagClass.universal, True, TypeTagNumber.object_identifier, b_oid)
+        b_oid = pack_asn1(TagClass.universal, False, TypeTagNumber.object_identifier, b_oid)
 
     return b_oid
 
@@ -233,7 +235,7 @@ def pack_asn1_octet_string(b_data, tag=True):
     :return:
     """
     if tag:
-        b_data = pack_asn1(TagClass.universal, True, TypeTagNumber.octet_string, b_data)
+        b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.octet_string, b_data)
 
     return b_data
 
@@ -247,6 +249,145 @@ def pack_asn1_sequence(sequence, tag=True):
     """
     b_data = b"".join(sequence)
     if tag:
-        b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.sequence, b_data)
+        b_data = pack_asn1(TagClass.universal, True, TypeTagNumber.sequence, b_data)
 
     return b_data
+
+
+def unpack_asn1(b_data):
+    """
+
+    :param b_data:
+    :return:
+    """
+    import base64
+    octet1 = struct.unpack("B", b_data[:1])[0]
+    tag_class = (octet1 & 0b11000000) >> 6
+    constructed = bool(octet1 & 0b00100000)
+    tag_number = octet1 & 0b00011111
+
+    length_offset = 1
+    if tag_number == 31:
+        tag_number, octet_count = unpack_asn1_octet_number(b_data[1:])
+        length_offset += octet_count
+
+    b_data = b_data[length_offset:]
+
+    length = struct.unpack("B", b_data[:1])[0]
+    length_octets = 1
+
+    if length & 0b10000000:
+        # If the MSB is set then the length octet just contains the number of octets that encodes the actual length.
+        length_octets += length & 0b01111111
+        length = 0
+
+        for idx in range(1, length_octets):
+            octet_val = struct.unpack("B", b_data[idx:idx + 1])[0]
+            length += octet_val << (8 * (length_octets - 1 - idx))
+
+    remaining_data = b_data[length_octets + length:]
+    b_data = b_data[length_octets:length_octets + length]
+    return tag_class, constructed, tag_number, b_data, remaining_data
+
+
+def unpack_asn1_bit_string(b_data):
+    """
+
+    :param b_data:
+    :return:
+    """
+    # First octet is the number of unused bits in the last octet from the LSB.
+    unused_bits = struct.unpack("B", b_data[:1])[0]
+    last_octet = struct.unpack("B", b_data[-1])[0]
+    last_octet = (last_octet >> unused_bits) << unused_bits
+
+    return b_data[1:-1] + struct.pack("B", last_octet)
+
+
+def unpack_asn1_enumerated(b_data):
+    """
+
+    :param b_data:
+    :return:
+    """
+    return unpack_asn1_integer(b_data)
+
+
+def unpack_asn1_integer(b_data):
+    """
+
+    :param b_data:
+    :return:
+    """
+    length = len(b_data)
+
+    if length == 1:
+        # The MSB denotes whether the number is negative or not.
+        value = struct.unpack("B", b_data)[0]
+        is_negative = bool(value & 0b10000000)
+    else:
+        is_negative = False
+        value = 0
+        idx = 0
+
+        while idx != length:
+            b_val = b_data[idx:idx + 1]
+
+            # The first octet can be \x00 which indicate the value is a positive number regardless of the MSB in the
+            # next octet.
+            if idx == 0 and b_val == b"\x00":
+                idx += 1
+                continue
+
+            element = struct.unpack("B", b_val)[0]
+
+            # If the first octet's MSB is set then the number is a negative number.
+            if idx == 0 and element & 0b10000000:
+                is_negative = True
+                element &= 0b01111111
+
+            value = (value << 8) + value
+            idx += 1
+
+    if is_negative:
+        value *= -1
+
+    return value
+
+
+def unpack_asn1_object_identifier(b_data):
+    """
+
+    :param b_data:
+    :return:
+    """
+    first_element = struct.unpack("B", b_data[:1])[0]
+    second_element = first_element % 40
+    ids = [(first_element - second_element) // 40, second_element]
+
+    idx = 1
+    while idx != len(b_data):
+        oid, octet_len = unpack_asn1_octet_number(b_data[idx:])
+        ids.append(oid)
+        idx += octet_len
+
+    return ".".join([str(i) for i in ids])
+
+
+def unpack_asn1_octet_number(b_data):
+    """
+
+    :param b_data:
+    :return:
+    """
+    i = 0
+    idx = 0
+    while True:
+        element = struct.unpack("B", b_data[idx:idx + 1])[0]
+        idx += 1
+
+        i = (i << 7) + (element & 0b01111111)
+        if not element & 0b10000000:
+            break
+
+    return i, idx

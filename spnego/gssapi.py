@@ -32,9 +32,11 @@ from spnego._text import (
 )
 
 from spnego._spnego import (
+    NegState,
     pack_neg_token_init,
     pack_neg_token_resp,
     SPNEGO_OID,
+    unpack_neg_token,
 )
 
 
@@ -372,9 +374,10 @@ class _GSSAPI(SecurityContextBase):
         return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
 
     def step(self, in_token=None):
-        if self._wrap_spnego:
-            # TODO: need to extract the raw auth token from inside the SPNEGO token.
-            a = ''
+        if self._wrap_spnego and in_token:
+             # TODO: Validate the neg token.
+            neg_resp = unpack_neg_token(in_token)
+            in_token = neg_resp.response_token
 
         try:
             token = getattr(self, '_step_%s' % self._context_provider)(in_token=in_token)
