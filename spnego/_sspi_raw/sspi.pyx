@@ -117,6 +117,7 @@ from spnego._sspi_raw.security cimport (
     ISC_RET_USED_HTTP_STYLE,
     ISC_RET_NO_ADDITIONAL_TOKEN,
     ISC_RET_REAUTHENTICATION,
+    MakeSignature,
     PCtxtHandle,
     PSEC_WINNT_AUTH_IDENTITY_W,
     PSecBuffer,
@@ -186,6 +187,7 @@ from spnego._sspi_raw.security cimport (
     SEC_I_COMPLETE_NEEDED as _SEC_I_COMPLETE_NEEDED,
     SEC_I_CONTINUE_NEEDED as _SEC_I_CONTINUE_NEEDED,
     SEC_I_INCOMPLETE_CREDENTIALS as _SEC_I_INCOMPLETE_CREDENTIALS,
+    VerifySignature,
 )
 
 from spnego._sspi_raw.text cimport (
@@ -667,6 +669,14 @@ def initialize_security_context(Credential credential not None, SecurityContext 
     return res
 
 
+def make_signature(SecurityContext context not None, unsigned long qop, SecBufferDesc message not None,
+    unsigned long seq_no=0):
+
+    res = MakeSignature(&context.handle, qop, message.__c_value__(), seq_no)
+    if res != _SEC_E_OK:
+        PyErr_SetFromWindowsErr(res)
+
+
 def query_context_attributes(SecurityContext context not None, unsigned long attribute):
     if attribute not in [SecPkgAttr.package_info, SecPkgAttr.session_key, SecPkgAttr.sizes]:
         raise NotImplementedError("Only package_info, session_key, or sizes is implemented")
@@ -716,3 +726,13 @@ def _query_context_sizes(SecurityContext context not None):
         PyErr_SetFromWindowsErr(res)
 
     return SecPkgAttrSizes(sizes.cbMaxToken, sizes.cbMaxSignature, sizes.cbBlockSize, sizes.cbSecurityTrailer)
+
+
+def verify_signature(SecurityContext context not None, SecBufferDesc message not None, unsigned long seq_no=0):
+    cdef unsigned long qop
+
+    res = VerifySignature(&context.handle, message.__c_value__(), seq_no, &qop)
+    if res != _SEC_E_OK:
+        PyErr_SetFromWindowsErr(res)
+
+    return qop

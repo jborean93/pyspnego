@@ -163,15 +163,20 @@ def sspi_auth_local(server, username, password):
     s_enc_msg = s.wrap(s_dec_msg)
     c_dec_msg = c.unwrap(s_enc_msg)
 
+    c_sig = c.sign(b"data")
+    s.verify(b"data", c_sig)
+
+    s_sig = s.sign(b"data")
+    c.verify(b"data", s_sig)
+
     print(c_dec_msg.decode('utf-8'))
     print("Client Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
     print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
     a = ''
 
 
-
 # ntlm_auth(server, username, password)
-gssapi_auth(server, username, password)
+# gssapi_auth(server, username, password)
 # gssapi_auth_local(server, u"username@domain", u"password")
 # sspi_auth(server, username, password)
 # sspi_auth_local(server, username, password)

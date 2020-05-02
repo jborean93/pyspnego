@@ -21,6 +21,7 @@ from spnego._sspi_raw import (
     decrypt_message,
     encrypt_message,
     initialize_security_context,
+    make_signature,
     query_context_attributes,
     SecBuffer,
     SecBufferDesc,
@@ -29,6 +30,7 @@ from spnego._sspi_raw import (
     SecStatus,
     SecurityContext as SSPISecContext,
     ServerContextReq,
+    verify_signature,
     WinNTAuthIdentity,
 )
 
@@ -136,6 +138,26 @@ class _SSPI(SecurityContextBase):
 
         return tuple([b.buffer for b in buffer])
 
+    @requires_context
+    def sign(self, data):
+        buffer = SecBufferDesc([
+            SecBuffer(SecBufferType.data, buffer=data),
+            SecBuffer(SecBufferType.token, length=self._attr_sizes.max_signature),
+        ])
+
+        make_signature(self._context, 0, buffer, self._seq_num)
+
+        return buffer[1].buffer
+
+    @requires_context
+    def verify(self, data, signature):
+        buffer = SecBufferDesc([
+            SecBuffer(SecBufferType.data, buffer=data),
+            SecBuffer(SecBufferType.token, buffer=signature),
+        ])
+
+        return verify_signature(self._context, buffer, self._seq_num)
+
     @property
     def _seq_num(self):
         num = self.__seq_num
@@ -146,6 +168,7 @@ class _SSPI(SecurityContextBase):
         return u'%s/%s' % (service.upper(), principal)
 
     def _iov_buffer(self, buffer_type, data):
+        # TODO: Allow a user to specify their own length.
         buffer_kwargs = {}
         if data:
             buffer_kwargs['buffer'] = data

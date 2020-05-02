@@ -331,8 +331,22 @@ cdef extern from "Security.h":
         PTimeStamp       ptsExpiry
     )
 
+    SECURITY_STATUS __stdcall MakeSignature(
+        PCtxtHandle    phContext,
+        unsigned long  fQOP,
+        PSecBufferDesc pMessage,
+        unsigned long  MessageSeqNo
+    )
+
     SECURITY_STATUS __stdcall QueryContextAttributesW(
         PCtxtHandle   phContext,
         unsigned long ulAttribute,
         void          *pBuffer
+    )
+
+    SECURITY_STATUS __stdcall VerifySignature(
+        PCtxtHandle    phContext,
+        PSecBufferDesc pMessage,
+        unsigned long  MessageSeqNo,
+        unsigned long  *pfQOP
     )

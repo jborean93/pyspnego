@@ -12,6 +12,7 @@ from spnego._sspi_raw.sspi import (
     decrypt_message,
     encrypt_message,
     initialize_security_context,
+    make_signature,
     query_context_attributes,
     SecBuffer,
     SecBufferDesc,
@@ -24,5 +25,6 @@ from spnego._sspi_raw.sspi import (
     ServerContextAttr,
     ServerContextReq,
     TargetDataRep,
+    verify_signature,
     WinNTAuthIdentity,
 )
