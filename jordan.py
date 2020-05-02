@@ -38,10 +38,10 @@ def gssapi_auth(server, username, password):
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
-        # c = GSSAPIClient('domain\\vagrant-domain', password, 'fake', protocol='negotiate')
-        c = GSSAPIClient(username, password, 'fake', protocol='negotiate')
+        c = GSSAPIClient(username, password, server, protocol='negotiate')
+        # c = GSSAPIClient(username, password, 'fake', protocol='negotiate')
 
-        while not c.complete:
+        while not c.complete or in_token:
             out_token = c.step(in_token)
 
             if not out_token:

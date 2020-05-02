@@ -221,6 +221,16 @@ class SecurityContextBase:
             BufferType.data,
         ])[1]
 
+    @requires_context
+    def sign(self, data):
+        """ Verifies a signature similar to VerifySignature in SSPI. """
+        pass
+
+    @requires_context
+    def verify(self, data, signature):
+        """ Signs the data similar to MakeSignature in SSPI. """
+        pass
+
     # Internal abstract methods that should be implemented in the sub class.
 
     @abstractmethod
@@ -235,37 +245,30 @@ class SecurityContextBase:
     # Public properties that don't need to be implemented in sub classes.
 
     @property
-    @requires_context
     def context_attributes(self):
         return self._context_attr
 
     @property
-    @requires_context
     def confidentiality(self):
         return self._flag_is_set('confidentiality')
 
     @property
-    @requires_context
     def delegate(self):
         return self._flag_is_set('delegate')
 
     @property
-    @requires_context
     def integrity(self):
         return self._flag_is_set('integrity')
 
     @property
-    @requires_context
     def mutual_auth(self):
         return self._flag_is_set('mutual_auth')
 
     @property
-    @requires_context
     def replay_detect(self):
         return self._flag_is_set('replay_detect')
 
     @property
-    @requires_context
     def sequence_detect(self):
         return self._flag_is_set('sequence_detect')
 

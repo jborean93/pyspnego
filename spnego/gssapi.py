@@ -15,6 +15,10 @@ from ntlm_auth.ntlm import (
     NtlmContext,
 )
 
+from ntlm_auth.session_security import (
+    SessionSecurity,
+)
+
 from spnego.exceptions import (
     FeatureMissingError,
 )
@@ -33,6 +37,10 @@ from spnego._text import (
 
 from spnego._spnego import (
     NegState,
+    NegTokenInit,
+    NegTokenInit2,
+    NegTokenResp,
+    pack_mech_type_list,
     pack_neg_token_init,
     pack_neg_token_resp,
     SPNEGO_OID,
@@ -55,6 +63,7 @@ try:
 except ImportError as err:
     HAS_GSSAPI = False
     GSSAPI_ERR = err
+    GSSError = None
 
 
 HAS_IOV = True
@@ -80,6 +89,9 @@ _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
 # https://github.com/simo5/gss-ntlmssp/blob/bfc7232dbb2259072a976fc9cdb6ae4bfd323304/src/gssapi_ntlmssp.h#L68
 _GSS_NTLMSSP_RESET_CRYPTO_OID = '1.3.6.1.4.1.7165.655.1.3'
+
+# https://github.com/krb5/krb5/blob/master/src/lib/gssapi/spnego/spnego_mech.c#L483
+_GSS_SPNEGO_REQUIRE_MIC_OID_STRING = '1.3.6.1.4.1.7165.655.1.2'
 
 if HAS_GSSAPI:
     _BASE_CONTEXT_FLAG_MAP = {
@@ -120,7 +132,6 @@ def _gss_ntlmssp_available(session_key=False):
         Pure Heimdal:
         * gss_acquire_cred_with_password does not work, need to figure out if this can be bypassed
         * I can get a cred from the cache (NTLM_USER_FILE) but it is suggested I could also rely on the Kerberos cache
-        * TODO: investigate this a bit further and see if I can get it working.
 
         macOS Heimdal:
         * For some reason the auth token it generates is just invalid, no idea why yet but it's unusable
@@ -157,8 +168,7 @@ def _gss_ntlmssp_available(session_key=False):
 
         # macOS' Heimdal implementation will work up to this point but the end messages aren't actually valid. Luckily
         # it does not implement 'GSS_NTLMSSP_RESET_CRYPTO_OID' so by running this we can weed out that broken impl.
-        set_sec_context_option(gssapi.OID.from_int_seq(_GSS_NTLMSSP_RESET_CRYPTO_OID), context=context,
-                               value=b"\x00\x00\x00\x00")
+        _reset_ntlm_crypto_state(context)
 
         ntlm_features['available'] = True
     except GSSError as err:
@@ -235,6 +245,70 @@ def _get_gssapi_credential(mech, usage, username=None, password=None):
     return cred
 
 
+def _mech_requires_mech_list_mic(context):
+    """
+    NTLM on MS SPNEGO requires a mechListMIC if the NTLM Authentication msg contains its own MIC. By calling
+    gss_inquire_sec_context_by_oid(GSS_SPNEGO_REQUIRE_MIC_OID_STRING) we first tell ntlmssp that it's ok to generate
+    the MIC, then once the context is complete it returns b"\x01" if a MIC was actually generated.
+
+    https://github.com/krb5/krb5/blob/b2fe66fed560ae28917a4acae6f6c0f020156353/src/lib/gssapi/spnego/spnego_mech.c#L493
+
+    :param context: The gssapi security context to query.
+    :return: Bool whether a MIC is required or not.
+    """
+    if isinstance(context, NtlmContext):
+        # ntlm-auth only added the mic_present attribute in v1.5.0. We try and get the value from there and fallback
+        # to a private interface we know is present on older versions.
+        if hasattr(context, 'mic_present'):
+            return context.mic_present
+
+        if context._authenticate_message:
+            return bool(context._authenticate_message.mic)
+
+        return False
+
+    try:
+        require_mic = gssapi.OID.from_int_seq(_GSS_SPNEGO_REQUIRE_MIC_OID_STRING)
+        res = inquire_sec_context_by_oid(context, require_mic)
+    except GSSError:
+        # Not all gssapi mech's implement this OID, we treat those as not explicitly requiring a mechListMIC.
+        return False
+    else:
+        return b"\x01" in res
+
+
+def _reset_ntlm_crypto_state(context, is_client=True, session_key=None):
+    """
+    When NTLM was negotiated with NTLM the original crypto state needs to be reset once the mechListMIC has been
+    processed. This is a no-op for a context that is not NTLM.
+
+    https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/b87587b3-9d72-4027-8131-b76b5368115f
+
+    :param context: The security context to reset the crypto state for.
+    :param is_server: Whether the server keys should be reset or just the client.
+    :param session_key: The session key used to re-derive the NTLM session security object.
+    """
+    if isinstance(context, NtlmContext):
+        # ntlm-auth only added the reset_rc4_state method in v1.5.0. We try and use that method if present and fallback
+        # to an internal mechanism we know will work with older versions.
+        if hasattr(context, 'reset_rc4_state'):
+            context.reset_rc4_state(sender=is_client)
+        else:
+            existing_ss = context._session_security
+
+            # Can't just copy the keys, we need to derive the RC4 handle from the session_key so just recreate the obj.
+            new_ss = SessionSecurity(existing_ss.negotiate_flags, session_key)
+            new_ss.outgoing_seq_num = existing_ss.outgoing_seq_num
+            new_ss.incoming_seq_num = existing_ss.incoming_seq_num
+
+            context._session_security = new_ss
+
+    elif context.mech.dotted_form == _NTLM_OID:
+        reset_crypto = gssapi.OID.from_int_seq(_GSS_NTLMSSP_RESET_CRYPTO_OID)
+        value = b"\x00\x00\x00\x00" if is_client else b"\x01\x00\x00\x00"
+        set_sec_context_option(reset_crypto, context=context, value=value)
+
+
 def _requires_iov(method):
     def wrapped(self, *args, **kwargs):
         if not HAS_IOV:
@@ -243,6 +317,39 @@ def _requires_iov(method):
 
         return method(self, *args, **kwargs)
     return wrapped
+
+
+class _SPNEGOContext:
+
+    def __init__(self, *mechs):
+        self.mech_list = list(mechs)
+        self.complete = False
+
+        self.init_sent = False
+        self.mech_sent = False
+        self.mic_sent = False
+        self.mic_recv = False
+
+        self._mech = None
+
+    @property
+    def mech(self):
+        return self._mech or self.mech_list[0]
+
+    @mech.setter
+    def mech(self, value):
+        self._mech = value
+
+    def get_mech_list_bytes(self):
+        """
+        To calculate the mechListMIC we need to add a MIC based on the DER encoded value of the mechTypes entry in the
+        initial request.
+
+        :return: A byte string of the DER encoded mechTypes entry for the SPNEGO context that is being established.
+        """
+        # The input message is the DER encoding of the value of type MechTypeList "mechTypes" in the
+        # NegTokenInit. The GSS_GetMIC() method is called to calculate that with the established context
+        return pack_mech_type_list(self.mech_list)
 
 
 class _GSSAPI(SecurityContextBase):
@@ -255,15 +362,15 @@ class _GSSAPI(SecurityContextBase):
         super(_GSSAPI, self).__init__(username, password, hostname, service, channel_bindings, delegate, mutual_auth,
                                       replay_detect, sequence_detect, confidentiality, integrity, protocol, is_client)
 
-        # Controls whether step() wraps the raw token (NTLM or Kerberos) inside an SPNEGO token.
-        self._wrap_spnego = False
-        gssapi_mech = None
-
         if not HAS_IOV and feature_flags & FeatureFlags.WRAPPING_IOV:
             raise FeatureMissingError(FeatureFlags.WRAPPING_IOV)
 
+        # Determines whether to use our customer SPNEGO wrapper or just rely on the context.
+        self._spnego_context = None
+
         # Determines whether we can rely on NTLM through gssapi or not.
         ntlm_available = _gss_ntlmssp_available(session_key=bool(feature_flags & FeatureFlags.SESSION_KEY))
+        gssapi_mech = None
 
         if self.protocol == 'kerberos':
             # We can only use pure Kerberos if gssapi is installed and if WinRM wrapping is required we also need the
@@ -275,36 +382,32 @@ class _GSSAPI(SecurityContextBase):
                 raise FeatureMissingError(FeatureFlags.WRAPPING_WINRM)
 
             gssapi_mech = gssapi.OID.from_int_seq(_KERBEROS_OID)
+
         elif self.protocol == 'ntlm':
             # We can use gssapi if we have determine it is available and fir for purpose, otherwise just use ntlm-auth.
             if ntlm_available:
                 gssapi_mech = gssapi.OID.from_int_seq(_NTLM_OID)
-        elif not HAS_GSSAPI:
-            # If gssapi is not installed then we cannot negotiate any protocol. We just need to use pure NTLM from
-            # ntlm-auth wrapped in our own SPNEGO token messages. We should also raise FeatureMissingError if the
-            # caller has requested that Kerberos was at least available for negotiation.
+
+        elif not HAS_GSSAPI or (not HAS_IOV and feature_flags & FeatureFlags.WRAPPING_WINRM):
+            # Either gssapi is not installed or the IOV headers are available and the caller requires WinRM encryption.
+            # We can only use NTLM auth in this case but still wrap it in SPNEGO because they specified negotiate.
+            # We should also raise FeatureMissingError if the caller has requested that Kerberos was at least available
+            # for negotiation.
             if feature_flags & FeatureFlags.NEGO_KERBEROS:
                 raise FeatureMissingError(FeatureFlags.NEGO_KERBEROS)
 
-            self._wrap_spnego = True
-        elif not HAS_IOV and feature_flags & FeatureFlags.WRAPPING_WINRM:
-            # If WinRM wrapping is required and the IOV headers aren't present we can't use Kerberos. We need to check
-            # if the NEGO_KERBEROS feature flag is set and fail as the caller intended for Kerberos to at least be
-            # available for negotiations
-            if feature_flags & FeatureFlags.NEGO_KERBEROS:
-                raise FeatureMissingError(FeatureFlags.NEGO_KERBEROS)
-
-            # Now determine if we can use gssapi's NTLM mech or just use ntlm-auth
-            self._wrap_spnego = True
+            self._spnego_context = _SPNEGOContext(_NTLM_OID)
             if ntlm_available:
                 gssapi_mech = gssapi.OID.from_int_seq(_NTLM_OID)
+
         elif ntlm_available:
             # Both Kerberos and NTLM are available through gssapi, we can rely on it to do the full SPNEGO negotiation.
             gssapi_mech = gssapi.OID.from_int_seq(SPNEGO_OID)
+
         else:
             # NTLM is not available through gssapi, try and use Kerberos first and then fallback to ntlm-auth later
             # if that fails.
-            self._wrap_spnego = True
+            self._spnego_context = _SPNEGOContext(_KERBEROS_OID, _NTLM_OID)
             gssapi_mech = gssapi.OID.from_int_seq(_KERBEROS_OID)
 
         self._context = None
@@ -328,8 +431,9 @@ class _GSSAPI(SecurityContextBase):
                 self._context = gssapi.SecurityContext(creds=cred, usage=usage, channel_bindings=self.channel_bindings,
                                                        **context_kwargs)
             except GSSError as err:
+                # TODO: Check this error condition and validate it's ok.
                 # If we are doing our own SPNEGO wrapping, ignore the error and fallback to ntlm-auth.
-                if not self._wrap_spnego:
+                if not self._spnego_context:
                     raise
 
                 log.debug("Failed to generate GSSAPI credential and context for SPNEGO, falling back to NTLM: %s"
@@ -343,8 +447,10 @@ class _GSSAPI(SecurityContextBase):
 
     @property
     def complete(self):
-        # Both gssapi and ntlm-auth have a complete property on it's context object which we can safely get.
-        return self._context.complete
+        if self._spnego_context:
+            return self._spnego_context.complete
+        else:
+            return self._context.complete
 
     @property
     @requires_context
@@ -362,58 +468,156 @@ class _GSSAPI(SecurityContextBase):
     @property
     @requires_context
     def session_key(self):
-        return getattr(self, '_session_key_%s' % self._context_provider)()
+        return self._session_key()
 
-    def _session_key_gssapi(self):
-        return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
-
-    def _session_key_ntlm(self):
-        # session_key was only recently added in ntlm-auth, we have the fallback to the non-public interface for older
-        # versions where we know this still works. This should be removed once ntlm-auth raises the min version to
-        # (>=1.4.0).
-        return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
+    def _session_key(self):
+        if self._context_provider == 'ntlm':
+            # session_key was only recently added in ntlm-auth, we have the fallback to the non-public interface for
+            # older versions where we know this still works. This should be removed once ntlm-auth raises the min
+            # version to (>=1.4.0).
+            return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
+        else:
+            return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
 
     def step(self, in_token=None):
-        if self._wrap_spnego and in_token:
-             # TODO: Validate the neg token.
-            neg_resp = unpack_neg_token(in_token)
-            in_token = neg_resp.response_token
-
-        try:
-            token = getattr(self, '_step_%s' % self._context_provider)(in_token=in_token)
-        except GSSError as err:
-            # If negotiate was not used, or we are using pure gssapi SPNEGO do not fallback ntlm-auth
-            if self.protocol != 'negotiate' or not self._wrap_spnego:
-                raise
-
-            log.debug("GSSAPI Negotiate failed with Kerberos auth: falling back to NTLM: %s" % str(err))
-
-            domain, username = split_username(self.username)
-            self._context_provider = 'ntlm'
-            self._context = NtlmContext(username, self.password, domain=domain)
-            token = self._step_ntlm(in_token=in_token)
-
-        if self._wrap_spnego:
-            if not in_token:
-                mech_list = [_NTLM_OID] if token.startswith(b"NTLMSSP\x00") else [_KERBEROS_OID, _NTLM_OID]
-                token = pack_neg_token_init(mech_list, mech_token=token)
-            else:
-                supported_mech = _NTLM_OID if token.startswith(b"NTLMSSP\x00") else _KERBEROS_OID
-                # TODO: create mech_list_MIC.
-                token = pack_neg_token_resp(neg_state=1, supported_mech=_NTLM_OID, response_token=token)
-
-        return token
-
-    def _step_gssapi(self, in_token=None):
         method_name = 'gss_init_sec_context()' if self._is_client else 'gss_accept_sec_context()'
+        step_func = getattr(self, '_step_%s' % self._context_provider)
+        log.debug("%s input: %s", method_name, to_text(base64.b64encode(in_token or b"")))
+
+        if self._spnego_context:
+            # We are using SPNEGO but cannot rely on GSSAPI to manage the wrapping either because gssapi isn't
+            # available or it's NTLM implementation won't work.
+            out_token = self._step_spnego(step_func, in_token=in_token)
+        else:
+            # Either SPNEGO isn't being used or we can rely on gssapi to do everything for us, just get the context
+            # to handle the tokens.
+            out_token = step_func(in_token=in_token)
+
+        log.debug("%s output: %s", method_name, to_text(base64.b64encode(out_token or b"")))
+        return out_token
+
+    def _step_spnego(self, step_func, in_token=None):
+        """
+        SPNEGO practically operates in 3 steps;
+
+            1. Process the SPNEGO mechs to derive the underlying protocol to use.
+            2. Use the underlying protocol to get the output tokens
+            3. Process/Generate the SPNEGO MICs if necessary
+
+        :param step_func:
+        :param in_token:
+        :return:
+        """
+        # Step 1. Process SPNEGO mechs
+        mic_required = False
+        mech_token_in = None
+        mech_list_mic = None
 
         if in_token:
-            log.debug("%s input: %s", method_name, to_text(base64.b64encode(in_token)))
+            in_token = unpack_neg_token(in_token)
 
+            mech_list_mic = in_token.mech_list_mic
+
+            # Windows can send NegTokenInit2 (seen with SMB) token if it initiated the auth process, the fields we care
+            # about are still the same as NegTokenInit.
+            if isinstance(in_token, (NegTokenInit, NegTokenInit2)):
+                self._spnego_context.init_sent = True
+                mech_token_in = in_token.mech_token
+
+                mech_types = in_token.mech_types
+                new_list = []
+                for oid in mech_types:
+                    if oid in self._spnego_context.mech_list:
+                        new_list.append(oid)
+
+                # Could not find a common mechanism with the server
+                if not new_list:
+                    raise Exception("Failed to negotiated negotiation protocol with server")
+
+                if self._spnego_context.mech != new_list[0]:
+                    a = ''  # TODO: adjust list accordingly and rebuild the context.
+
+            elif isinstance(in_token, NegTokenResp):
+                mech_token_in = in_token.response_token
+
+                # If we have received the supported_mech then we don't need to send our own.
+                if in_token.supported_mech:
+                    self._spnego_context.mech_sent = True
+
+                # Raise exception if we are rejected and have no error info (mechToken) that will give us more info.
+                if in_token.neg_state == NegState.reject and not mech_token_in:
+                    raise Exception("Received SPNEGO rejection")
+
+                if in_token.neg_state == NegState.request_mic:
+                    mic_required = True
+                elif in_token.neg_state == NegState.accept_complete:
+                    self._spnego_context.complete = True
+
+        # Step 2. Process the inner context tokens.
+        mech_token_out = None
+        if not self._context.complete:
+            try:
+                mech_token_out = step_func(in_token=mech_token_in)
+            except GSSError as err:
+                # TODO: Need the fallback from GSSAPI failing with Kerb to ntlm-auth if the first step fails
+                raise err
+            else:
+                # NTLM has a special case where we need to tell it it's ok to generate the MIC and also determine if
+                # it actually did set the MIC as that controls the mechListMIC for the SPNEGO token.
+                if _mech_requires_mech_list_mic(self._context):
+                    mic_required = True
+
+        # Step 3. Process or generate the mechListMIC.
+        if mech_list_mic:
+            self._spnego_context.mic_recv = True
+            mic_required = True  # If we received a mechListMIC we need to send one back.
+
+            self._verify(self._spnego_context.get_mech_list_bytes(), mech_list_mic)
+            _reset_ntlm_crypto_state(self._context, is_client=False, session_key=self._session_key())
+
+            # If we've already sent our MIC then we are done
+            if self._spnego_context.mic_sent:
+                self._spnego_context.complete = True
+
+        token_kwargs = {}
+        if mic_required and not self._spnego_context.mic_sent:
+            mech_list_mic = self._sign(self._spnego_context.get_mech_list_bytes())
+            token_kwargs['mech_list_mic'] = mech_list_mic
+            _reset_ntlm_crypto_state(self._context, session_key=self._session_key())
+
+        out_token = None
+
+        if not self._spnego_context.init_sent:
+            out_token = pack_neg_token_init(self._spnego_context.mech_list, mech_token=mech_token_out, **token_kwargs)
+            self._spnego_context.init_sent = True
+
+        elif not self._spnego_context.complete:
+            # As per RFC 4178 - 4.2.2: supportedMech should only be present in the first reply from the target.
+            # https://tools.ietf.org/html/rfc4178#section-4.2.2
+            if not self._spnego_context.mech_sent:
+                token_kwargs['supported_mech'] = self._spnego_context.mech
+                self._spnego_context.mech_sent = True
+
+            state = NegState.accept_incomplete
+
+            if self._context.complete and self._spnego_context.mic_recv:
+                state = NegState.accept_complete
+                self._spnego_context.complete = True
+
+            if not self._spnego_context.mic_recv:
+                if self._spnego_context.mic_sent:
+                    state = NegState.request_mic
+                elif 'mech_list_mic' in token_kwargs:
+                    self._spnego_context.mic_sent = True
+
+            out_token = pack_neg_token_resp(neg_state=state, response_token=mech_token_out, **token_kwargs)
+
+        return out_token
+
+    def _step_gssapi(self, in_token=None):
         out_token = self._context.step(in_token)
-        log.debug("%s output: %s", method_name, to_text(base64.b64encode(out_token or b"")))
 
-        if self.complete:
+        if self._context.complete:
             self._context_attr = int(self._context.actual_flags)
 
         return out_token
@@ -421,15 +625,13 @@ class _GSSAPI(SecurityContextBase):
     def _step_ntlm(self, in_token=None):
         if not in_token:
             out_token = self._context.step()
-            log.debug("NTLM Negotiate: %s", to_text(base64.b64encode(out_token)))
         else:
-            log.debug("NTLM Challenge: %s", to_text(base64.b64encode(in_token)))
             out_token = self._context.step(in_token)
-            log.debug("NTLM Authenticate: %s", to_text(base64.b64encode(out_token)))
 
-        if self.complete:
+        if self._context.complete:
             # ntlm-auth only supports a set amount of features
             self._context_attr = self._CONTEXT_FLAG_MAP['confidentiality'] | \
+                                 self._CONTEXT_FLAG_MAP['integrity'] | \
                                  self._CONTEXT_FLAG_MAP['replay_detect'] | \
                                  self._CONTEXT_FLAG_MAP['sequence_detect']
 
@@ -437,29 +639,26 @@ class _GSSAPI(SecurityContextBase):
 
     @requires_context
     def wrap(self, data, confidential=True):
-        return getattr(self, '_wrap_%s' % self._context_provider)(data, confidential=confidential)
+        if self._context_provider == 'ntlm':
+            if not confidential:
+                raise NotImplementedError("NTLMClient does not support non-confidential wrapping")
 
-    def _wrap_gssapi(self, data, confidential=True):
-        return self._context.wrap(data, confidential).message
-
-    def _wrap_ntlm(self, data, confidential=True):
-        if not confidential:
-            raise NotImplementedError("NTLMClient does not support non-confidential wrapping")
-
-        return self._context.wrap(data)
+            return self._context.wrap(data)
+        else:
+            return self._context.wrap(data, confidential).message
 
     @requires_context
     def wrap_iov(self, iov, confidential=True):
-        return getattr(self, '_wrap_iov_%s' % self._context_provider)(iov, confidential=confidential)
+        if self._context_provider == 'ntlm':
+            raise NotImplementedError("NTLM provider does not support IOV wrapping")
+        else:
+            return self._wrap_iov_gssapi(iov, confidential=confidential)
 
     @_requires_iov
     def _wrap_iov_gssapi(self, iov, confidential=True):
         buffer = IOV(*self._build_iov(iov), std_layout=False)
         wrap_iov(self._context, buffer, confidential=confidential)
         return [i.value or b"" for i in buffer]
-
-    def _wrap_iov_ntlm(self, *iov, confidential=True):
-        raise NotImplementedError("NTLM provider does not support IOV wrapping")
 
     @requires_context
     def wrap_winrm(self, data, confidential=True):
@@ -473,26 +672,23 @@ class _GSSAPI(SecurityContextBase):
 
     @requires_context
     def unwrap(self, data):
-        return getattr(self, '_unwrap_%s' % self._context_provider)(data)
-
-    def _unwrap_gssapi(self, data):
-        return self._context.unwrap(data)[0]
-
-    def _unwrap_ntlm(self, data):
-        return self._context.unwrap(data)
+        if self._context_provider == 'ntlm':
+            return self._context.unwrap(data)
+        else:
+            return self._context.unwrap(data)[0]
 
     @requires_context
     def unwrap_iov(self, iov):
-        return getattr(self, '_unwrap_iov_%s' % self._context_provider)(iov)
+        if self._context_provider == 'ntlm':
+            raise NotImplementedError("NTLM provider does not support IOV wrapping")
+        else:
+            return self._unwrap_iov_gssapi(iov)
 
     @_requires_iov
     def _unwrap_iov_gssapi(self, iov):
         buffer = IOV(*self._build_iov(iov), std_layout=False)
         unwrap_iov(self._context, buffer)
         return tuple([i.value or b"" for i in buffer])
-
-    def _unwrap_iov_ntlm(self, iov):
-        raise NotImplementedError("NTLM provider does not support IOV wrapping")
 
     @requires_context
     def unwrap_winrm(self, header, data):
@@ -501,35 +697,64 @@ class _GSSAPI(SecurityContextBase):
 
         return super(_GSSAPI, self).unwrap_winrm(header, data)
 
+    @requires_context
+    def sign(self, data):
+        return self._sign(data)
+
+    def _sign(self, data):
+        if self._context_provider == 'ntlm':
+            # ntlm-auth only added the sign function in v1.5.0. We try and get the value from there and fallback
+            # to a private interface we know is present on older versions.
+            sign_func = getattr(self._context_provider, 'sign', None)
+            if sign_func is None:
+                sign_func = self._context._session_security._get_signature
+
+            return sign_func(data)
+        else:
+            return self._context.get_signature(data)
+
+    @requires_context
+    def verify(self, data, signature):
+        return self._verify(data, signature)
+
+    def _verify(self, data, signature):
+        if self._context_provider == 'ntlm':
+            # ntlm-auth only added the verify function in v1.5.0. We try and get the value from there and fallback
+            # to a private interface we know is present on older versions.
+            verify_func = getattr(self._context_provider, 'verify', None)
+            if verify_func is None:
+                verify_func = self._context._session_security._verify_signature
+
+            return verify_func(data, signature)
+        else:
+            self._context.verify_signature(data, signature)
+
+    def _convert_channel_bindings(self, bindings):
+        if self._context_provider == 'ntlm':
+            cbt = GssChannelBindingsStruct()
+            cbt[cbt.INITIATOR_ADDTYPE] = bindings.initiator_addrtype
+            cbt[cbt.INITIATOR_ADDRESS] = bindings.initiator_address
+            cbt[cbt.ACCEPTOR_ADDRTYPE] = bindings.acceptor_addrtype
+            cbt[cbt.ACCEPTOR_ADDRESS] = bindings.acceptor_address
+            cbt[cbt.APPLICATION_DATA] = bindings.application_data
+
+            return cbt
+        else:
+            return ChannelBindings(initiator_address_type=bindings.initiator_addrtype,
+                                   initiator_address=bindings.initiator_address,
+                                   acceptor_address_type=bindings.acceptor_addrtype,
+                                   acceptor_address=bindings.acceptor_address,
+                                   application_data=bindings.application_data)
+
+    def _create_spn(self, service, principal):
+        return u'%s@%s' % (service.lower(), principal)
+
     def _iov_buffer(self, buffer_type, data):
         if self._context_provider == 'ntlm':
             raise NotImplementedError("NTLM provider does not support IOV wrapping")
 
         auto_alloc = not data and buffer_type in [IOVBufferType.header, IOVBufferType.padding, IOVBufferType.trailer]
         return buffer_type, auto_alloc, data
-
-    def _create_spn(self, service, principal):
-        return u'%s@%s' % (service.lower(), principal)
-
-    def _convert_channel_bindings(self, bindings):
-        return getattr(self, '_convert_channel_bindings_%s' % self._context_provider)(bindings)
-
-    def _convert_channel_bindings_gssapi(self, bindings):
-        return ChannelBindings(initiator_address_type=bindings.initiator_addrtype,
-                               initiator_address=bindings.initiator_address,
-                               acceptor_address_type=bindings.acceptor_addrtype,
-                               acceptor_address=bindings.acceptor_address,
-                               application_data=bindings.application_data)
-
-    def _convert_channel_bindings_ntlm(self, bindings):
-        cbt = GssChannelBindingsStruct()
-        cbt[cbt.INITIATOR_ADDTYPE] = bindings.initiator_addrtype
-        cbt[cbt.INITIATOR_ADDRESS] = bindings.initiator_address
-        cbt[cbt.ACCEPTOR_ADDRTYPE] = bindings.acceptor_addrtype
-        cbt[cbt.ACCEPTOR_ADDRESS] = bindings.acceptor_address
-        cbt[cbt.APPLICATION_DATA] = bindings.application_data
-
-        return cbt
 
 
 class GSSAPIClient(_GSSAPI):

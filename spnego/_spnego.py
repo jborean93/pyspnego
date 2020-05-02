@@ -23,6 +23,7 @@ from spnego._asn1 import (
 
 
 NegTokenInit = namedtuple('NegTokenInit', ['mech_types', 'req_flags', 'mech_token', 'mech_list_mic'])
+NegTokenInit2 = namedtuple('NegTokenInit2', ['mech_types', 'req_flags', 'mech_token', 'neg_hints', 'mech_list_mic'])
 NegTokenResp = namedtuple('NegTokenResp', ['neg_state', 'supported_mech', 'response_token', 'mech_list_mic'])
 
 SPNEGO_OID = '1.3.6.1.5.5.2'
@@ -33,6 +34,14 @@ class NegState:
     accept_incomplete = 1
     reject = 2
     request_mic = 3
+
+
+def pack_mech_type_list(mech_list):
+    if not isinstance(mech_list, (list, tuple, set)):
+        mech_list = [mech_list]
+
+    b_mech_list = pack_asn1_sequence([pack_asn1_object_identifier(oid) for oid in mech_list])
+    return b_mech_list
 
 
 def pack_neg_token_init(mech_list, mech_token=None, mech_list_mic=None):
@@ -61,11 +70,7 @@ def pack_neg_token_init(mech_list, mech_token=None, mech_list_mic=None):
     elements = []
 
     # mechTypes
-    if not isinstance(mech_list, list):
-        mech_list = [mech_list]
-
-    b_mech_list = pack_asn1_sequence([pack_asn1_object_identifier(oid) for oid in mech_list])
-    elements.append(pack_asn1(TagClass.context_specific, True, 0, b_mech_list))
+    elements.append(pack_asn1(TagClass.context_specific, True, 0, pack_mech_type_list(mech_list)))
 
     # mechToken
     if mech_token:
@@ -82,11 +87,13 @@ def pack_neg_token_init(mech_list, mech_token=None, mech_list_mic=None):
 def _unpack_neg_token_init(b_data):
     # TODO: NegTokenInit2 could be sent by the server which has a slightly different setup.
     tag_class, _, tag_number, token_data, _ = unpack_asn1(b_data)
-    if tag_class != TagClass.universal and tag_number != TypeTagNumber.sequence:
+    if tag_class != TagClass.universal or tag_number != TypeTagNumber.sequence:
         raise ValueError("Expected SEQUENCE in NegTokenInit but got tag class %d and tag number %d"
                          % (tag_class, tag_number))
 
     entries = {}
+    init2 = False
+
     while token_data:
         sequence_class, _, sequence_no, sequence_data, token_data = unpack_asn1(token_data)
         if sequence_class != TagClass.context_specific:
@@ -94,14 +101,14 @@ def _unpack_neg_token_init(b_data):
 
         if sequence_no == 0:
             mech_list_class, _, mech_list_tag, mech_list_data, _ = unpack_asn1(sequence_data)
-            if mech_list_class != TagClass.universal and mech_list_tag != TypeTagNumber.sequence:
+            if mech_list_class != TagClass.universal or mech_list_tag != TypeTagNumber.sequence:
                 raise ValueError("Expected SEQUENCE of mechTypes in NegTokenInit but got tag class %d and tag "
                                  "number %d" % (mech_list_class, mech_list_tag))
 
             unpack_data = []
             while mech_list_data:
                 mech_class, _, mech_tag, mech_data, mech_list_data = unpack_asn1(mech_list_data)
-                if mech_class != TagClass.universal and mech_tag != TypeTagNumber.object_identifier:
+                if mech_class != TagClass.universal or mech_tag != TypeTagNumber.object_identifier:
                     raise ValueError("Expected SEQUENCE of MechType in mechTypes for NegTokenInit but got tag class "
                                      "%d and tag number %d" % (mech_class, mech_tag))
 
@@ -109,27 +116,58 @@ def _unpack_neg_token_init(b_data):
 
         elif sequence_no == 1:
             req_class, _, req_tag, req_data, _ = unpack_asn1(sequence_data)
-            if req_class != TagClass.universal and req_tag != TypeTagNumber.bit_string:
+            if req_class != TagClass.universal or req_tag != TypeTagNumber.bit_string:
                 raise ValueError("Expected ContextFlags BIT STRING in NegTokenInit but got tag class %d and tag "
                                  "number %d" % (req_class, req_tag))
 
-            # Can be up to 32 bits in length but RFC 4178 states
-            # "Implementations should not expect to receive exactly 32 bits in an encoding of ContextFlags."
-            # The spec also documents req flags up to 6 so let's just get the last byte. In reality we shouldn't ever
-            # receive this but it's left here for posterity.
+            # Can be up to 32 bits in length but RFC 4178 states "Implementations should not expect to receive exactly
+            # 32 bits in an encoding of ContextFlags." The spec also documents req flags up to 6 so let's just get the
+            # last byte. In reality we shouldn't ever receive this but it's left here for posterity.
             unpack_data = struct.unpack("B", unpack_asn1_bit_string(req_data)[-1])[0]
 
         elif sequence_no == 2:
             token_class, _, token_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if token_class != TagClass.universal and token_tag != TypeTagNumber.octet_string:
+            if token_class != TagClass.universal or token_tag != TypeTagNumber.octet_string:
                 raise ValueError("Expected mechToken OCTET STRING in NegTokenInit but got tag class %d and tag number "
                                  "%d" % (token_class, token_tag))
 
-        elif sequence_no == 3:
-            mic_class, _, mic_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if mic_class != TagClass.universal and mic_tag != TypeTagNumber.octet_string:
+        elif sequence_no in [3, 4]:
+            tag_class, _, tag_number, tag_data, _ = unpack_asn1(sequence_data)
+
+            # Microsoft helpfully sends a NegTokenInit2 payload which sets 'negHints [3] NegHints OPTIONAL' and the
+            # mechListMIC is actually at the 4th sequence entry. Because the NegTokenInit2 has the same choice in
+            # NegotiationToken as NegTokenInit ([0]) we can only differentiate when unpacking.
+            unpack_data = None
+            if tag_class == TagClass.universal:
+                if tag_number == TypeTagNumber.sequence:
+                    init2 = True
+
+                    unpack_data = {}
+                    while tag_data:
+                        hint_class, _, hint_number, hint_data, tag_data = unpack_asn1(tag_data)
+                        hint = unpack_asn1(hint_data)[3]
+
+                        if hint_number == 0:
+                            unpack_data['name'] = hint
+                        elif hint_number == 1:
+                            # Windows 2000, 2003, and XP put the SPN in the OEM code page, because there's no sane way
+                            # to decode this without prior knowledge we just keep it as bytes.
+                            # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/211417c4-11ef-46c0-a8fb-f178a51c2088#Appendix_A_5
+                            unpack_data['address'] = hint
+                        else:
+                            raise ValueError("Expected negHints sequence 0 or 1 not %d" % hint_number)
+
+                elif tag_number == TypeTagNumber.octet_string:
+                    if sequence_no == 4:
+                        init2 = True
+
+                    unpack_data = tag_data
+
+            # It was neither the expected entry for NegTokenInit and NegTokenInit2, just error for NegTokenInit as that
+            # is closer to the spec.
+            if unpack_data is None:
                 raise ValueError("Expected mechListMIC OCTET STRING in NegTokenInit but got tag class %d and tag "
-                                 "number %d" % (mic_class, mic_tag))
+                                 "number %d" % (tag_class, tag_number))
 
         else:
             raise ValueError("Unknown sequence number %d found in NegTokenInit token, expecting 0, 1, 2, or 3"
@@ -137,7 +175,11 @@ def _unpack_neg_token_init(b_data):
 
         entries[sequence_no] = unpack_data
 
-    return NegTokenInit(entries[0], entries.get(1, None), entries.get(2, None), entries.get(3, None))
+    if init2:
+        return NegTokenInit2(entries.get(0, []), entries.get(1, None), entries.get(2, None), entries.get(3, {}),
+                             entries.get(4, None))
+    else:
+        return NegTokenInit(entries[0], entries.get(1, None), entries.get(2, None), entries.get(3, None))
 
 
 def pack_neg_token_resp(neg_state=None, supported_mech=None, response_token=None, mech_list_mic=None):
@@ -179,7 +221,7 @@ def pack_neg_token_resp(neg_state=None, supported_mech=None, response_token=None
         elements.append(pack_asn1(TagClass.context_specific, True, 2, pack_asn1_octet_string(response_token)))
 
     if mech_list_mic:
-        elements.append(pack_asn1(TagClass.context_specific, True, 2, pack_asn1_octet_string(mech_list_mic)))
+        elements.append(pack_asn1(TagClass.context_specific, True, 3, pack_asn1_octet_string(mech_list_mic)))
 
     neg_token_resp = pack_asn1_sequence(elements)
     return _pack_negotiation_token(neg_token_resp, 1)
@@ -187,7 +229,7 @@ def pack_neg_token_resp(neg_state=None, supported_mech=None, response_token=None
 
 def _unpack_neg_token_resp(b_data):
     tag_class, _, tag_number, token_data, _ = unpack_asn1(b_data)
-    if tag_class != TagClass.universal and tag_number != TypeTagNumber.sequence:
+    if tag_class != TagClass.universal or tag_number != TypeTagNumber.sequence:
         raise ValueError("Expected SEQUENCE in NegTokenResp but got tag class %d and tag number %d"
                          % (tag_class, tag_number))
 
@@ -199,7 +241,7 @@ def _unpack_neg_token_resp(b_data):
 
         if sequence_no == 0:
             state_class, _, state_tag, state, _ = unpack_asn1(sequence_data)
-            if state_class != TagClass.universal and state_tag != TypeTagNumber.enumerated:
+            if state_class != TagClass.universal or state_tag != TypeTagNumber.enumerated:
                 raise ValueError("Expected negState ENUMERATED in NegTokenResp but got tag class %d and tag "
                                  "number %d" % (state_class, state_tag))
 
@@ -207,7 +249,7 @@ def _unpack_neg_token_resp(b_data):
 
         elif sequence_no == 1:
             mech_class, _, mech_tag, mech, _ = unpack_asn1(sequence_data)
-            if mech_class != TagClass.universal and mech_tag != TypeTagNumber.object_identifier:
+            if mech_class != TagClass.universal or mech_tag != TypeTagNumber.object_identifier:
                 raise ValueError("Expected supportedMech MechType in NegTokenResp but got tag class %d and tag "
                                  "number %d" % (mech_class, mech_tag))
 
@@ -215,13 +257,13 @@ def _unpack_neg_token_resp(b_data):
 
         elif sequence_no == 2:
             token_class, _, token_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if token_class != TagClass.universal and token_tag != TypeTagNumber.octet_string:
+            if token_class != TagClass.universal or token_tag != TypeTagNumber.octet_string:
                 raise ValueError("Expected responseToken OCTET STRING in NegTokenResp but got tag class %d and tag "
                                  "number %d" % (token_class, token_tag))
 
         elif sequence_no == 3:
             mic_class, _, mic_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if mic_class != TagClass.universal and mic_tag != TypeTagNumber.octet_string:
+            if mic_class != TagClass.universal or mic_tag != TypeTagNumber.octet_string:
                 raise ValueError("Expected mechListMIC OCTET STRING in NegTokenResp but got tag class %d and tag "
                                  "number %d" % (mic_class, mic_tag))
 
@@ -244,7 +286,7 @@ def unpack_neg_token(b_data):
             raise ValueError("Expecting a tag number of 0 not %d for InitialContextToken" % tag_number)
 
         mech_class, _, tag_number, mech, inner_context_token = unpack_asn1(b_data)
-        if mech_class != TagClass.universal and tag_number != TypeTagNumber.object_identifier:
+        if mech_class != TagClass.universal or tag_number != TypeTagNumber.object_identifier:
             raise ValueError("Expecting an OID as the first element in the InitialContextToken but got tag class %d "
                              "and tag number %d" % (mech_class, tag_number))
 
