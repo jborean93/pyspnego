@@ -44,6 +44,7 @@ from spnego._spnego import (
     NegTokenResp,
     pack_mech_type_list,
     pack_neg_token_init,
+    pack_neg_token_init2,
     pack_neg_token_resp,
     SPNEGO_OID,
     unpack_neg_token,
@@ -300,10 +301,13 @@ def _requires_iov(method):
     return wrapped
 
 
-def _spnego_build_response(spnego_context, mech_token=None, mech_list_mic=None):
+def _spnego_build_response(spnego_context, mech_token=None, mech_list_mic=None, is_client=True):
     if not spnego_context.init_sent:
         spnego_context.init_sent = True
-        return pack_neg_token_init(spnego_context.mech_list, mech_token=mech_token, mech_list_mic=mech_list_mic)
+        if is_client:
+            return pack_neg_token_init(spnego_context.mech_list, mech_token=mech_token, mech_list_mic=mech_list_mic)
+        else:
+            return pack_neg_token_init2(spnego_context.mech_list, mech_token=mech_token, mech_list_mic=mech_list_mic)
 
     if not spnego_context.complete:
         # As per RFC 4178 - 4.2.2: supportedMech should only be present in the first reply from the target.
@@ -659,6 +663,11 @@ class _GSSAPI(SecurityContextBase):
                 elif in_token.neg_state == NegState.accept_complete:
                     self._spnego_context.complete = True
 
+        else:
+            # We are starting the process and can build our own mech list
+            self._spnego_context = _SPNEGOContext(_KERBEROS_OID, _NTLM_OID)
+            self._spnego_context.inner_context = self._context
+
         # Step 2. Process the inner context tokens.
         mech_token_out = None
         if not self._spnego_context.inner_context.complete:
@@ -675,7 +684,8 @@ class _GSSAPI(SecurityContextBase):
 
         # Step 3. Process / generate the mechListMIC and return the new SPNEGO token.
         out_mic = _spnego_process_mic(self._spnego_context, mech_list_mic)
-        return _spnego_build_response(self._spnego_context, mech_token=mech_token_out, mech_list_mic=out_mic)
+        return _spnego_build_response(self._spnego_context, mech_token=mech_token_out, mech_list_mic=out_mic,
+                                      is_client=self._is_client)
 
     def _step_gssapi(self, in_token=None):
         out_token = self._context.step(in_token)

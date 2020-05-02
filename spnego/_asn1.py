@@ -6,6 +6,10 @@ __metaclass__ = type
 
 import struct
 
+from spnego._text import (
+    to_bytes,
+)
+
 
 class TagClass:
     universal = 0
@@ -122,6 +126,14 @@ def pack_asn1_enumerated(value, tag=True):
     b_data = pack_asn1_integer(value, tag=False)
     if tag:
         b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.enumerated, b_data)
+
+    return b_data
+
+
+def pack_asn1_general_string(value, tag=True, encoding='ascii'):
+    b_data = to_bytes(value, encoding=encoding)
+    if tag:
+        b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.general_string, b_data)
 
     return b_data
 

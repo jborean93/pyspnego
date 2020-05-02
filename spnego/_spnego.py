@@ -10,6 +10,7 @@ from collections import namedtuple
 from spnego._asn1 import (
     pack_asn1,
     pack_asn1_enumerated,
+    pack_asn1_general_string,
     pack_asn1_object_identifier,
     pack_asn1_octet_string,
     pack_asn1_sequence,
@@ -84,8 +85,65 @@ def pack_neg_token_init(mech_list, mech_token=None, mech_list_mic=None):
     return _pack_negotiation_token(neg_token_init, 0)
 
 
+def pack_neg_token_init2(mech_list, mech_token=None, hint_name=u"not_defined_in_RFC4178@please_ignore",
+                         hint_address=None, mech_list_mic=None):
+    """
+    Creates a SPNEGO NegTokenInit2 token that is wrapped in an InitialContextToken token. This token is the one
+    generated from an acceptor context that tells the client what mechs it can accept.
+
+    MechType ::= OBJECT IDENTIFIER
+
+    MechTypeList ::= SEQUENCE OF MechType
+
+    NegHints ::= SEQUENCE {
+        hintName[0] GeneralString OPTIONAL,
+        hintAddress[1] OCTET STRING OPTIONAL
+    }
+    NegTokenInit2 ::= SEQUENCE {
+        mechTypes[0] MechTypeList OPTIONAL,
+        reqFlags [1] ContextFlags OPTIONAL,
+        mechToken [2] OCTET STRING OPTIONAL,
+        negHints [3] NegHints OPTIONAL,
+        mechListMIC [4] OCTET STRING OPTIONAL,
+        ...
+    }
+
+    :param mech_list:
+    :param mech_token:
+    :param hint_name:
+    :param hint_address:
+    :param mech_list_mic:
+    :return:
+    """
+    elements = []
+
+    # mechTypes
+    elements.append(pack_asn1(TagClass.context_specific, True, 0, pack_mech_type_list(mech_list)))
+
+    # mechToken
+    if mech_token:
+        elements.append(pack_asn1(TagClass.context_specific, True, 2, pack_asn1_octet_string(mech_token)))
+
+    # negHints
+    neg_hints = []
+    if hint_name:
+        neg_hints.append(pack_asn1(TagClass.context_specific, True, 0, pack_asn1_general_string(hint_name)))
+
+    if hint_address:
+        neg_hints.append(pack_asn1(TagClass.context_specific, True, 1, pack_asn1_octet_string(hint_address)))
+
+    if neg_hints:
+        elements.append(pack_asn1(TagClass.context_specific, True, 3, pack_asn1_sequence(neg_hints)))
+
+    # mechListMIC
+    if mech_list_mic:
+        elements.append(pack_asn1(TagClass.context_specific, True, 4, pack_asn1_octet_string(mech_list_mic)))
+
+    neg_token_init = pack_asn1_sequence(elements)
+    return _pack_negotiation_token(neg_token_init, 0)
+
+
 def _unpack_neg_token_init(b_data):
-    # TODO: NegTokenInit2 could be sent by the server which has a slightly different setup.
     tag_class, _, tag_number, token_data, _ = unpack_asn1(b_data)
     if tag_class != TagClass.universal or tag_number != TypeTagNumber.sequence:
         raise ValueError("Expected SEQUENCE in NegTokenInit but got tag class %d and tag number %d"
