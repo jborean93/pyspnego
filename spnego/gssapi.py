@@ -285,14 +285,14 @@ def _reset_ntlm_crypto_state(context, is_client=True, session_key=None):
     https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/b87587b3-9d72-4027-8131-b76b5368115f
 
     :param context: The security context to reset the crypto state for.
-    :param is_server: Whether the server keys should be reset or just the client.
+    :param is_client: Whether the server keys should be reset or just the client.
     :param session_key: The session key used to re-derive the NTLM session security object.
     """
     if isinstance(context, NtlmContext):
         # ntlm-auth only added the reset_rc4_state method in v1.5.0. We try and use that method if present and fallback
         # to an internal mechanism we know will work with older versions.
         if hasattr(context, 'reset_rc4_state'):
-            context.reset_rc4_state(sender=is_client)
+            context.reset_rc4_state(outgoing=is_client)
         else:
             existing_ss = context._session_security
 
