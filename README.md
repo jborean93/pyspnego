@@ -134,3 +134,4 @@ echo "nameserver 192.168.56.10" > /etc/resolv.conf
 * Provide a way to see if a MIC has been set or not (`NtlmContext.mic_present`).
 * Provide a way to sign/verify messages (`NtlmContext.verify(data, signature)` and `NtlmContext.sign(data)`)
 * Provide a way to reset crypto state for both server and client (`NtlmContext.reset_rc4_state(outgoing=True)`)
+* See if it is possible to set/return the qop and encryption status for wrap/unwrap

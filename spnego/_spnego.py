@@ -99,6 +99,8 @@ def _unpack_neg_token_init(b_data):
         if sequence_class != TagClass.context_specific:
             raise ValueError("Expected explicit tagged sequence entries but got tag class of %d" % sequence_class)
 
+        unpack_data = sequence_data
+
         if sequence_no == 0:
             mech_list_class, _, mech_list_tag, mech_list_data, _ = unpack_asn1(sequence_data)
             if mech_list_class != TagClass.universal or mech_list_tag != TypeTagNumber.sequence:
@@ -169,10 +171,6 @@ def _unpack_neg_token_init(b_data):
                 raise ValueError("Expected mechListMIC OCTET STRING in NegTokenInit but got tag class %d and tag "
                                  "number %d" % (tag_class, tag_number))
 
-        else:
-            raise ValueError("Unknown sequence number %d found in NegTokenInit token, expecting 0, 1, 2, or 3"
-                             % sequence_no)
-
         entries[sequence_no] = unpack_data
 
     if init2:
@@ -239,6 +237,8 @@ def _unpack_neg_token_resp(b_data):
         if sequence_class != TagClass.context_specific:
             raise ValueError("Expected explicit tagged sequence entries but got tag class of %d" % sequence_class)
 
+        unpack_data = sequence_data
+
         if sequence_no == 0:
             state_class, _, state_tag, state, _ = unpack_asn1(sequence_data)
             if state_class != TagClass.universal or state_tag != TypeTagNumber.enumerated:
@@ -266,10 +266,6 @@ def _unpack_neg_token_resp(b_data):
             if mic_class != TagClass.universal or mic_tag != TypeTagNumber.octet_string:
                 raise ValueError("Expected mechListMIC OCTET STRING in NegTokenResp but got tag class %d and tag "
                                  "number %d" % (mic_class, mic_tag))
-
-        else:
-            raise ValueError("Unknown sequence number %d found in NegTokenResp token, expecting 0, 1, 2, or 3"
-                             % sequence_no)
 
         entries[sequence_no] = unpack_data
 
