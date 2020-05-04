@@ -9,13 +9,18 @@ import logging
 import logging.config
 import os
 
-from spnego.gssapi import GSSAPIClient, GSSAPIServer
+from spnego.gssapi import GSSAPIProxy
+from spnego.negotiate import NegotiateProxy
+from spnego.ntlm import NTLMProxy
 
-SSPI = None
+from spnego._context import DEFAULT_REQ, ContextReq
+
+HAS_SSPI = True
 try:
-    from spnego.sspi import SSPIClient, SSPIServer
+    from spnego.sspi import SSPIProxy
 except ImportError:
-    pass
+    HAS_SSPI = False
+
 
 try:
     from logging import NullHandler
@@ -43,10 +48,26 @@ logger = logging.getLogger(__name__)
 _setup_logging(logger)
 
 
-def initialize_security_context(username, password, hostname=None, service='HOST', delegate=False,
-                                confidentiality=True, channel_bindings=None, provider='negotiate'):
-    # FUTURE: See if we can pluginise each provider and add a method for someone to define their own.
-    if provider not in ['negotiate', 'ntlm', 'kerberos']:
-        raise ValueError("provider must be negotiate, ntlm, or kerberos")
+def client(username, password, hostname='unspecified', service='host', channel_bindings=None, context_req=DEFAULT_REQ,
+           protocol='negotiate'):
 
-    return None
+    if HAS_SSPI:
+        return SSPIProxy(username, password, hostname, service, channel_bindings, context_req, protocol)
+
+    protocol = protocol.lower()
+    gssapi_protocols = GSSAPIProxy.available_protocols()
+    if protocol in gssapi_protocols:
+        return GSSAPIProxy(username, password, hostname, service, channel_bindings, context_req, 'initiate', protocol)
+    elif protocol == 'kerberos':
+        raise Exception("gssapi is not available")
+    elif protocol == 'negotiate':
+        return NegotiateProxy(username, password, hostname, service, channel_bindings, context_req, 'initiate',
+                              protocol)
+    elif protocol == 'ntlm':
+        return NTLMProxy(username, password, channel_bindings, context_req)
+    else:
+        raise ValueError("Invalid protocol specified '%s', must be kerberos, negotiate, or ntlm" % protocol)
+
+
+def server():
+    raise NotImplementedError()

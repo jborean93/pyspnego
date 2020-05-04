@@ -28,3 +28,8 @@ from spnego._sspi_raw.sspi import (
     verify_signature,
     WinNTAuthIdentity,
 )
+
+
+# TODO: Add this to sspi.pyx
+class SSPIQoP:
+    wrap_no_encrypt = 0x80000001
