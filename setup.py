@@ -31,7 +31,7 @@ extensions = [
 setup(
     name='pyspnego',
     version='0.0.1.dev0',
-    packages=['spnego', 'spnego._sspi_raw'],
+    packages=['spnego', 'spnego._ntlm_raw', 'spnego._sspi_raw'],
     scripts=[
         'bin/pyspnego-parse',
     ],
