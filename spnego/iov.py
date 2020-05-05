@@ -4,10 +4,17 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import enum
+
 from collections import namedtuple
 
 
-class BufferType:
+class BufferType(enum.IntFlag):
+    """Buffer types to use for an IOVBuffer type.
+
+    These are the IOVBuffer type flags that can be set for an IOVBuffer. The keys are a generified name for the
+    respective SSPI and GSSAPI flags.
+    """
     empty = 0  # SECBUFFER_EMPTY | GSS_IOV_BUFFER_TYPE_EMPTY
     data = 1  # SECBUFFER_DATA | GSS_IOV_BUFFER_TYPE_DATA
     header = 2  # SECBUFFER_TOKEN | GSS_IOV_BUFFER_TYPE_HEADER
@@ -20,3 +27,19 @@ class BufferType:
 
 
 IOVBuffer = namedtuple('IOVBuffer', ['type', 'data'])
+"""A buffer to pass as a list to :meth:`wrap_iov()`.
+
+Defines the buffer inside a list that is passed to :meth:`wrap_iov()`. A list of these buffers are also returned in the
+`IOVUnwrapResult` under the `buffers` attribute.
+
+On SSPI only a buffer of the type `header`, `trailer`, or `padding` can be auto allocated. On GSSAPI all buffers can be
+auto allocated when `data=True` but the behaviour behind this is dependent on the mech it is run for. 
+
+TODO: examples
+
+Attributes:
+    type (BufferType): The type of the IOV buffer.
+    data (Union[bytes, int, bool]): On the output from the `*_iov` functions this is the bytes buffer or `None` if the
+        buffer wasn't set. When used as an input to the `*_iov` functions this can be the buffer bytes, the length of
+        buffer to allocate or a bool to state whether the buffer is auto allocated or not.
+"""

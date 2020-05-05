@@ -48,26 +48,35 @@ logger = logging.getLogger(__name__)
 _setup_logging(logger)
 
 
-def client(username, password, hostname='unspecified', service='host', channel_bindings=None, context_req=DEFAULT_REQ,
-           protocol='negotiate'):
-
+def _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, usage):
     if HAS_SSPI:
-        return SSPIProxy(username, password, hostname, service, channel_bindings, context_req, protocol)
+        # On Windows SSPI will be available, always favour this over our own Python implementation.
+        return SSPIProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
 
     protocol = protocol.lower()
-    gssapi_protocols = GSSAPIProxy.available_protocols()
-    if protocol in gssapi_protocols:
-        return GSSAPIProxy(username, password, hostname, service, channel_bindings, context_req, 'initiate', protocol)
-    elif protocol == 'kerberos':
-        raise Exception("gssapi is not available")
+    gssapi_protocols = GSSAPIProxy.available_protocols(context_req=context_req)
+    if protocol == 'kerberos' or protocol in gssapi_protocols:
+        # Use GSSAPI is someone has requested kerberos or it reports that it supports the protocol specified.
+        return GSSAPIProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
+
     elif protocol == 'negotiate':
-        return NegotiateProxy(username, password, hostname, service, channel_bindings, context_req, 'initiate',
-                              protocol)
+        # If GSSAPI does not offer negotiate support, use our own wrapper.
+        return NegotiateProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
+
     elif protocol == 'ntlm':
+        # Finally if GSSAPI does not support ntlm, use our own wrapper.
+        # FIXME: fail if usage='accept'
         return NTLMProxy(username, password, channel_bindings, context_req)
+
     else:
         raise ValueError("Invalid protocol specified '%s', must be kerberos, negotiate, or ntlm" % protocol)
 
 
-def server():
-    raise NotImplementedError()
+def client(username, password, hostname='unspecified', service='host', channel_bindings=None, context_req=DEFAULT_REQ,
+           protocol='negotiate'):
+    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'initiate')
+
+
+def server(username, password, hostname='unspecified', service='host', channel_bindings=None, context_req=DEFAULT_REQ,
+           protocol='negotiate'):
+    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'accept')

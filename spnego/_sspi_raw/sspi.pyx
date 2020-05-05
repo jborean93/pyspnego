@@ -480,8 +480,10 @@ cdef class SecBuffer:
     def buffer(SecBuffer self):
         if self.c_value.cbBuffer and self.c_value.pvBuffer:
             return (<char *>self.c_value.pvBuffer)[:self.c_value.cbBuffer]
+        elif self.c_value.pvBuffer:
+            return b""  # The size was 0 but pvBuffer was not a NULL pointer.
         else:
-            return b""
+            return
 
     @buffer.setter
     def buffer(SecBuffer self, bytes value):

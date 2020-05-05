@@ -19,13 +19,14 @@ from typing import (
     List,
     Optional,
     Tuple,
-)
+    Union)
 
 from spnego.channel_bindings import (
     GssChannelBindings,
 )
 
 from spnego.iov import (
+    BufferType,
     IOVBuffer,
 )
 
@@ -33,69 +34,6 @@ from spnego._text import (
     text_type,
     to_native,
 )
-
-
-class ContextReq(enum.IntEnum):
-    """Flags that the caller can specify what features they require.
-
-    A list of features as bit flags that the caller can specify when creating the security context. These flags can
-    be used on both Windows or Linux but are a no-op on Windows as it should always have the same features available.
-    On Linux the features it can implement depend on a wide range of factors like the system libraries/headers that
-    are installed, what GSSAPI implementation is present, and what Python libraries are available.
-
-    This is a pretty advanced feature and is mostly a way to control the kerberos to ntlm fallback behaviour on Linux.
-
-    These are the currently implemented feature flags:
-
-    negotiate_kerberos:
-        Will make sure that Kerberos is at least available to try for authentication when using the `negotiate`
-        protocol. If Kerberos cannot be used due to the Python gssapi library not being installed then it will raise a
-        :class:`spnego.exceptions.FeatureMissingError`. If Kerberos was available but it cannot get a credential or
-        create a context then it will just fallback to NTLM auth. If you wish to only use Kerberos with no NTLM
-        fallback, set `protocol='kerberos'` when creating the security context.
-
-    session_key:
-        Ensure that the authenticated context will be able to return the session key that was negotiated between the
-        client and the server. Older versions of `gss-ntlmssp`_ do not expose the functions required to retrieve this
-        info so when this feature flag is set then the NTLM fallback process will use `ntlm-auth`_ and not
-        `gss-ntlmssp`_ if the latter is too old to retrieve the session key.
-
-    wrapping_iov:
-        The GSSAPI IOV methods are extensions to the Kerberos spec and not implemented or exposed on all platforms,
-        macOS is a popular example. If the caller requires the wrap_iov and unwrap_iov methods this will ensure it
-        fails fast before the auth has been set up. Unfortunately there is no fallback for this as if the headers
-        aren't present for GSSAPI then we can't do anything to fix that. This won't fail if `negotiate` was used and
-        NTLM was the chosen protocol as that happens post negotiation.
-
-    wrapping_winrm:
-        To created a wrapped WinRM message the IOV extensions are required when using Kerberos auth. Setting this flag
-        will skip Kerberos when `protocol='negotiate'` if the IOV headers aren't present and just fallback to NTLM.
-
-    .. _ntlm-auth:
-        https://github.com/jborean93/ntlm-auth
-
-    .. _gss-ntlmssp:
-        https://github.com/gssapi/gss-ntlmssp
-    """
-    # GSSAPI|SSPI flags
-    delegate = 0x00000001
-    mutual_auth = 0x00000002
-    replay_detect = 0x00000004
-    sequence_detect = 0x00000008
-    confidentiality = 0x00000010
-    integrity = 0x00000020
-    anonymous = 0x00000040
-    delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
-
-    # pyspnego specific flags
-    negotiate_kerberos = 0x100000000
-    session_key = 0x200000000
-    wrapping_iov = 0x400000000
-    wrapping_winrm = 0x800000000
-
-
-DEFAULT_REQ = ContextReq.integrity | ContextReq.confidentiality | ContextReq.sequence_detect | \
-              ContextReq.replay_detect | ContextReq.mutual_auth
 
 
 def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], Optional[str]]
@@ -152,7 +90,7 @@ IOVWrapResult = namedtuple('IOVWrapResult', ['buffers', 'encrypted'])
 """Result of the `wrap_iov()` function.
 
 Attributes:
-    buffers (Tuple[bytes, ...]): The wrapped bytes of the buffers passed into the function.
+    buffers (Tuple[IOVBuffer, ...]): The wrapped IOV buffers.
     encrypted (bool): Whether the buffer data was encrypted (True) or not (False).
 """
 
@@ -169,10 +107,153 @@ IOVUnwrapResult = namedtuple('IOVUnwrapResult', ['buffers', 'encrypted', 'qop'])
 """Result of the `unwrap_iov()` function.
 
 Attributes:
-    buffers (Tuple[bytes, ...]): The unwrapped bytes of the buffers passed into the function.
+    buffers (Tuple[IOVBuffer, ...]): The unwrapped IOV buffers.
     encrypted (bool): Whether the input buffers were encrypted (True) or not (False)
     qop (int): The Quality of Protection used for the encrypted buffers.
 """
+
+
+class ContextReq(enum.IntFlag):
+    """Flags that the caller can specify what features they require.
+
+    A list of features as bit flags that the caller can specify when creating the security context. These flags can
+    be used on both Windows or Linux but are a no-op on Windows as it should always have the same features available.
+    On Linux the features it can implement depend on a wide range of factors like the system libraries/headers that
+    are installed, what GSSAPI implementation is present, and what Python libraries are available.
+
+    This is a pretty advanced feature and is mostly a way to control the kerberos to ntlm fallback behaviour on Linux.
+
+    These are the currently implemented feature flags:
+
+    negotiate_kerberos:
+        Will make sure that Kerberos is at least available to try for authentication when using the `negotiate`
+        protocol. If Kerberos cannot be used due to the Python gssapi library not being installed then it will raise a
+        :class:`spnego.exceptions.FeatureMissingError`. If Kerberos was available but it cannot get a credential or
+        create a context then it will just fallback to NTLM auth. If you wish to only use Kerberos with no NTLM
+        fallback, set `protocol='kerberos'` when creating the security context.
+
+    session_key:
+        Ensure that the authenticated context will be able to return the session key that was negotiated between the
+        client and the server. Older versions of `gss-ntlmssp`_ do not expose the functions required to retrieve this
+        info so when this feature flag is set then the NTLM fallback process will use `ntlm-auth`_ and not
+        `gss-ntlmssp`_ if the latter is too old to retrieve the session key.
+
+    wrapping_iov:
+        The GSSAPI IOV methods are extensions to the Kerberos spec and not implemented or exposed on all platforms,
+        macOS is a popular example. If the caller requires the wrap_iov and unwrap_iov methods this will ensure it
+        fails fast before the auth has been set up. Unfortunately there is no fallback for this as if the headers
+        aren't present for GSSAPI then we can't do anything to fix that. This won't fail if `negotiate` was used and
+        NTLM was the chosen protocol as that happens post negotiation.
+
+    wrapping_winrm:
+        To created a wrapped WinRM message the IOV extensions are required when using Kerberos auth. Setting this flag
+        will skip Kerberos when `protocol='negotiate'` if the IOV headers aren't present and just fallback to NTLM.
+
+    .. _ntlm-auth:
+        https://github.com/jborean93/ntlm-auth
+
+    .. _gss-ntlmssp:
+        https://github.com/gssapi/gss-ntlmssp
+    """
+    none = 0x00000000
+
+    # GSSAPI|SSPI flags
+    delegate = 0x00000001
+    mutual_auth = 0x00000002
+    replay_detect = 0x00000004
+    sequence_detect = 0x00000008
+    confidentiality = 0x00000010
+    integrity = 0x00000020
+    anonymous = 0x00000040
+    delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
+
+    # pyspnego specific flags
+    negotiate_kerberos = 0x100000000
+    session_key = 0x200000000
+    wrapping_iov = 0x400000000
+    wrapping_winrm = 0x800000000
+
+
+DEFAULT_REQ = ContextReq.integrity | ContextReq.confidentiality | ContextReq.sequence_detect | \
+              ContextReq.replay_detect | ContextReq.mutual_auth
+
+
+class FeatureMissingError(Exception):
+
+    @property
+    def feature_id(self):
+        return self.args[0]
+
+    @property
+    def message(self):
+        msg = {
+            ContextReq.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be negotiated.',
+            ContextReq.gssapi_iov_wrapping: 'The system is missing the GSSAPI IOV extension headers, cannot utilitze '
+                                       'wrap_iov and unwrap_iov',
+            ContextReq.negotiate_winrm_wrapping: 'The system is missing the GSSAPI IOV extension headers required for WinRM '
+                                         'encryption with Kerberos.',
+
+            # The below shouldn't be raised in an exception as it controls the negotiate logic but still have something
+            # here just in case.
+            ContextReq.session_key: 'The GSSAPI NTLM mech does not expose a mechanism to extract the session key.',
+        }.get(self.feature_id, 'Unknown feature flag: %d' % self.feature_id)
+
+        return msg
+
+    def __str__(self):
+        return self.message
+
+
+class GSSMech(enum.Enum):
+    ntlm = '1.3.6.1.4.1.311.2.2.10'
+    spnego = '1.3.6.1.5.5.2'
+
+    # Kerberos has been put under several OIDs over time, we should only be using 'kerberos'.
+    kerberos = '1.2.840.113554.1.2.2'  # The actual Kerberos OID, this should be the one used.
+    _ms_kerberos = '1.2.840.48018.1.2.2'
+    _kerberos_draft = '1.3.5.1.5.2'
+    _iakerb = '1.3.6.1.5.2'
+
+    # Not implemented.
+    kerberos_u2u = '1.2.840.113554.1.2.2.3'
+    negoex = '1.3.6.1.4.1.311.2.2.30'
+
+    @property
+    def common_name(self):
+        if self.is_kerberos_oid:
+            return 'kerberos'
+
+        return self.name
+
+    @property
+    def is_kerberos_oid(self):  # type: () -> bool
+        """Determines if the mech is a Kerberos mech.
+
+        Kerberos has been known under serveral OIDs in the past. This tells the caller whether the OID is one of those
+        "known" OIDs.
+
+        Returns:
+            bool: Whether the mech is a Kerberos mech (True) or not (False).
+        """
+        return self in [GSSMech.kerberos, GSSMech._ms_kerberos, GSSMech._kerberos_draft, GSSMech._iakerb]
+
+    @staticmethod
+    def from_oid(oid):  # type: (str) -> GSSMech
+        """Converts an OID string to a GSSMech value.
+
+        Converts an OID string to a GSSMech value if it is known.
+
+        Args:
+            oid: The OID as a string to convert from.
+
+        Raises:
+            ValueError: if the OID is not a known GSSMech.
+        """
+        for mech in GSSMech:
+            if mech.value == oid:
+                return mech
+        else:
+            raise ValueError("'%s' is not a valid GSSMech OID" % oid)
 
 
 @add_metaclass(ABCMeta)
@@ -205,23 +286,29 @@ class ContextProxy:
         password (text_type): The password for username.
         hostname (text_type): The principal part of the SPN.
         service (text_type): The service part of the SPN.
-        channel_bindings (GssChannelBindings): The optional channel bindings object to bind to the auth.
-        context_req (int): The context requirements flags as an int value specific to the context provider.
-        context_attr (int): The context attributes of the completed authenticated context.
+        context_req (ContextReq): The context requirements flags as an int value specific to the context provider.
         usage (str): The usage of the context, `initiate` for a client and `accept` for a server.
         protocol (text_type): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
     """
 
-    def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol):
-        # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type) -> None  # noqa
+    def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol,
+                 is_wrapped):
+        # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, bool) -> None  # noqa
         self.username = username
         self.password = password
-        self.spn = self.create_spn(service or 'host', hostname or 'unspecified')
-        self.channel_bindings = None
-        if self.channel_bindings:
-            self.convert_channel_bindings(channel_bindings)
-        self.context_req = context_req
-        self.context_attr = 0
+        self.spn = self._create_spn(service or 'host', hostname or 'unspecified')
+
+        self._channel_bindings = None
+        if self._channel_bindings:
+            self._channel_bindings = self._convert_channel_bindings(channel_bindings)
+
+        self.context_req = context_req  # Generic context requirements.
+        self._context_req = 0  # Provider specific context requirements.
+        for generic, provider in self._context_attr_map:
+            if context_req & generic:
+                self._context_req |= provider
+
+        self._context_attr = 0  # Provider specific context attributes, set by self.step().
 
         self.usage = usage.lower()
         if self.usage not in ['initiate', 'accept']:
@@ -231,8 +318,21 @@ class ContextProxy:
         if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
             raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
 
+        # Whether the context is wrapped inside another context.
+        self._is_wrapped = is_wrapped  # type: bool
+
+        if self.protocol not in self.available_protocols():
+            raise Exception("Protocol is not available")
+
+        if context_req & ContextReq.negotiate_kerberos and (self.protocol == 'negotiate' and
+                                                            'kerberos' not in self.available_protocols()):
+            raise FeatureMissingError(ContextReq.negotiate_kerberos)
+
+        if context_req & ContextReq.wrapping_iov and not self.iov_available():
+            raise FeatureMissingError(ContextReq.wrapping_iov)
+
     @classmethod
-    def available_protocols(cls, feature_flags=0):  # type: (Optional[int]) -> List[text_type, ...]
+    def available_protocols(cls, context_req=None):  # type: (Optional[ContextReq]) -> List[text_type, ...]
         """A list of protocols that the provider can offer.
 
         Returns a list of protocols the underlying provider can implement. Currently only kerberos, negotiate, or ntlm
@@ -240,7 +340,7 @@ class ContextProxy:
         setup. ntlm-auth only supports NTLM.
 
         Args:
-            feature_flags: The feature flags of :class:`FeatureFlags` that state what features the client requires.
+            context_req: The context requirements of :class:`ContextReq` that state what the client requires.
 
         Returns:
             List[text_type, ...]: The list of protocols that the context can use.
@@ -274,6 +374,23 @@ class ContextProxy:
         pass
 
     @property
+    def context_attr(self):  # type: () -> ContextReq
+        """The context attributes that were negotiated.
+
+        This is the context attributes that were negotiated with the counterpart server. These attributes are only
+        valid once the context is fully established.
+
+        Returns:
+            ContextReq: The flags that were negotiated.
+        """
+        attr = 0
+        for generic, provider in self._context_attr_map:
+            if self._context_attr & provider:
+                attr |= generic
+
+        return ContextReq(attr)
+
+    @property
     @abstractmethod
     def negotiated_protocol(self):  # type: () -> text_type
         """The name of the negotiated protocol.
@@ -299,22 +416,6 @@ class ContextProxy:
 
         Returns:
             bytes: The derived session key from the authenticated context.
-        """
-        pass
-
-    @abstractmethod
-    def create_spn(self, service, principal):  # type: (text_type, text_type) -> text_type
-        """Creates the SPN.
-
-        Creates the SPN in the format required by the context. An SPN is required for Kerberos auth to work correctly.
-        Typically on SSPI the SPN must be in the form 'HTTP/fqdn' whereas GSSAPI expected 'http@fqdn'.
-
-        Args:
-            service: The service part of the SPN.
-            principal: The hostname or principal part of the SPN.
-
-        Returns:
-            text_type: The SPN in the format required by the context provider.
         """
         pass
 
@@ -514,25 +615,24 @@ class ContextProxy:
         """
         pass
 
+    # Internal properties/functions not for public use.
+
+    @property
     @abstractmethod
-    def convert_channel_bindings(self, bindings):  # type: (Optional[GssChannelBindings]) -> any
-        """Convert a GssChannelBindings object to a provider specific value.
+    def _context_attr_map(self):  # type: () -> List[Tuple[ContextReq, int], ...]
+        """Map the generic ContextReq into the provider specific flags.
 
-        Converts the common GssChannelBindings object to the provider specific value that it can use when stepping
-        through the authentication token.
-
-        Args:
-            bindings: The GssChannelBindings object to convert.
+        Will return a list of tuples that give the provider specific flag value for the generic ContextReq that is
+        exposed to end users.
 
         Returns:
-            Optional[any]: The provider specific value or None if no bindings where specified.
+            List[Tuple[ContextReq, int], ...]: A list of tuples where tuple[0] is the ContextReq flag and tuple[1] is
+                the relevant provider specific flag for our common one.
         """
         pass
 
-    # Non-SSPI only functions when we create our own SPNEGO tokens with NTLM as the negotiated mech.
-
     @property
-    def requires_mech_list_mic(self):  # type: () -> bool
+    def _requires_mech_list_mic(self):  # type: () -> bool
         """Determine if the SPNEGO mechListMIC is required for the sec context.
 
         When Microsoft hosts deal with NTLM through SPNEGO it always wants the mechListMIC to be present when the NTLM
@@ -556,7 +656,85 @@ class ContextProxy:
         """
         return False
 
-    def reset_ntlm_crypto_state(self, outgoing=True):  # type: (bool) -> None
+    def _build_iov_list(self, iov):  # type: (List[Union[Tuple, int, bytes], ...]) -> List
+        provider_iov = []
+
+        for entry in iov:
+            if isinstance(entry, tuple):
+                if len(entry) != 2:
+                    raise ValueError("IOV entry tuple must contain 2 values, the type and data, see IOVBuffer.")
+
+                if not isinstance(entry[0], int):
+                    raise ValueError("IOV entry[0] must specify the BufferType as an int")
+                buffer_type = entry[0]
+
+                if not isinstance(entry[1], (bytes, int, bool)):
+                    raise ValueError("IOV entry[1] must specify the buffer bytes, length of the buffer, or whether "
+                                     "it is auto allocated.")
+                data = entry[1]
+
+            elif isinstance(entry, int):
+                buffer_type = entry
+                data = None
+
+            elif isinstance(entry, bytes):
+                buffer_type = BufferType.data
+                data = entry
+
+            else:
+                raise ValueError("IOV entry must be a IOVBuffer tuple, int, or bytes")
+
+            iov_buffer = IOVBuffer(type=BufferType(buffer_type), data=data)
+            provider_iov.append(self._convert_iov_buffer(iov_buffer))
+
+        return provider_iov
+
+    @abstractmethod
+    def _create_spn(self, service, principal):  # type: (text_type, text_type) -> text_type
+        """Creates the SPN.
+
+        Creates the SPN in the format required by the context. An SPN is required for Kerberos auth to work correctly.
+        Typically on SSPI the SPN must be in the form 'HTTP/fqdn' whereas GSSAPI expected 'http@fqdn'.
+
+        Args:
+            service: The service part of the SPN.
+            principal: The hostname or principal part of the SPN.
+
+        Returns:
+            text_type: The SPN in the format required by the context provider.
+        """
+        pass
+
+    @abstractmethod
+    def _convert_channel_bindings(self, bindings):  # type: (Optional[GssChannelBindings]) -> any
+        """Convert a GssChannelBindings object to a provider specific value.
+
+        Converts the common GssChannelBindings object to the provider specific value that it can use when stepping
+        through the authentication token.
+
+        Args:
+            bindings: The GssChannelBindings object to convert.
+
+        Returns:
+            Optional[any]: The provider specific value or None if no bindings where specified.
+        """
+        pass
+
+    @abstractmethod
+    def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> any
+        """Convert a IOVBuffer object to a provider specific IOVBuffer value.
+
+        Converts the common IOVBuffer object to the provider specific value that it can use in the *_iov() functions.
+
+        Args:
+            buffer: The IOVBuffer to convert to the provider specific buffer type.
+
+        Return:
+            any: The provider specific buffer value
+        """
+        pass
+
+    def _reset_ntlm_crypto_state(self, outgoing=True):  # type: (bool) -> None
         """Reset the NTLM crypto handles after signing/verifying the SPNEGO mechListMIC.
 
         `MS-SPNG`_ documents that after signing or verifying the mechListMIC, the RC4 key state needs to be the same
@@ -570,8 +748,3 @@ class ContextProxy:
             https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/b87587b3-9d72-4027-8131-b76b5368115f
         """
         pass
-
-    def _flag_is_set(self, name):
-        """ Check if a context attribute flag is set from a common name. """
-        flag_val = self.get_context_attribute_value(name)
-        return self.context_attr & flag_val == flag_val

@@ -4,28 +4,34 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import base64
+import logging
+
 from typing import (
     Union,
     Optional,
-)
+    Tuple)
 
 from spnego._context import (
     ContextProxy,
-    DEFAULT_REQ,
     ContextReq,
+    DEFAULT_REQ,
+    GSSMech,
     IOVWrapResult,
     IOVUnwrapResult,
     UnwrapResult,
     WrapResult,
 )
 
-from spnego._spnego import (
-    SPNEGO_OID,
+from spnego._text import (
+    text_type,
+    to_bytes,
+    to_text,
 )
 
-from spnego._text import (
-    to_bytes,
-    text_type,
+from spnego.iov import (
+    BufferType,
+    IOVBuffer,
 )
 
 HAS_GSSAPI = True
@@ -56,8 +62,7 @@ except ImportError as err:
     HAS_IOV = False
 
 
-_KERBEROS_OID = '1.2.840.113554.1.2.2'
-_NTLM_OID = '1.3.6.1.4.1.311.2.2.10'
+log = logging.getLogger(__name__)
 
 _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
@@ -173,14 +178,18 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
 
     # If any of these calls results in a GSSError we treat that as NTLM being unusable because these are standard
     # behaviours we expect to work.
+    ntlm = gssapi.OID.from_int_seq(GSSMech.ntlm.value)
     try:
         # This can be anything, the first NTLM message doesn't need a valid target name or credential.
-        context = GSSAPIProxy(username='user', password='pass', protocol='ntlm')
+        spn = gssapi.Name('http@test', name_type=gssapi.NameType.hostbased_service)
+        cred = _get_gssapi_credential(ntlm, 'initiate', username='user', password='pass')
+        context = gssapi.SecurityContext(creds=cred, usage='initiate', name=spn, mech=ntlm)
+
         context.step()  # Need to at least have a context set up before we can call gss_set_sec_context_option.
 
         # macOS' Heimdal implementation will work up to this point but the end messages aren't actually valid. Luckily
         # it does not implement 'GSS_NTLMSSP_RESET_CRYPTO_OID' so by running this we can weed out that broken impl.
-        context.reset_ntlm_crypto_state()
+        context._reset_ntlm_crypto_state()
 
         ntlm_features['available'] = True
     except GSSError as err:
@@ -216,16 +225,18 @@ class GSSAPIProxy(ContextProxy):
 
     Args:
     """
-
     def __init__(self, username=None, password=None, hostname='unspecified', service='host', channel_bindings=None,
-                 context_req=DEFAULT_REQ, usage='initiate', protocol='negotiate'):
+                 context_req=DEFAULT_REQ, usage='initiate', protocol='negotiate', is_wrapped=False):
         super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                          protocol)
+                                          protocol, is_wrapped)
+
+        if not HAS_GSSAPI:
+            raise Exception("Requires gssapi")
 
         mech_str = {
-            'kerberos': _KERBEROS_OID,
-            'negotiate': SPNEGO_OID,
-            'ntlm': _NTLM_OID,
+            'kerberos': GSSMech.kerberos.value,
+            'negotiate': GSSMech.spnego.value,
+            'ntlm': GSSMech.ntlm.value,
         }[self.protocol]
         mech = gssapi.OID.from_int_seq(mech_str)
         cred = _get_gssapi_credential(mech, self.usage, username=username, password=password)
@@ -234,29 +245,36 @@ class GSSAPIProxy(ContextProxy):
         if self.usage == 'initiate':
             context_kwargs['name'] = gssapi.Name(self.spn, name_type=gssapi.NameType.hostbased_service)
             context_kwargs['mech'] = mech
-            context_kwargs['flags'] = self.context_req & 0xFFFFFFFF  # Remove our extra flags
+            context_kwargs['flags'] = self._context_req
 
-        self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, channel_bindings=self.channel_bindings,
+        self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, channel_bindings=self._channel_bindings,
                                                **context_kwargs)
 
     @classmethod
-    def available_protocols(cls, feature_flags=0):
-        if not feature_flags:
-            feature_flags = 0
+    def available_protocols(cls, context_req=None):
+        if not context_req:
+            context_req = ContextReq(0)
 
         protocols = []
         if HAS_GSSAPI:
-            protocols = [u'kerberos']
+            # We can't offer Kerberos if the caller requires WinRM wrapping and IOV isn't available.
+            if not (context_req & ContextReq.wrapping_winrm and not HAS_IOV):
+                protocols = [u'kerberos']
 
             # We can only offer NTLM if the mech is installed and can retrieve the functionality the caller desires.
-            if _gss_ntlmssp_available(session_key=bool(feature_flags & ContextReq.session_key)):
-                protocols.extend([u'ntlm', u'negotiate'])
+            if _gss_ntlmssp_available(session_key=bool(context_req & ContextReq.session_key)):
+                protocols.append(u'ntlm')
+
+            # We can only offer Negotiate if we can offer both Kerberos and NTLM.
+            if len(protocols) == 2:
+                protocols.append(u'negotiate')
 
         return protocols
 
     @classmethod
     def iov_available(cls):
-        # NOTE: Even if the IOV headers are unavailable, if NTLM was negotiated then IOV won't work.
+        # NOTE: Even if the IOV headers are unavailable, if NTLM was negotiated then IOV won't work. Unfortunately we
+        # cannot determine that here as we may not know the protocol until after negotiation.
         return HAS_IOV
 
     @property
@@ -266,33 +284,23 @@ class GSSAPIProxy(ContextProxy):
     @property
     def negotiated_protocol(self):
         return {
-            _KERBEROS_OID: u'kerberos',
-            _NTLM_OID: u'ntlm',
+            GSSMech.kerberos.value: u'kerberos',
+            GSSMech.ntlm.value: u'ntlm',
         }.get(self._context.mech.dotted_form, u'unknown: %s' % self._context.mech.dotted_form)
 
     @property
     def session_key(self):
         return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
 
-    @property
-    def requires_mech_list_mic(self):
-        try:
-            require_mic = gssapi.OID.from_int_seq(_GSS_SPNEGO_REQUIRE_MIC_OID_STRING)
-            res = inquire_sec_context_by_oid(self._context, require_mic)
-        except GSSError:
-            # Not all gssapi mechs implement this OID, the other mechListMIC rules still apply but are calc elsewhere.
-            return False
-        else:
-            return b"\x01" in res
-
-    def create_spn(self, service, principal):
-        return u"%s@%s" % (service.lower(), principal)
-
     def step(self, in_token=None):
-        out_token = self._context.step(in_token)
+        if not self._is_wrapped:
+            log.debug("GSSAPI step input: %s", to_text(base64.b64encode(in_token or b"")))
 
-        if self._context.complete:
-            self.context_attr = ContextReq(self._context.actual_flags)
+        out_token = self._context.step(in_token)
+        self._context_attr = int(self._context.actual_flags)
+
+        if not self._is_wrapped:
+            log.debug("GSSAPI step output: %s", to_text(base64.b64encode(out_token or b"")))
 
         return out_token
 
@@ -302,10 +310,10 @@ class GSSAPIProxy(ContextProxy):
         return WrapResult(data=res.message, encrypted=res.encrypted)
 
     def wrap_iov(self, iov, encrypt=True, qop=None):
-        buffer = IOV(*iov, std_layout=False)
+        buffer = IOV(*self._build_iov_list(iov), std_layout=False)
         encrypted = wrap_iov(self._context, buffer, confidential=encrypt, qop=qop)
 
-        return IOVWrapResult(buffers=tuple([b.value or b"" for b in buffer]), encrypted=encrypted)
+        return IOVWrapResult(buffers=self._create_iov_result(buffer), encrypted=encrypted)
 
     def unwrap(self, data):
         res = gssapi.raw.unwrap(self._context, data)
@@ -313,10 +321,10 @@ class GSSAPIProxy(ContextProxy):
         return UnwrapResult(data=res.message, encrypted=res.encrypted, qop=res.qop)
 
     def unwrap_iov(self, iov):
-        buffer = IOV(*iov, std_layout=False)
+        buffer = IOV(*self._build_iov_list(iov), std_layout=False)
         res = unwrap_iov(self._context, buffer)
 
-        return IOVUnwrapResult(buffers=tuple([b.value or b"" for b in buffer]), encrypted=res.encrypted, qop=res.qop)
+        return IOVUnwrapResult(buffers=self._create_iov_result(buffer), encrypted=res.encrypted, qop=res.qop)
 
     def sign(self, data, qop=None):
         return gssapi.raw.get_mic(self._context, data, qop=qop)
@@ -324,14 +332,67 @@ class GSSAPIProxy(ContextProxy):
     def verify(self, data, mic):
         return gssapi.raw.verify_mic(self._context, data, mic)
 
-    def convert_channel_bindings(self, bindings):
+    @property
+    def _context_attr_map(self):
+        return [
+            (ContextReq.delegate, gssapi.RequirementFlag.delegate_to_peer),
+            (ContextReq.mutual_auth, gssapi.RequirementFlag.mutual_authentication),
+            (ContextReq.replay_detect, gssapi.RequirementFlag.replay_detection),
+            (ContextReq.sequence_detect, gssapi.RequirementFlag.out_of_sequence_detection),
+            (ContextReq.confidentiality, gssapi.RequirementFlag.confidentiality),
+            (ContextReq.integrity, gssapi.RequirementFlag.integrity),
+            (ContextReq.anonymous, gssapi.RequirementFlag.anonymity),
+            (ContextReq.delegate_policy, 32768),  # GSS_C_DELEG_POLICY_FLAG, doesn't seem to be in python gssapi.
+        ]
+
+    @property
+    def _requires_mech_list_mic(self):
+        try:
+            require_mic = gssapi.OID.from_int_seq(_GSS_SPNEGO_REQUIRE_MIC_OID_STRING)
+            res = inquire_sec_context_by_oid(self._context, require_mic)
+        except GSSError:
+            # Not all gssapi mechs implement this OID, the other mechListMIC rules still apply but are calc elsewhere.
+            return False
+        else:
+            return b"\x01" in res
+
+    def _convert_channel_bindings(self, bindings):
         return ChannelBindings(initiator_address_type=bindings.initiator_addrtype,
                                initiator_address=bindings.initiator_address,
                                acceptor_address_type=bindings.acceptor_addrtype,
                                acceptor_address=bindings.acceptor_address,
                                application_data=bindings.application_data)
 
-    def reset_ntlm_crypto_state(self, outgoing=True):
+    def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> Tuple[int, bool, Optional[bytes]]
+        buffer_data = None
+        buffer_alloc = False
+
+        if isinstance(buffer.data, bytes):
+            buffer_data = buffer.data
+        elif isinstance(buffer.data, int):
+            # This shouldn't really occur on GSSAPI but is here to mirror what SSPI does.
+            buffer_data = b"\x00" * buffer.data
+        else:
+            auto_alloc = [BufferType.header, BufferType.padding, BufferType.trailer]
+
+            buffer_alloc = buffer.data
+            if buffer_alloc is None:
+                buffer_alloc = buffer.type in auto_alloc
+
+        return buffer.type, buffer_alloc, buffer_data
+
+    def _create_iov_result(self, iov):  # type: (IOV) -> Tuple[IOVBuffer, ...]
+        buffers = []
+        for i in iov:
+            buffer_entry = IOVBuffer(type=BufferType(i.type), data=i.value)
+            buffers.append(buffer_entry)
+
+        return tuple(buffers)
+
+    def _create_spn(self, service, principal):
+        return u"%s@%s" % (service.lower(), principal)
+
+    def _reset_ntlm_crypto_state(self, outgoing=True):
         if self.negotiated_protocol == u'ntlm':
             reset_crypto = gssapi.OID.from_int_seq(_GSS_NTLMSSP_RESET_CRYPTO_OID)
             value = b"\x00\x00\x00\x00" if outgoing else b"\x01\x00\x00\x00"

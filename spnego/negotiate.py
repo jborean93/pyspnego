@@ -6,15 +6,13 @@ __metaclass__ = type
 
 import base64
 import logging
-from typing import List, Optional
 
-from spnego.exceptions import (
-    FeatureMissingError,
-)
+from typing import List, Optional, Tuple
 
 from spnego._context import (
     ContextProxy,
-    ContextReq,
+    DEFAULT_REQ,
+    GSSMech,
 )
 
 from spnego._spnego import (
@@ -30,7 +28,6 @@ from spnego._spnego import (
 )
 
 from spnego._text import (
-    to_bytes,
     to_text,
 )
 
@@ -56,17 +53,15 @@ class NegotiateProxy(ContextProxy):
     """
 
     def __init__(self, username=None, password=None, hostname='unspecified', service='host', channel_bindings=None,
-                 delegate=False, mutual_auth=True, replay_detect=True, sequence_detect=True, confidentiality=True,
-                 integrity=True, usage='initiate', protocol='negotiate'):
-        super(NegotiateProxy, self).__init__(username, password, hostname, service, channel_bindings, delegate,
-                                             mutual_auth, replay_detect, sequence_detect, confidentiality, integrity,
-                                             usage, protocol)
+                 context_req=DEFAULT_REQ, usage='initiate', protocol='negotiate'):
+        super(NegotiateProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req,
+                                             usage, protocol, False)
 
-        self.context = None  # type: Optional[ContextProxy]
-
+        self._hostname = hostname  # type: str
+        self._service = service  # type: str
         self._complete = False  # type: bool
-        self._mech_list = []  # type: List[str]
-        self._mech = None  # type: Optional[str]
+        self._context_list = []  # type: List[Tuple[GSSMech, ContextProxy, Optional[bytes]]]
+        self._mech_list = []
 
         self._init_sent = False  # type: bool
         self._mech_sent = False  # type: bool
@@ -75,11 +70,20 @@ class NegotiateProxy(ContextProxy):
         self._mic_required = False  # type: bool
 
     @classmethod
-    def available_protocols(cls, feature_flags=0):
-        return [u'negotiate']
+    def available_protocols(cls, context_req=None):
+        # We always support Negotiate and NTLM as we have the ntlm-auth backend and only support kerberos if gssapi is
+        # present.
+        protocols = [u'ntlm', u'negotiate']
+
+        # Make sure we add Kerberos first as the order is important.
+        if u'kerberos' in GSSAPIProxy.available_protocols(context_req=context_req):
+            protocols.insert(0, u'kerberos')
+
+        return protocols
 
     @classmethod
     def iov_available(cls):
+        # NTLM does not support IOV so we can only say that IOV is available if GSSAPI IOV is available.
         return GSSAPIProxy.iov_available()
 
     @property
@@ -87,107 +91,122 @@ class NegotiateProxy(ContextProxy):
         return self._complete
 
     @property
+    def context_attr(self):
+        return self._context.context_attr
+
+    @property
     def negotiated_protocol(self):
-        return self.context.negotiated_protocol
+        return self._context.negotiated_protocol
 
     @property
     def session_key(self):
-        return self.context.session_key
-
-    @property
-    def requires_mech_list_mic(self):
-        return self.context.requires_mech_list_mic
-
-    def create_spn(self, service, principal):
-        return self.context.create_spn
+        return self._context.session_key
 
     def step(self, in_token=None):
-        # Step 1. Process SPNEGO mechs
-        mech_token_in = None
+        log.debug("SPNEGO step input: %s", to_text(base64.b64encode(in_token or b"")))
+
+        # Step 1. Process SPNEGO mechs.
+        mech_token_in, mech_list_mic = self._step_spnego_input(in_token=in_token)
+
+        # Step 2. Process the inner context tokens.
+        mech_token_out = self._step_spnego_token(in_token=mech_token_in)
+
+        # Step 3. Process / generate the mechListMIC.
+        out_mic = self._step_spnego_mic(in_mic=mech_list_mic)
+
+        # Step 4. Generate the output SPNEGO token.
+        out_token = self._step_spnego_output(out_token=mech_token_out, out_mic=out_mic)
+
+        if self.complete:
+            # Remove the leftover contexts if there are still others remaining.
+            self._context_list = [self._context_list[0]]
+
+        log.debug("SPNEGO step output: %s" % to_text(base64.b64encode(out_token or b"")))
+
+        return out_token
+
+    def _step_spnego_input(self, in_token=None):
         mech_list_mic = None
+        token = None
 
         if in_token:
             in_token = unpack_neg_token(in_token)
 
             mech_list_mic = in_token.mech_list_mic
 
-            # Windows can send NegTokenInit2 (seen with SMB) token if it initiated the auth process, the fields we care
-            # about are still the same as NegTokenInit.
             if isinstance(in_token, (NegTokenInit, NegTokenInit2)):
-                self._spnego_context.init_sent = True
-                mech_token_in = in_token.mech_token
+                token = in_token.mech_token
 
-                mech_types = in_token.mech_types
-                new_list = []
-                for oid in mech_types:
-                    if oid in self._spnego_context.mech_list:
-                        new_list.append(oid)
-
-                # Could not find a common mechanism with the server
-                if not new_list:
-                    raise Exception("Failed to negotiated negotiation protocol with server")
-
-                if self._spnego_context.mech != new_list[0]:
-                    a = ''  # TODO: adjust list accordingly and rebuild the context.
+                self._mech_list = self._rebuild_context_list(self._mech_list, in_token=token)
+                self._init_sent = True
+                # TODO: Determine that the mech list priority matches our priority.
 
             elif isinstance(in_token, NegTokenResp):
-                mech_token_in = in_token.response_token
+                token = in_token.response_token
 
                 # If we have received the supported_mech then we don't need to send our own.
                 if in_token.supported_mech:
                     # TODO: verify that the supported_mech is the one we originally sent.
-                    self._spnego_context.mech_sent = True
+                    self._mech_sent = True
 
                 # Raise exception if we are rejected and have no error info (mechToken) that will give us more info.
-                if in_token.neg_state == NegState.reject and not mech_token_in:
+                if in_token.neg_state == NegState.reject and not token:
                     raise Exception("Received SPNEGO rejection")
 
                 if in_token.neg_state == NegState.request_mic:
-                    self._spnego_context.mic_required = True
+                    self._mic_required = True
                 elif in_token.neg_state == NegState.accept_complete:
-                    self._spnego_context.complete = True
+                    self._complete = True
 
         else:
-            # We are starting the process and can build our own mech list
-            a = ''
-            #self._spnego_context = _SPNEGOContext(_KERBEROS_OID, _NTLM_OID)
-            #self._spnego_context.inner_context = self._context
+            # We are starting the process and can build our own mech list based on our own priority.
+            self._mech_list = self._rebuild_context_list()
 
-        # Step 2. Process the inner context tokens.
-        mech_token_out = None
-        if not self.context.complete:
-            try:
-                mech_token_out = self.context.step(in_token=mech_token_in)
-            except GSSError as err:
-                # TODO: Need the fallback from GSSAPI failing with Kerb to ntlm-auth if the first step fails
-                raise err
+        return token, mech_list_mic
+
+    def _step_spnego_token(self, in_token=None):
+        if not self._context.complete:
+            # The first round should also have the token pre-cached, retrieve that and clear out the cache nwo that we
+            # no longer need it. Otherwise create the next token as necessary.
+            if self._context_list[0][2]:
+                out_token = self._context_list[0][2]
+                self._context_list[0] = (self._context_list[0][0], self._context_list[0][1], None)
+
             else:
-                # NTLM has a special case where we need to tell it it's ok to generate the MIC and also determine if
-                # it actually did set the MIC as that controls the mechListMIC for the SPNEGO token.
-                if self.requires_mech_list_mic:
-                    self._spnego_context.mic_required = True
+                out_token = self._context.step(in_token=in_token)
 
-        # Step 3. Process / generate the mechListMIC and return the new SPNEGO token.
-        if mech_list_mic:
-            self.verify(pack_mech_type_list(self._mech_list), mech_list_mic)
-            self.reset_ntlm_crypto_state(outgoing=True)
+            # NTLM has a special case where we need to tell it it's ok to generate the MIC and also determine if
+            # it actually did set the MIC as that controls the mechListMIC for the SPNEGO token.
+            if self._requires_mech_list_mic:
+                self._mic_required = True
+
+            return out_token
+
+    def _step_spnego_mic(self, in_mic=None):
+        if in_mic:
+            self.verify(pack_mech_type_list(self._mech_list), in_mic)
+            self._reset_ntlm_crypto_state(outgoing=True)
 
             self._mic_required = True  # If we received a mechListMIC we need to send one back.
             self._mic_recv = True
 
-        out_mic = None
+            if self._mic_sent:
+                self._complete = True
+
         if self._mic_required and not self._mic_sent:
             out_mic = self.sign(pack_mech_type_list(self._mech_list))
-            self.reset_ntlm_crypto_state()
+            self._reset_ntlm_crypto_state()
 
             self._mic_sent = True
 
-        out_token = None
+            return out_mic
+
+    def _step_spnego_output(self, out_token=None, out_mic=None):
         if not self._init_sent:
             self._init_sent = True
 
             build_func = pack_neg_token_init if self.usage == 'initiate' else pack_neg_token_init2
-            out_token = build_func(self._mech_list, mech_token=mech_token_out, mech_list_mic=out_mic)
+            return build_func(self._mech_list, mech_token=out_token, mech_list_mic=out_mic)
 
         elif not self.complete:
             # As per RFC 4178 - 4.2.2: supportedMech should only be present in the first reply from the target.
@@ -199,42 +218,110 @@ class NegotiateProxy(ContextProxy):
 
             state = NegState.accept_incomplete
 
-            if self.context.complete:
+            if self._context.complete:
                 if self._mic_sent and not self._mic_recv:
-                    # TODO: request_mic for an acceptor should also be set if the preferred mech wasn't selected by the initiator
+                    # FIXME: should only accept when usage='accept' and the preferred mech wasn't used.
                     state = NegState.request_mic
                 else:
                     state = NegState.accept_complete
                     self._complete = True
 
-            out_token = pack_neg_token_resp(neg_state=state, response_token=mech_token_out,
-                                            supported_mech=supported_mech, mech_list_mic=mech_list_mic)
-
-        return out_token
+            return pack_neg_token_resp(neg_state=state, response_token=out_token,
+                                       supported_mech=supported_mech, mech_list_mic=out_mic)
 
     def wrap(self, data, encrypt=True, qop=None):
-        return self.context.wrap(data, encrypt=encrypt, qop=qop)
+        return self._context.wrap(data, encrypt=encrypt, qop=qop)
 
     def wrap_iov(self, iov, encrypt=True, qop=None):
-        return self.context.wrap_iov(iov, encrypt=encrypt, qop=qop)
+        return self._context.wrap_iov(iov, encrypt=encrypt, qop=qop)
 
     def unwrap(self, data):
-        return self.context.unwrap(data)
+        return self._context.unwrap(data)
 
     def unwrap_iov(self, iov):
-        return self.context.unwrap_iov(iov)
+        return self._context.unwrap_iov(iov)
 
     def sign(self, data, qop=None):
-        return self.context.sign(data, qop=qop)
+        return self._context.sign(data, qop=qop)
 
     def verify(self, data, mic):
-        return self.context.verify(data, mic)
+        return self._context.verify(data, mic)
 
-    def convert_channel_bindings(self, bindings):
-        return self.context.convert_channel_bindings(bindings)
+    @property
+    def _context(self):
+        if self._context_list:
+            return self._context_list[0][1]
 
-    def get_context_attribute_value(self, name):
-        return self.context.get_context_attribute_value(name)
+    @property
+    def _context_attr_map(self):
+        return []  # SPNEGO layer uses the generic commands, the underlying context has it's own specific map.
 
-    def reset_ntlm_crypto_state(self, outgoing=True):
-        return self.context.reset_ntlm_crypto_state(outgoing=outgoing)
+    @property
+    def _requires_mech_list_mic(self):
+        return self._context._requires_mech_list_mic
+
+    def _convert_channel_bindings(self, bindings):
+        return bindings  # SPNEGO layer uses the generic version, the underlying context has it's own specific way.
+
+    def _convert_iov_buffer(self, iov):
+        pass  # Handled in the underlying context.
+
+    def _create_spn(self, service, principal):
+        return u"%s@%s" % (service.lower(), principal)
+
+    def _rebuild_context_list(self, mech_list=None, in_token=None):
+        # type: (Optional[List[str]], Optional[bytes]) -> List[str]
+
+        gssapi_protocols = [p for p in GSSAPIProxy.available_protocols(context_req=self.context_req)
+                            if p != 'negotiate']
+        available_mechs = [getattr(GSSMech, p) for p in gssapi_protocols]
+        available_mechs.append(GSSMech.ntlm)  # We can always offer NTLM.
+
+        chosen_mechs = []
+        one_required = True
+        if mech_list:
+            for mech in mech_list:
+                try:
+                    gss_mech = GSSMech.from_oid(mech)
+                except ValueError:
+                    continue
+
+                if gss_mech in available_mechs or (GSSMech.kerberos in available_mechs and gss_mech.is_kerberos_oid()):
+                    chosen_mechs.append(gss_mech)
+
+        else:
+            mech_list = []
+            one_required = False
+            chosen_mechs = available_mechs
+
+        if not chosen_mechs:
+            raise Exception("Cannot negotiate a common mech")
+
+        for mech in chosen_mechs:
+            if mech.name in gssapi_protocols:
+                try:
+                    context = GSSAPIProxy(self.username, self.password, self._hostname, self._service,
+                                          self._channel_bindings, self.context_req, self.usage, protocol=mech.name,
+                                          is_wrapped=True)
+                    first_token = context.step(in_token=in_token)
+                except Exception as e:
+                    log.debug("Failed to create gssapi context for SPNEGO protocol $s: %s" % mech.name, e)
+                    continue
+
+            else:
+                context = NTLMProxy(self.username, self.password, self._channel_bindings, self.context_req,
+                                    is_wrapped=True)
+                first_token = context.step(in_token=in_token)
+
+            # We were able to build the context, add it to the list.
+            self._context_list.append((mech, context, first_token))
+
+            if one_required:
+                break
+            else:
+                mech_list.append(mech.value)
+
+        return mech_list
+
+    def _reset_ntlm_crypto_state(self, outgoing=True):
+        return self._context._reset_ntlm_crypto_state(outgoing=outgoing)

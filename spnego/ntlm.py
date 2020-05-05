@@ -4,6 +4,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import base64
+import logging
 import struct
 
 from typing import (
@@ -41,9 +43,14 @@ from spnego._context import (
 
 from spnego._text import (
     text_type,
+    to_text,
 )
 
+
+log = logging.getLogger(__name__)
+
 # TODO: Look up internalising all this into this library instead of using ntlm-auth
+# Frees up a lot of version checks, adds acceptor supports, simplifies pyspnego-parse.
 
 
 class NTLMProxy(ContextProxy):
@@ -59,16 +66,16 @@ class NTLMProxy(ContextProxy):
         channel_bindings: The optional :class:`spnego.channel_bindings.GssChannelBindings` for the context.
     """
 
-    def __init__(self, username, password, channel_bindings=None, context_req=DEFAULT_REQ):
-        # type: (text_type, text_type, Optional[GssChannelBindings], ContextReq) -> None
+    def __init__(self, username, password, channel_bindings=None, context_req=DEFAULT_REQ, is_wrapped=False):
+        # type: (text_type, text_type, Optional[GssChannelBindings], ContextReq, bool) -> None
         super(NTLMProxy, self).__init__(username, password, None, None, channel_bindings, context_req, 'initiate',
-                                        'ntlm')
+                                        'ntlm', is_wrapped)
 
         domain, username = split_username(self.username)
-        self._context = NtlmContext(username, password, domain=domain, cbt_data=self.channel_bindings)
+        self._context = NtlmContext(username, password, domain=domain, cbt_data=self._channel_bindings)
 
     @classmethod
-    def available_protocols(cls, feature_flags=0):
+    def available_protocols(cls, context_req=None):
         return [u'ntlm']
 
     @classmethod
@@ -90,22 +97,11 @@ class NTLMProxy(ContextProxy):
         # TODO: Remove getattr when ntlm-auth>=1.4.0.
         return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
 
-    @property
-    def requires_mech_list_mic(self):
-        # ntlm-auth only added the mic_present attribute in v1.5.0. We try and get the value from there and fallback
-        # to a private interface we know is present on older versions.
-        # TODO: remove hasattr when ntlm-auth>=1.5.0.
-        if hasattr(self._context, 'mic_present'):
-            return self._context.mic_present
-
-        if self._context._authenticate_message:
-            return bool(self._context._authenticate_message.mic)
-
-    def create_spn(self, service, principal):
-        return u""  # SPNs are not used in ntlm-auth.
-
     def step(self, in_token=None):
         out_token = self._context.step(input_token=in_token)
+
+        if not self._is_wrapped:
+            log.debug("NTLM step input: %s", to_text(base64.b64encode(in_token or b"")))
 
         if self.complete:
             # ntlm-auth negotiate_flags set were the original flags the client sent and not what the server ultimately
@@ -119,14 +115,17 @@ class NTLMProxy(ContextProxy):
 
             integrity = False
             if flags & NegotiateFlags.NTLMSSP_NEGOTIATE_SEAL:
-                self.context_attr |= ContextReq.confidentiality
+                self._context_attr |= ContextReq.confidentiality
                 integrity = True
 
             elif flags & NegotiateFlags.NTLMSSP_NEGOTIATE_SIGN:
                 integrity = True
 
             if integrity:
-                self.context_attr |= ContextReq.integrity | ContextReq.replay_detect | ContextReq.sequence_detect
+                self._context_attr |= ContextReq.integrity | ContextReq.replay_detect | ContextReq.sequence_detect
+
+        if not self._is_wrapped:
+            log.debug("ntlm-auth step output; %s", to_text(base64.b64encode(out_token or b"")))
 
         return out_token
 
@@ -166,7 +165,28 @@ class NTLMProxy(ContextProxy):
 
         return 0
 
-    def convert_channel_bindings(self, bindings):
+    @property
+    def _context_attr_map(self):
+        return []  # ntlm-auth doesn't natively use these flags so we don't need to translate them.
+
+    @property
+    def _requires_mech_list_mic(self):
+        # ntlm-auth only added the mic_present attribute in v1.5.0. We try and get the value from there and fallback
+        # to a private interface we know is present on older versions.
+        # TODO: remove hasattr when ntlm-auth>=1.5.0.
+        if hasattr(self._context, 'mic_present'):
+            return self._context.mic_present
+
+        if self._context._authenticate_message:
+            return bool(self._context._authenticate_message.mic)
+
+    def _create_spn(self, service, principal):
+        return u""  # SPNs are not used in ntlm-auth.
+
+    def _convert_iov_buffer(self, iov):
+        pass  # IOV is not used in ntlm-auth.
+
+    def _convert_channel_bindings(self, bindings):
         cbt = GssChannelBindingsStruct()
         cbt[cbt.INITIATOR_ADDTYPE] = bindings.initiator_addrtype
         cbt[cbt.INITIATOR_ADDRESS] = bindings.initiator_address
@@ -176,7 +196,7 @@ class NTLMProxy(ContextProxy):
 
         return cbt
 
-    def reset_ntlm_crypto_state(self, outgoing=True):
+    def _reset_ntlm_crypto_state(self, outgoing=True):
         # ntlm-auth only added the reset_rc4_state method in v1.5.0. We try and use that method if present and fallback
         # to an internal mechanism we know will work with older versions.
         # TODO: Remove hasattr when ntlm-auth>=1.5.0

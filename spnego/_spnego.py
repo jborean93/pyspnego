@@ -5,7 +5,10 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import struct
-from collections import namedtuple
+
+from collections import (
+    namedtuple,
+)
 
 from spnego._asn1 import (
     pack_asn1,
@@ -22,12 +25,14 @@ from spnego._asn1 import (
     unpack_asn1_object_identifier,
 )
 
+from spnego._context import (
+    GSSMech,
+)
+
 
 NegTokenInit = namedtuple('NegTokenInit', ['mech_types', 'req_flags', 'mech_token', 'mech_list_mic'])
 NegTokenInit2 = namedtuple('NegTokenInit2', ['mech_types', 'req_flags', 'mech_token', 'neg_hints', 'mech_list_mic'])
 NegTokenResp = namedtuple('NegTokenResp', ['neg_state', 'supported_mech', 'response_token', 'mech_list_mic'])
-
-SPNEGO_OID = '1.3.6.1.5.5.2'
 
 
 class NegState:
@@ -345,7 +350,7 @@ def unpack_neg_token(b_data):
                              "and tag number %d" % (mech_class, tag_number))
 
         mech = unpack_asn1_object_identifier(mech)
-        if mech != SPNEGO_OID:
+        if mech != GSSMech.spnego.value:
             raise ValueError("Expecting a InitialContextToken with a SPNEGO mech but received %s" % mech)
 
         return unpack_neg_token(inner_context_token)
@@ -380,7 +385,7 @@ def _pack_negotiation_token(token, choice):
     """
     negotiation_token = pack_asn1(TagClass.context_specific, True, choice, token)
     if choice == 0:
-        return _pack_initial_context_token(SPNEGO_OID, negotiation_token)
+        return _pack_initial_context_token(GSSMech.spnego.value, negotiation_token)
     else:
         return negotiation_token
 
