@@ -15,6 +15,7 @@ from collections import (
 from datetime import (
     datetime,
     timedelta,
+    tzinfo,
 )
 
 from typing import (
@@ -498,6 +499,17 @@ class FileTime(datetime):
 
         return dt
 
+    @classmethod
+    def now(cls, tz=None):  # type: (tzinfo) -> FileTime
+        """ Construct a FileTime from the current time and optional time zone info. """
+        return FileTime.from_datetime(datetime.now(tz=tz))
+
+    @classmethod
+    def from_datetime(cls, dt, ns=0):  # type: (datetime, int) -> FileTime
+        """ Creates a FileTime object from a datetime object. """
+        return FileTime(year=dt.year, month=dt.month, day=dt.day, hour=dt.hour, minute=dt.minute, second=dt.second,
+                        microsecond=dt.microsecond, tzinfo=dt.tzinfo, nanosecond=ns)
+
     def __str__(self):
         """ Displays the datetime in ISO 8601 including the 100th nanosecond internal like .NET does. """
         fraction_seconds = ""
@@ -537,8 +549,7 @@ class FileTime(datetime):
 
         # Create the FileTime object from the datetime object and add the nanoseconds.
         ns = int(filetime % 10) * 100
-        return FileTime(year=dt.year, month=dt.month, day=dt.day, hour=dt.hour, minute=dt.minute, second=dt.second,
-                        microsecond=dt.microsecond, nanosecond=ns)
+        return FileTime.from_datetime(dt, ns=ns)
 
 
 class TargetInfo(OrderedDict):
