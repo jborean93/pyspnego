@@ -55,7 +55,7 @@ class GssChannelBindings:
         self.acceptor_address = acceptor_address
         self.application_data = application_data
 
-    def get_data(self):
+    def pack(self):
         b_data = self._pack_value(self.initiator_addrtype, self.initiator_address)
         b_data += self._pack_value(self.acceptor_addrtype, self.acceptor_address)
         b_data += self._pack_value(None, self.application_data)

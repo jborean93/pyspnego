@@ -198,8 +198,8 @@ class SSPIProxy(ContextProxy):
         # The flags values slightly differ for a initiate and accept context.
         if self.usage == 'initiate':
             return [
-                (ContextReq.delegate, ClientContextReq.confidentiality),
-                (ContextReq.delegate_policy, ClientContextReq.confidentiality),
+                (ContextReq.delegate, ClientContextReq.delegate),
+                (ContextReq.delegate_policy, ClientContextReq.delegate),
                 (ContextReq.mutual_auth, ClientContextReq.mutual_auth),
                 (ContextReq.replay_detect, ClientContextReq.replay_detect),
                 (ContextReq.sequence_detect, ClientContextReq.sequence_detect),
@@ -208,8 +208,8 @@ class SSPIProxy(ContextProxy):
             ]
         else:
             return [
-                (ContextReq.delegate, ServerContextReq.confidentiality),
-                (ContextReq.delegate_policy, ServerContextReq.confidentiality),
+                (ContextReq.delegate, ServerContextReq.delegate),
+                (ContextReq.delegate_policy, ServerContextReq.delegate),
                 (ContextReq.mutual_auth, ServerContextReq.mutual_auth),
                 (ContextReq.replay_detect, ServerContextReq.replay_detect),
                 (ContextReq.sequence_detect, ServerContextReq.sequence_detect),
@@ -222,9 +222,6 @@ class SSPIProxy(ContextProxy):
         num = self.__seq_num
         self.__seq_num += 1
         return num
-
-    def _convert_channel_bindings(self, bindings):
-        return bindings.get_data()
 
     def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> SecBuffer
         kwargs = {}

@@ -6,6 +6,8 @@ __metaclass__ = type
 
 import base64
 import logging
+import os
+import socket
 import struct
 
 from typing import (
@@ -41,6 +43,15 @@ from spnego._context import (
     WrapResult,
 )
 
+from spnego._ntlm_raw.messages import (
+    Authenticate,
+    Challenge,
+    Negotiate,
+    NegotiateFlags,
+    TargetInfo,
+    Version,
+)
+
 from spnego._text import (
     text_type,
     to_text,
@@ -49,11 +60,139 @@ from spnego._text import (
 
 log = logging.getLogger(__name__)
 
-# TODO: Look up internalising all this into this library instead of using ntlm-auth
-# Frees up a lot of version checks, adds acceptor supports, simplifies pyspnego-parse.
-
 
 class NTLMProxy(ContextProxy):
+
+    def __init__(self, username, password, hostname='unspecified', service='host', channel_bindings=None,
+                 context_req=DEFAULT_REQ, usage='initiate', protocol='ntlm', is_wrapped=False):
+        super(NTLMProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
+                                        protocol, is_wrapped)
+
+        self._complete = False
+
+        self._domain, self._username = split_username(username)
+        self._context_req = NegotiateFlags(self._context_req) | \
+            NegotiateFlags.key_128 | \
+            NegotiateFlags.key_56 | \
+            NegotiateFlags.key_exch | \
+            NegotiateFlags.extended_session_security | \
+            NegotiateFlags.always_sign | \
+            NegotiateFlags.ntlm | \
+            NegotiateFlags.lm_key | \
+            NegotiateFlags.request_target | \
+            NegotiateFlags.oem | \
+            NegotiateFlags.unicode
+
+        self._negotiate = None
+        self._challenge = None
+        self._authenticate = None
+
+    @classmethod
+    def available_protocols(cls, context_req=None):
+        return [u'ntlm']
+
+    @classmethod
+    def iov_available(cls):
+        return False
+
+    @property
+    def complete(self):
+        return self._complete
+
+    @property
+    def negotiated_protocol(self):
+        return u'ntlm'
+
+    @property
+    def session_key(self):
+        return None
+
+    def step(self, in_token=None):
+        if not self._is_wrapped:
+            log.debug("NTLM step input: %s", to_text(base64.b64encode(in_token or b"")))
+
+        out_token = getattr(self, '_step_%s' % self.usage)(in_token=in_token)
+
+        if not self._is_wrapped:
+            log.debug("NTLM step output: %s", to_text(base64.b64encode(out_token or b"")))
+
+        return out_token
+
+    def _step_initiate(self, in_token=None):
+        if not self._negotiate:
+            self._negotiate = Negotiate(self._context_req).pack()
+            return self._negotiate
+        else:
+            challenge = Challenge.unpack(in_token)
+            self._challenge = in_token
+
+            client_challenge = os.urandom(8)
+            username = to_text(self._username)
+            domain_name = to_text(self._domain)
+
+            workstation = None
+            version = None
+            if challenge.flags & NegotiateFlags.version:
+                version = Version(major=1, minor=1, build=1)
+                workstation = to_text(socket.gethostname())
+
+            lm_challenge_response = None
+            nt_challenge_response = None
+            encrypted_session_key = None
+
+            authenticate = Authenticate(challenge.flags, lm_challenge_response, nt_challenge_response, domain_name,
+                                        username, workstation, encrypted_session_key, version)
+
+            a = ''
+        a = ''
+
+    def _step_accept(self, in_token=None):
+        raise NotImplementedError()
+
+    def wrap(self, data, encrypt=True, qop=None):
+        raise NotImplementedError()
+
+    def wrap_iov(self, iov, encrypt=True, qop=None):
+        raise NotImplementedError("NtlmContext does not offer IOV wrapping")
+
+    def unwrap(self, data):
+        raise NotImplementedError()
+
+    def unwrap_iov(self, iov):
+        raise NotImplementedError("NtlmContext does not offer IOV wrapping")
+
+    def sign(self, data, qop=None):
+        raise NotImplementedError()
+
+    def verify(self, data, mic):
+        raise NotImplementedError()
+
+    @property
+    def _context_attr_map(self):
+        return [
+            (ContextReq.replay_detect, NegotiateFlags.sign),
+            (ContextReq.sequence_detect, NegotiateFlags.sign),
+            (ContextReq.confidentiality, NegotiateFlags.seal),
+            (ContextReq.integrity, NegotiateFlags.sign),
+            (ContextReq.anonymous, NegotiateFlags.anonymous),
+        ]
+
+    @property
+    def _requires_mech_list_mic(self):
+        raise NotImplementedError()
+
+    def _create_spn(self, service, principal):
+        return u"%s/%s" % (service.upper(), principal)
+
+    def _convert_iov_buffer(self, iov):
+        pass  # IOV is not used in ntlm-auth.
+
+    def _reset_ntlm_crypto_state(self, outgoing=True):
+        raise NotImplementedError()
+
+
+
+class NTLMProxy2(ContextProxy):
     """NtlmContext proxy class for ntlm-auth.
 
     The proxy class for ntlm-auth that exposes this library into a common interface for SPNEGO authentication. This

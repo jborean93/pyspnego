@@ -38,7 +38,7 @@ def auth(server, username, password):
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
-        c = spnego.client(username, password, server, protocol='negotiate')
+        c = spnego.client(username, password, server, protocol='ntlm')
 
         while not c.complete or in_token:
             out_token = c.step(in_token)
@@ -100,5 +100,5 @@ def auth_local(server, username, password):
     a = ''
 
 
-# auth(server, username, password)
+auth(server, username, password)
 # auth_local(server, username, password)

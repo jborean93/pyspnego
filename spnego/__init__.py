@@ -66,7 +66,7 @@ def _new_context(username, password, hostname, service, channel_bindings, contex
     elif protocol == 'ntlm':
         # Finally if GSSAPI does not support ntlm, use our own wrapper.
         # FIXME: fail if usage='accept'
-        return NTLMProxy(username, password, channel_bindings, context_req)
+        return NTLMProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
 
     else:
         raise ValueError("Invalid protocol specified '%s', must be kerberos, negotiate, or ntlm" % protocol)
