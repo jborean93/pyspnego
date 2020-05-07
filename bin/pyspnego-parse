@@ -676,7 +676,7 @@ def _parse_ntlm_target_info(target_info):
         elif av_id == AvId.single_host:
             value = {
                 'Size': raw_value.size,
-                'Z4': to_text(base64.b16encode(raw_value.z4)),
+                'Z4': raw_value.z4,
                 'CustomData': to_text(base64.b16encode(raw_value.custom_data)),
                 'MachineId': to_text(base64.b16encode(raw_value.machine_id)),
             }
@@ -812,7 +812,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
     return msg
 
 
-def _parse_spnego_init(raw_data, encoding=None):
+def _parse_spnego_init(raw_data, secret=None, encoding=None):
     """
     Parses a NegTokenInit ASN.1 structure.
 
@@ -826,11 +826,27 @@ def _parse_spnego_init(raw_data, encoding=None):
         mechListMIC     [3] OCTET STRING  OPTIONAL,
         ...
     }
+
+    Can also be:
+
+    NegHints ::= SEQUENCE {
+        hintName[0] GeneralString OPTIONAL,
+        hintAddress[1] OCTET STRING OPTIONAL
+    }
+    NegTokenInit2 ::= SEQUENCE {
+        mechTypes[0] MechTypeList OPTIONAL,
+        reqFlags [1] ContextFlags OPTIONAL,
+        mechToken [2] OCTET STRING OPTIONAL,
+        negHints [3] NegHints OPTIONAL,
+        mechListMIC [4] OCTET STRING OPTIONAL,
+        ...
+    }
+    https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/8e71cf53-e867-4b79-b5b5-38c92be3d472
     """
     mech_token = None
     if 2 in raw_data:
         try:
-            mech_token = parse_token(raw_data[2], encoding=encoding)
+            mech_token = parse_token(raw_data[2], secret=secret, encoding=encoding)
         except Exception as e:
             mech_token = {
                 'MessageType': 'Unknown - Failed to parse see Data for more details.',
@@ -843,16 +859,39 @@ def _parse_spnego_init(raw_data, encoding=None):
         'reqFlags': _get_flag_ids(struct.unpack("<I", raw_data[1])[0], ContextFlags) if 1 in raw_data else None,
         'reqFlags_raw': struct.unpack("<I", raw_data[1])[0] if 1 in raw_data else None,
         'mechToken': mech_token,
-        'mechListMIC': to_text(base64.b16encode(raw_data.get[3])) if 3 in raw_data else None,
+        'mechListMIC': None
+        #'mechListMIC': to_text(base64.b16encode(raw_data.get[3])) if 3 in raw_data else None,
     }
+
+    mech_list_mic = None
+
+    if 4 in raw_data:
+        # This is a NegTokenInit2 structure.
+        msg['negHints'] = {}
+        mech_list_mic = raw_data[4]
+
+    if 3 in raw_data:
+        if isinstance(raw_data[3], dict):
+            encoding = encoding or 'utf-8'
+
+            msg['negHints'] = {
+                'hintName': to_text(raw_data[3][0], encoding=encoding) if 0 in raw_data[3] else None,
+                'hintAddress': to_text(raw_data[3][1], encoding=encoding) if 1 in raw_data[3] else None,
+            }
+
+        else:
+            mech_list_mic = raw_data[3]
+
+    msg['mechListMIC'] = to_text(base64.b16encode(mech_list_mic)) if mech_list_mic else None
+
     return msg
 
 
-def _parse_spnego_resp(raw_data, encoding=None):
+def _parse_spnego_resp(raw_data, secret=None, encoding=None):
     response_token = None
     if 2 in raw_data:
         try:
-            response_token = parse_token(raw_data[2], encoding=encoding)
+            response_token = parse_token(raw_data[2], secret=secret, encoding=encoding)
         except Exception as e:
             response_token = {
                 'MessageType': 'Unknown - Failed to parse see Data for more details.',
@@ -963,12 +1002,12 @@ def parse_token(b_data, secret=None, encoding=None):
     if b_data.startswith(b'NTLMSSP\x00'):
         token_info = parse_ntlm_message(b_data, password=secret, oem_cp=encoding)
     else:
-        token_info = parse_gssapi_message(b_data, encoding=encoding)
+        token_info = parse_gssapi_message(b_data, secret=secret, encoding=encoding)
 
     return token_info
 
 
-def parse_gssapi_message(b_data, encoding=None):
+def parse_gssapi_message(b_data, secret=None, encoding=None):
     """
     Parse a GSSAPI token and return a dict containing the structured values for easier parsing. The values inside the
     'Data' key are dynamic and are based on the MessageType that is being parsed.
@@ -1041,11 +1080,11 @@ def parse_gssapi_message(b_data, encoding=None):
         #     negTokenResp    [1] NegTokenResp
         # }
         if raw_data.tag_number == 0:
-            message_type = 'SPNEGO NegTokenInit'
-            data = _parse_spnego_init(raw_data.value, encoding)
+            data = _parse_spnego_init(raw_data.value, secret=secret, encoding=encoding)
+            message_type = 'SPNEGO NegTokenInit2' if 'negHints' in data else 'SPNEGO NegTokenInit'
         elif raw_data.tag_number == 1:
             message_type = 'SPNEGO NegTokenResp'
-            data = _parse_spnego_resp(raw_data.value, encoding)
+            data = _parse_spnego_resp(raw_data.value, secret=secret, encoding=encoding)
         else:
             raise ValueError("Unknown SPNEGO token choice %d" % raw_data.tag_number)
     else:

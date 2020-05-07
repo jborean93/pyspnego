@@ -83,6 +83,7 @@ from spnego._sspi_raw.security cimport (
     ISC_REQ_CONNECTION,
     ISC_REQ_DELEGATE,
     ISC_REQ_EXTENDED_ERROR,
+    ISC_REQ_IDENTIFY,
     ISC_REQ_INTEGRITY,
     ISC_REQ_MANUAL_CRED_VALIDATION,
     ISC_REQ_MUTUAL_AUTH,
@@ -159,6 +160,7 @@ from spnego._sspi_raw.security cimport (
     SECPKG_CRED_BOTH,
     SECPKG_CRED_INBOUND,
     SECPKG_CRED_OUTBOUND,
+    SECQOP_WRAP_NO_ENCRYPT,
     SECURITY_INTEGER,
     SECURITY_NATIVE_DREP,
     SECURITY_NETWORK_DREP,
@@ -232,6 +234,7 @@ class ClientContextReq:
     extended_error = ISC_REQ_EXTENDED_ERROR
     http = 0x10000000  # ISC_REQ_HTTP
     integrity = ISC_REQ_INTEGRITY
+    identify = ISC_REQ_IDENTIFY
     manual_cred_validation = ISC_REQ_MANUAL_CRED_VALIDATION
     mutual_auth = ISC_REQ_MUTUAL_AUTH
     no_integrity = ISC_REQ_NO_INTEGRITY
@@ -357,6 +360,10 @@ class ServerContextReq:
     no_token = ASC_REQ_NO_TOKEN
     proxy_bindings = ASC_REQ_PROXY_BINDINGS
     allow_missing_binding = ASC_REQ_ALLOW_MISSING_BINDINGS
+
+
+class SSPIQoP:
+    wrap_no_encrypt = SECQOP_WRAP_NO_ENCRYPT
 
 
 class TargetDataRep:

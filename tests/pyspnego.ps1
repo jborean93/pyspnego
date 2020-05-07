@@ -190,7 +190,7 @@ namespace Pyspnego
     internal class NativeMethods
     {
         [DllImport("Secur32.dll")]
-        public static extern UInt32 AcceptSecurityContext(
+        public static extern Int32 AcceptSecurityContext(
             ServerCredential phCredential,
             IntPtr phContext,
             NativeHelpers.SecBufferDesc pInput,
@@ -202,7 +202,7 @@ namespace Pyspnego
             out Int64 ptsExpiry);
 
         [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
-        public static extern UInt32 AcquireCredentialsHandleW(
+        public static extern Int32 AcquireCredentialsHandleW(
             [MarshalAs(UnmanagedType.LPWStr)] string pszPrincipal,
             [MarshalAs(UnmanagedType.LPWStr)] string pPackage,
             UInt32 fCredentialUse,
@@ -227,34 +227,34 @@ namespace Pyspnego
             IntPtr hObject);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 CompleteAuthToken(
+        public static extern Int32 CompleteAuthToken(
             IntPtr phContext,
             NativeHelpers.SecBufferDesc pToken);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 DecryptMessage(
+        public static extern Int32 DecryptMessage(
             IntPtr phContext,
             NativeHelpers.SecBufferDesc pMessage,
             UInt32 MessageSeqNo,
             ref UInt32 pfQOP);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 DeleteSecurityContext(
+        public static extern Int32 DeleteSecurityContext(
             IntPtr phContext);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 EncryptMessage(
+        public static extern Int32 EncryptMessage(
             IntPtr phContext,
             UInt32 fQOP,
             NativeHelpers.SecBufferDesc pMessage,
             UInt32 MessageSeqNo);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 FreeContextBuffer(
+        public static extern Int32 FreeContextBuffer(
             IntPtr pvContextBuffer);
 
         [DllImport("Secur32.dll")]
-        public static extern UInt32 FreeCredentialsHandle(
+        public static extern Int32 FreeCredentialsHandle(
             IntPtr phCredential);
 
         [DllImport("Kernel32.dll")]
@@ -295,13 +295,13 @@ namespace Pyspnego
             out SafeNativeHandle TokenHandle);
 
         [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
-        public static extern UInt32 QueryContextAttributesW(
+        public static extern Int32 QueryContextAttributesW(
             IntPtr phContext,
             SecPackageAttribute ulAttribute,
             IntPtr pBuffer);
 
         [DllImport("Secur32.dll", CharSet = CharSet.Unicode)]
-        public static extern UInt32 QuerySecurityPackageInfoW(
+        public static extern Int32 QuerySecurityPackageInfoW(
             string pPackageName,
             ref IntPtr ppPackageInfo);
 
@@ -365,7 +365,7 @@ namespace Pyspnego
         {
             base.SetHandle(Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeHelpers.SecHandle))));
 
-            UInt32 res = NativeMethods.AcquireCredentialsHandleW(
+            Int32 res = NativeMethods.AcquireCredentialsHandleW(
                 null,
                 package,
                 0x00000001,  // SECPKG_CRED_INBOUND
@@ -377,7 +377,7 @@ namespace Pyspnego
                 out Expiry);
 
             if (res != 0)
-                throw new Exception(String.Format("AcquireCredentialsHandleW() failed {0} - 0x{0:X8}", res));
+                throw new Win32Exception(res, "AcquireCredentialsHandleW() failed");
             _initialized = true;
 
             PackageInfo = QuerySecurityPackageInfo(package);
@@ -386,9 +386,9 @@ namespace Pyspnego
         private static SecurityPackageInfo QuerySecurityPackageInfo(string package)
         {
             IntPtr pkgInfo = IntPtr.Zero;
-            UInt32 res = NativeMethods.QuerySecurityPackageInfoW(package, ref pkgInfo);
+            Int32 res = NativeMethods.QuerySecurityPackageInfoW(package, ref pkgInfo);
             if (res != 0)
-                throw new Exception(String.Format("QuerySecurityPackageInfoW() failed {0} - 0x{0:X8}", res));
+                throw new Win32Exception(res, "QuerySecurityPackageInfoW() failed");
 
             try
             {
@@ -425,10 +425,10 @@ namespace Pyspnego
 
     public class SecurityContext : SafeHandleZeroOrMinusOneIsInvalid
     {
-        private UInt32 SEC_E_OK = 0x00000000;
-        private UInt32 SEC_I_COMPLETE_AND_CONTINUE = 0x00090314;
-        private UInt32 SEC_I_COMPLETE_NEEDED = 0x00090313;
-        private UInt32 SEC_I_CONTINUE_NEEDED = 0x00090312;
+        private Int32 SEC_E_OK = 0x00000000;
+        private Int32 SEC_I_COMPLETE_AND_CONTINUE = 0x00090314;
+        private Int32 SEC_I_COMPLETE_NEEDED = 0x00090313;
+        private Int32 SEC_I_CONTINUE_NEEDED = 0x00090312;
 
         private ServerCredential _credential;
         private bool _initialized = false;
@@ -470,7 +470,7 @@ namespace Pyspnego
             using (NativeHelpers.SecBufferDesc inputBuffer = new NativeHelpers.SecBufferDesc(input))
             using (NativeHelpers.SecBufferDesc outputBuffer = new NativeHelpers.SecBufferDesc(output))
             {
-                UInt32 res = NativeMethods.AcceptSecurityContext(
+                Int32 res = NativeMethods.AcceptSecurityContext(
                     _credential,
                     _initialized ? this.handle : IntPtr.Zero,
                     inputBuffer,
@@ -483,7 +483,7 @@ namespace Pyspnego
 
                 _initialized = true;
 
-                if (new List<UInt32>() { SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED }.Contains(res))
+                if (new List<Int32>() { SEC_I_COMPLETE_AND_CONTINUE, SEC_I_COMPLETE_NEEDED }.Contains(res))
                     res = NativeMethods.CompleteAuthToken(this.handle, outputBuffer);
 
                 if (res == SEC_E_OK)
@@ -492,7 +492,7 @@ namespace Pyspnego
                     GetSecPkgSizes();
                 }
                 else if (res != SEC_I_CONTINUE_NEEDED)
-                    throw new Exception(String.Format("AcceptSecurityContext() failed {0} - 0x{0:X8}", res));
+                    throw new Win32Exception(res, "AcceptSecurityContext() failed");
 
                 output = (List<SecurityBuffer>)outputBuffer;
                 return output[0].Data;
@@ -518,9 +518,9 @@ namespace Pyspnego
             using (NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc(input))
             {
                 UInt32 qop = 0;
-                UInt32 res = NativeMethods.DecryptMessage(this.handle, inputInfo, _sequenceDecrypt, ref qop);
+                Int32 res = NativeMethods.DecryptMessage(this.handle, inputInfo, _sequenceDecrypt, ref qop);
                 if (res != SEC_E_OK)
-                    throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
+                    throw new Win32Exception(res, "DecryptMessage() failed");
                 _sequenceDecrypt++;
 
                 List<SecurityBuffer> output = (List<SecurityBuffer>)inputInfo;
@@ -551,9 +551,9 @@ namespace Pyspnego
 
             using (NativeHelpers.SecBufferDesc inputInfo = new NativeHelpers.SecBufferDesc(input))
             {
-                UInt32 res = NativeMethods.EncryptMessage(this.handle, 0, inputInfo, _sequenceEncrypt);
+                Int32 res = NativeMethods.EncryptMessage(this.handle, 0, inputInfo, _sequenceEncrypt);
                 if (res != SEC_E_OK)
-                    throw new Exception(String.Format("DecryptMessage() failed {0} - 0x{0:X8}", res));
+                    throw new Win32Exception(res, "DecryptMessage() failed");
                 _sequenceEncrypt++;
 
                 List<SecurityBuffer> output = (List<SecurityBuffer>)inputInfo;
@@ -575,10 +575,10 @@ namespace Pyspnego
             using (SafeMemoryBuffer sizePtr = new SafeMemoryBuffer(Marshal.SizeOf(
                 typeof(NativeHelpers.SecPkgContextSizes))))
             {
-                UInt32 res = NativeMethods.QueryContextAttributesW(this.handle, SecPackageAttribute.Sizes,
+                Int32 res = NativeMethods.QueryContextAttributesW(this.handle, SecPackageAttribute.Sizes,
                     sizePtr.DangerousGetHandle());
                 if (res != SEC_E_OK)
-                    throw new Exception(String.Format("QueryContextAttributesW() failed {0} - 0x{0:X8}", res));
+                    throw new Win32Exception(res, "QueryContextAttributesW() failed");
 
                 NativeHelpers.SecPkgContextSizes sizes = (NativeHelpers.SecPkgContextSizes)Marshal.PtrToStructure(
                     sizePtr.DangerousGetHandle(), typeof(NativeHelpers.SecPkgContextSizes));

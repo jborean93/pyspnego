@@ -189,7 +189,7 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
 
         # macOS' Heimdal implementation will work up to this point but the end messages aren't actually valid. Luckily
         # it does not implement 'GSS_NTLMSSP_RESET_CRYPTO_OID' so by running this we can weed out that broken impl.
-        context._reset_ntlm_crypto_state()
+        _gss_ntlmssp_reset_crypto(context)
 
         ntlm_features['available'] = True
     except GSSError as err:
@@ -214,6 +214,13 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
 
     _gss_ntlmssp_available.result = ntlm_features
     return _gss_ntlmssp_available(session_key=session_key)
+
+
+def _gss_ntlmssp_reset_crypto(context, outgoing=True):  # type: (gssapi.SecurityContext, bool) -> None
+    """ Resets the NTLM RC4 ciphers when being used with SPNEGO. """
+    reset_crypto = gssapi.OID.from_int_seq(_GSS_NTLMSSP_RESET_CRYPTO_OID)
+    value = b"\x00\x00\x00\x00" if outgoing else b"\x01\x00\x00\x00"
+    set_sec_context_option(reset_crypto, context=context, value=value)
 
 
 class GSSAPIProxy(ContextProxy):
@@ -395,6 +402,4 @@ class GSSAPIProxy(ContextProxy):
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
         if self.negotiated_protocol == u'ntlm':
-            reset_crypto = gssapi.OID.from_int_seq(_GSS_NTLMSSP_RESET_CRYPTO_OID)
-            value = b"\x00\x00\x00\x00" if outgoing else b"\x01\x00\x00\x00"
-            set_sec_context_option(reset_crypto, context=self._context, value=value)
+            _gss_ntlmssp_reset_crypto(self._context, outgoing=outgoing)

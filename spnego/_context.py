@@ -297,6 +297,14 @@ class ContextProxy:
     def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol,
                  is_wrapped):
         # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, bool) -> None  # noqa
+        self.usage = usage.lower()
+        if self.usage not in ['initiate', 'accept']:
+            raise ValueError("Invalid usage '%s', must be initiate or accept" % self.usage)
+
+        self.protocol = protocol.lower()
+        if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
+            raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
+
         self.username = username
         self.password = password
         self.spn = self._create_spn(service or 'host', hostname or 'unspecified')
@@ -312,14 +320,6 @@ class ContextProxy:
                 self._context_req |= provider
 
         self._context_attr = 0  # Provider specific context attributes, set by self.step().
-
-        self.usage = usage.lower()
-        if self.usage not in ['initiate', 'accept']:
-            raise ValueError("Invalid usage '%s', must be initiate or accept" % self.usage)
-
-        self.protocol = protocol.lower()
-        if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
-            raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
 
         # Whether the context is wrapped inside another context.
         self._is_wrapped = is_wrapped  # type: bool

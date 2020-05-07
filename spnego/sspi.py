@@ -4,8 +4,12 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import base64
 import logging
-from typing import Tuple
+
+from typing import (
+    Tuple,
+)
 
 from spnego._context import (
     ContextProxy,
@@ -103,6 +107,8 @@ class SSPIProxy(ContextProxy):
         return query_context_attributes(self._context, SecPkgAttr.session_key)
 
     def step(self, in_token=None):
+        log.debug("SSPI step input: %s", to_text(base64.b64encode(in_token or b"")))
+
         sec_tokens = []
         if in_token:
             sec_tokens.append(SecBuffer(SecBufferType.token, in_token))
@@ -139,17 +145,21 @@ class SSPIProxy(ContextProxy):
             self._attr_sizes = query_context_attributes(self._context, SecPkgAttr.sizes)
 
         # TODO: Determine if this returns None or an empty byte string.
-        return out_buffer[0].buffer
+        out_token = out_buffer[0].buffer
+
+        log.debug("GSSAPI step output: %s", to_text(base64.b64encode(out_token or b"")))
+
+        return out_token
 
     def wrap(self, data, encrypt=True, qop=None):
         res = self.wrap_iov([BufferType.header, data, BufferType.padding], encrypt=encrypt, qop=qop)
         return WrapResult(data=b"".join([r.data for r in res.buffers]), encrypted=res.encrypted)
 
     def wrap_iov(self, iov, encrypt=True, qop=None):
-        if not self.integrity:
+        if self.context_attr & ContextReq.integrity == 0:
             raise NotImplementedError("No integrity")
 
-        if encrypt and not self.confidentiality:
+        if encrypt and self.context_attr & ContextReq.confidentiality == 0:
             raise NotImplementedError("No confidentiality")
 
         qop = qop or 0
@@ -206,7 +216,7 @@ class SSPIProxy(ContextProxy):
                 (ContextReq.sequence_detect, ClientContextReq.sequence_detect),
                 (ContextReq.confidentiality, ClientContextReq.confidentiality),
                 (ContextReq.integrity, ClientContextReq.integrity),
-                (ContextReq.anonymous, None),
+                # (ContextReq.anonymous, None),
                 (ContextReq.identify, ClientContextReq.identify),
             ]
         else:
@@ -218,7 +228,7 @@ class SSPIProxy(ContextProxy):
                 (ContextReq.sequence_detect, ServerContextReq.sequence_detect),
                 (ContextReq.confidentiality, ServerContextReq.confidentiality),
                 (ContextReq.integrity, ServerContextReq.integrity),
-                (ContextReq.anonymous, None),
+                # (ContextReq.anonymous, None),
                 (ContextReq.identify, ServerContextReq.identify),
             ]
 
@@ -265,4 +275,3 @@ class SSPIProxy(ContextProxy):
 
     def _create_spn(self, service, principal):
         return u"%s\\%s" % (service.upper(), principal)
-

@@ -160,6 +160,8 @@ cdef extern from "Security.h":
     cdef unsigned long SEC_WINNT_AUTH_IDENTITY_ANSI
     cdef unsigned long SEC_WINNT_AUTH_IDENTITY_UNICODE
 
+    cdef unsigned long SECQOP_WRAP_NO_ENCRYPT
+
     cdef SECURITY_STATUS SEC_I_COMPLETE_AND_CONTINUE
     cdef SECURITY_STATUS SEC_I_COMPLETE_NEEDED
     cdef SECURITY_STATUS SEC_I_CONTINUE_NEEDED

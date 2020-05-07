@@ -5,6 +5,7 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import base64
+import hashlib
 import logging
 import os
 import socket
@@ -177,7 +178,7 @@ class NTLMProxy(ContextProxy):
             workstation = None
             version = None
             if challenge.flags & NegotiateFlags.version:
-                version = Version(major=1, minor=1, build=1)
+                version = Version(major=10, minor=10, build=14393)  # TODO: hook into pyspnego version number.
                 workstation = to_text(socket.gethostname())
 
             if self._context_req & NegotiateFlags.anonymous:
@@ -187,18 +188,20 @@ class NTLMProxy(ContextProxy):
                 key_exchange_key = None
 
             elif self._ntlm_v2:
-                response_key_nt = ntowfv2(username, self.password, domain_name)
-                time = challenge.target_info.get(AvId.timestamp, FileTime.now())
-
-                # If Challenge does not contain both ComputerName and DOmainName and integrity or confidentiality
-                # raise STATUS_LOGON_FAILURE
-
                 target_info = challenge.target_info.copy()
+
+                response_key_nt = ntowfv2(username, self.password, domain_name)
+                time = target_info.get(AvId.timestamp, FileTime.now())
+
+                # If Challenge does not contain both ComputerName and DomainName and integrity or confidentiality
+                #if (self.context_req & ContextReq.integrity or self.context_req & ContextReq.confidentiality) and \
+                #        AvId.dns_computer_name not in target_info and AvId.dns_domain_name not in target_info:
+                #    raise Exception("STATUS_LOGON_FAILURE")
+
                 if AvId.timestamp in target_info:
                     self._mic_required = True
                     target_info[AvId.flags] = target_info.get(AvId.flags, AvFlags(0)) | AvFlags.mic
 
-                import hashlib
                 cbt = hashlib.md5(self._channel_bindings).digest() if self._channel_bindings else b"\x00" * 16
                 target_info[AvId.channel_bindings] = cbt
 
@@ -274,8 +277,7 @@ class NTLMProxy(ContextProxy):
         return [
             (ContextReq.replay_detect, NegotiateFlags.sign),
             (ContextReq.sequence_detect, NegotiateFlags.sign),
-            (ContextReq.confidentiality, NegotiateFlags.seal | NegotiateFlags.key_exch | NegotiateFlags.lm_key |
-                NegotiateFlags.extended_session_security),
+            (ContextReq.confidentiality, NegotiateFlags.seal),
             (ContextReq.integrity, NegotiateFlags.sign),
             (ContextReq.anonymous, NegotiateFlags.anonymous),
         ]
