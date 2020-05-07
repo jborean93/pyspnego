@@ -165,14 +165,15 @@ class ContextReq(enum.IntFlag):
     confidentiality = 0x00000010
     integrity = 0x00000020
     anonymous = 0x00000040
+    identify = 0x00002000
     delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
-    # TODO: identify
 
     # pyspnego specific flags
     negotiate_kerberos = 0x100000000
     session_key = 0x200000000
     wrapping_iov = 0x400000000
     wrapping_winrm = 0x800000000
+
     # TODO ntlm_require_128_key - requires key_128 to be set.
 
 

@@ -53,11 +53,11 @@ class NegotiateFlags(enum.IntFlag):
     r5 = 0x00200000
     identity = 0x00100000
     extended_session_security = 0x00080000
-    r6 = 0x00040000
+    target_type_share = 0x00040000  # Not documented in MS-NLMP
     target_type_server = 0x00020000
     target_type_domain = 0x00010000
     always_sign = 0x00008000
-    r7 = 0x00004000
+    local_call = 0x00004000  # Not documented in MS-NLMP
     oem_workstation_supplied = 0x00002000
     oem_domain_name_supplied = 0x00001000
     anonymous = 0x00000800
@@ -68,7 +68,7 @@ class NegotiateFlags(enum.IntFlag):
     datagram = 0x00000040
     seal = 0x00000020
     sign = 0x00000010
-    r10 = 0x00000008
+    netware = 0x00000008  # Not documented in MS-NLMP
     request_target = 0x00000004
     oem = 0x00000002
     unicode = 0x00000001
@@ -89,11 +89,11 @@ class NegotiateFlags(enum.IntFlag):
             'NTLMSSP_RESERVED_R5': NegotiateFlags.r5,
             'NTLMSSP_NEGOTIATE_IDENTITY': NegotiateFlags.identity,
             'NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY': NegotiateFlags.extended_session_security,
-            'NTLMSSP_RESERVED_R6': NegotiateFlags.r6,
+            'NTLMSSP_TARGET_TYPE_SHARE - R6': NegotiateFlags.target_type_share,
             'NTLMSSP_TARGET_TYPE_SERVER': NegotiateFlags.target_type_server,
             'NTLMSSP_TARGET_TYPE_DOMAIN': NegotiateFlags.target_type_domain,
             'NTLMSSP_NEGOTIATE_ALWAYS_SIGN': NegotiateFlags.always_sign,
-            'NTLMSSP_RESERVED_R7': NegotiateFlags.r7,
+            'NTLMSSP_NEGOTIATE_LOCAL_CALL - R7': NegotiateFlags.local_call,
             'NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED': NegotiateFlags.oem_workstation_supplied,
             'NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED': NegotiateFlags.oem_domain_name_supplied,
             'NTLMSSP_ANOYNMOUS': NegotiateFlags.anonymous,
@@ -104,7 +104,7 @@ class NegotiateFlags(enum.IntFlag):
             'NTLMSSP_NEGOTIATE_DATAGRAM': NegotiateFlags.datagram,
             'NTLMSSP_NEGOTIATE_SEAL': NegotiateFlags.seal,
             'NTLMSSP_NEGOTIATE_SIGN': NegotiateFlags.sign,
-            'NTLMSSP_RESERVED_R10': NegotiateFlags.r10,
+            'NTLMSSP_NEGOTIATE_NETWARE - R10': NegotiateFlags.netware,
             'NTLMSSP_REQUEST_TARGET': NegotiateFlags.request_target,
             'NTLMSSP_NEGOTIATE_OEM': NegotiateFlags.oem,
             'NTLMSSP_NEGOTIATE_UNICODE': NegotiateFlags.unicode,
@@ -411,7 +411,7 @@ class Authenticate:
         if flags & NegotiateFlags.unicode:
             encoding = 'utf-16-le'
 
-        payload_offset = 56
+        payload_offset = 88 if self.mic else 72
 
         b_lm_response_fields, payload_offset = _pack_payload(self.lm_challenge_response, b_payload, payload_offset)
         b_nt_response_fields, payload_offset = _pack_payload(self.nt_challenge_response, b_payload, payload_offset)
@@ -441,7 +441,8 @@ class Authenticate:
         b_data.write(b_session_key_fields)
         b_data.write(struct.pack("<I", flags))
         b_data.write(b_version)
-        b_data.write(self.mic)
+        if self.mic:
+            b_data.write(self.mic)
 
         return b_data.getvalue() + b_payload.getvalue()
 

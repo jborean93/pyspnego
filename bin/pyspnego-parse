@@ -29,9 +29,12 @@ from datetime import datetime
 from ntlm_auth.des import DES
 
 from spnego._ntlm_raw.keys import (
+    hmac_md5,
+    kxkey,
     lmowfv1,
     ntowfv1,
     ntowfv2,
+    rc4k,
 )
 
 from spnego._ntlm_raw.messages import (
@@ -59,13 +62,6 @@ try:
     from ruamel import yaml
 except ImportError:
     yaml = None
-
-NTLM_CRYPTO = True
-try:
-    from cryptography.hazmat.primitives.ciphers import algorithms, Cipher
-    from cryptography.hazmat.backends import default_backend
-except ImportError:
-    NTLM_CRYPTO = False
 
 
 class ContextFlags:
@@ -770,25 +766,11 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
             nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data)),
 
             if password and lm_response_data:
-                session_base_key = ntowfv1(password)
-                key_exchange_key = session_base_key
+                session_base_key = hashlib.new('md4', ntowfv1(password)).digest()
+                lmowf = lmowfv1(password)
 
-                if auth.flags & NegotiateFlags.extended_session_security:
-                    # TODO: Find a sane way to get the server challenge here.
-                    key_exchange_key = None
-                    #key_exchange_key = hmac.new(session_base_key, server_challenge + lm_response_data[:8],
-                    #                            digestmod=hashlib.md5).digest()
-
-                elif auth.flags & NegotiateFlags.lm_key:
-                    lm_hash = lmowfv1(password)
-
-                    key_exchange_key = b""
-                    for b_input in [lm_hash[:7], lm_hash[7:8] + b"\xbd\xbd\xbd\xbd\xbd\xbd"]:
-                        des = DES(DES.key56_to_key64(b_input))
-                        key_exchange_key += des.encrypt(lm_response_data[:8])
-
-                elif auth.flags & NegotiateFlags.non_nt_session_key:
-                    key_exchange_key = lmowfv1(password)[:8] + b"\x00" * 8
+                # TODO: need to get a sane way to include the server challenege and the actual challenge flags.
+                key_exchange_key = kxkey(auth.flags, session_base_key, lmowf, lm_response_data, b"")
 
         else:
             nt_proof_str = nt_response_data[:16]
@@ -811,7 +793,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
 
             if password:
                 response_key_nt = ntowfv2(msg['UserName'], password, msg['DomainName'])
-                key_exchange_key = hmac.new(response_key_nt, nt_proof_str, digestmod=hashlib.md5).digest()
+                key_exchange_key = hmac_md5(response_key_nt, nt_proof_str)
 
         msg['NtChallengeResponse'] = nt_response
 
@@ -820,11 +802,8 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
 
     if auth.flags & NegotiateFlags.key_exch:
         session_key = None
-        if key_exchange_key and NTLM_CRYPTO:
-            arc4 = algorithms.ARC4(key_exchange_key)
-            cipher = Cipher(arc4, mode=None, backend=default_backend())
-            decryptor = cipher.decryptor()
-            session_key = decryptor.update(auth.encrypted_random_session_key)
+        if key_exchange_key:
+            session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
     else:
         session_key = key_exchange_key
 

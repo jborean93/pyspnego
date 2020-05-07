@@ -210,7 +210,7 @@ class ClientContextAttr:
     datagram = ISC_RET_DATAGRAM
     connection = ISC_RET_CONNECTION
     intermediate_return = ISC_RET_INTERMEDIATE_RETURN
-    call_evel = ISC_RET_CALL_LEVEL
+    call_level = ISC_RET_CALL_LEVEL
     extended_error = ISC_RET_EXTENDED_ERROR
     stream = ISC_RET_STREAM
     integrity = ISC_RET_INTEGRITY
@@ -317,7 +317,7 @@ class ServerContextAttr:
     used_dce_style = ASC_RET_USED_DCE_STYLE
     datagram = ASC_RET_DATAGRAM
     connection = ASC_RET_CONNECTION
-    call_evel = ASC_RET_CALL_LEVEL
+    call_level = ASC_RET_CALL_LEVEL
     third_leg_failed = ASC_RET_THIRD_LEG_FAILED
     extended_error = ASC_RET_EXTENDED_ERROR
     stream = ASC_RET_STREAM
@@ -343,7 +343,7 @@ class ServerContextReq:
     use_dce_style = ASC_REQ_USE_DCE_STYLE
     datagram = ASC_REQ_DATAGRAM
     connection = ASC_REQ_CONNECTION
-    call_evel = ASC_REQ_CALL_LEVEL
+    call_level = ASC_REQ_CALL_LEVEL
     fragment_supplied = ASC_REQ_FRAGMENT_SUPPLIED
     extended_error = ASC_REQ_EXTENDED_ERROR
     stream = ASC_REQ_STREAM

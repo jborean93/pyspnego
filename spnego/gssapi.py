@@ -342,6 +342,7 @@ class GSSAPIProxy(ContextProxy):
             (ContextReq.confidentiality, gssapi.RequirementFlag.confidentiality),
             (ContextReq.integrity, gssapi.RequirementFlag.integrity),
             (ContextReq.anonymous, gssapi.RequirementFlag.anonymity),
+            (ContextReq.identify, gssapi.RequirementFlag.identify),
             (ContextReq.delegate_policy, 32768),  # GSS_C_DELEG_POLICY_FLAG, doesn't seem to be in python gssapi.
         ]
 

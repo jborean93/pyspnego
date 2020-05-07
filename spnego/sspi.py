@@ -83,6 +83,7 @@ class SSPIProxy(ContextProxy):
                                               to_text(domain, nonstring='passthru'),
                                               to_text(password, nonstring='passthru'))
 
+            # TODO: It seems like the SPN is just an empty string for anon auth.
             self._credential = acquire_credentials_handle(None, protocol, auth_data=auth_data,
                                                           credential_use=CredentialUse.outbound)
         else:
@@ -205,6 +206,8 @@ class SSPIProxy(ContextProxy):
                 (ContextReq.sequence_detect, ClientContextReq.sequence_detect),
                 (ContextReq.confidentiality, ClientContextReq.confidentiality),
                 (ContextReq.integrity, ClientContextReq.integrity),
+                (ContextReq.anonymous, None),
+                (ContextReq.identify, ClientContextReq.identify),
             ]
         else:
             return [
@@ -215,6 +218,8 @@ class SSPIProxy(ContextProxy):
                 (ContextReq.sequence_detect, ServerContextReq.sequence_detect),
                 (ContextReq.confidentiality, ServerContextReq.confidentiality),
                 (ContextReq.integrity, ServerContextReq.integrity),
+                (ContextReq.anonymous, None),
+                (ContextReq.identify, ServerContextReq.identify),
             ]
 
     @property
