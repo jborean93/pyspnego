@@ -355,7 +355,7 @@ class Challenge:
         target_info = _unpack_payload(b_data, 40, lambda d: TargetInfo.unpack(d))
 
         version = None
-        if b_data[48:56] != b"\x00" * 8:
+        if flags & NegotiateFlags.version:
             version = Version.unpack(b_data[48:56])
 
         challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info,
@@ -411,7 +411,14 @@ class Authenticate:
         if flags & NegotiateFlags.unicode:
             encoding = 'utf-16-le'
 
-        payload_offset = 88 if self.mic else 72
+        # While MS server accept a blank version field, other implementations aren't so kind. No need to be strict
+        # about it and only add the version bytes if it's present.
+        b_version = b""
+        if self.version:
+            flags |= NegotiateFlags.version
+            b_version = self.version.pack()
+
+        payload_offset = 64 + len(b_version) + len(self.mic or b"")
 
         b_lm_response_fields, payload_offset = _pack_payload(self.lm_challenge_response, b_payload, payload_offset)
         b_nt_response_fields, payload_offset = _pack_payload(self.nt_challenge_response, b_payload, payload_offset)
@@ -426,11 +433,6 @@ class Authenticate:
             flags |= NegotiateFlags.key_exch
         b_session_key_fields, payload_offset = _pack_payload(self.encrypted_random_session_key, b_payload,
                                                              payload_offset)
-
-        b_version = b"\x00" * 8
-        if self.version:
-            flags |= NegotiateFlags.version
-            b_version = self.version.pack()
 
         b_data.write(b"NTLMSSP\x00\x03\x00\x00\x00")
         b_data.write(b_lm_response_fields)
@@ -469,7 +471,7 @@ class Authenticate:
         enc_key = _unpack_payload(b_data, 52)
 
         version = None
-        if b_data[64:72] != b"\x00" * 8:
+        if flags & NegotiateFlags.version:
             version = Version.unpack(b_data[64:72])
 
         mic = b_data[72:88]
@@ -519,7 +521,7 @@ class FileTime(datetime):
             fraction_seconds = self.strftime('.%f')
 
             if self.nanosecond:
-                fraction_seconds += str(int(self.nanosecond / 100))
+                fraction_seconds += str(self.nanosecond // 100)
 
         timezone = 'Z'
         if self.tzinfo:
@@ -532,10 +534,10 @@ class FileTime(datetime):
         """ Packs the structure to bytes. """
         # Get the time since EPOCH in microseconds
         td = self - datetime.utcfromtimestamp(0)
-        epoch_ms = (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10 ** 6) / 10 ** 6
+        epoch_time_ms = (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10 ** 6)
 
         # Add the EPOCH_FILETIME to the microseconds since EPOCH and finally the nanoseconds part.
-        ns100 = FileTime._EPOCH_FILETIME + int((epoch_ms * 10000000) + (self.nanosecond / 100))
+        ns100 = FileTime._EPOCH_FILETIME + (epoch_time_ms * 10) + (self.nanosecond // 100)
 
         return struct.pack("<Q", ns100)
 
@@ -545,11 +547,12 @@ class FileTime(datetime):
         filetime = struct.unpack("<Q", b_data)[0]  # 100 nanosecond intervals since 1601-01-01.
 
         # Create a datetime object based on the filetime microseconds
-        epoch_time_ms = (filetime - FileTime._EPOCH_FILETIME) / 10
+        epoch_time_ms = (filetime - FileTime._EPOCH_FILETIME) // 10
         dt = datetime(1970, 1, 1) + timedelta(microseconds=epoch_time_ms)
 
         # Create the FileTime object from the datetime object and add the nanoseconds.
         ns = int(filetime % 10) * 100
+
         return FileTime.from_datetime(dt, ns=ns)
 
 

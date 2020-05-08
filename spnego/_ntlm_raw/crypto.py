@@ -1,9 +1,19 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
+"""NTLM Cryptographic Operations
+
+Implements the various cryptographic operations that are defined in `MS-NLMP Crypto Operations`_. Some crypto
+operations aren't implemented due to it being a simple operation in Python.
+
+.. _MS-NLMP Crypto Operations
+    https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/26c42637-9549-46ae-be2e-90f6f1360193
+"""
+
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import binascii
 import hashlib
 import hmac
 import io
@@ -38,159 +48,23 @@ from spnego._text import (
 )
 
 
-def des(k, d):  # type: (bytes, bytes) -> bytes
-    """DES encryption.
+class RC4Handle:
+    """ RC4 class to wrap the underlying crypto function. """
 
-    Indicates the encryption of an 8-byte data item `d` with the 7-byte key `k` using the Data Encryption Standard
-    (DES) algorithm in Electronic Codebook (ECB) mode. The result is 8 bytes in length ([FIPS46-2]).
+    def __init__(self, key):  # type: (bytes) -> None
+        self._key = key
+        self._handle = None
+        self.reset()
 
-    Args:
-        k: The 7-byte key to use in the DES cipher.
-        d: The 8-byte data block to encrypt.
+    def update(self, b_data):  # type: (bytes) -> bytes
+        """ Update the RC4 stream and return the encrypted/decrypted bytes. """
+        return self._handle.update(b_data)
 
-    Returns:
-        bytes: The encrypted data block.
-    """
-    return DES(DES.key56_to_key64(k)).encrypt(d)
-
-
-def desl(k, d):  # type: (bytes, bytes) -> bytes
-    """Encryption using the DES Long algorithm.
-
-    Indicates the encryption of an 8-byte data item `d` with the 16-byte key `k` using the Data Encryption
-    Standard Long (DESL) algorithm. The result is 24 bytes in length.
-
-    `DESL(K, D)` as by MS-NLMP `DESL`_ is computed as follows::
-
-        ConcatenationOf(
-            DES(K[0..6], D),
-            DES(K[7..13], D),
-            DES(ConcatenationOf(K[14..15], Z(5)), D),
-        );
-
-    Args:
-        k: The key to use for the DES cipher, will be truncated to 16 bytes and then padded to 21 bytes.
-        d: The value to run through the DESL algorithm, will be truncated to 8 bytes.
-
-    Returns:
-        bytes: The output of the DESL algorithm.
-
-    .. _DESL:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/26c42637-9549-46ae-be2e-90f6f1360193
-    """
-    k = k[:16].ljust(21, b"\x00")  # Key needs to be stripped at 16 characters and then padded to 21 chars.
-    d = d[:8].ljust(8, b"\x00")  # Data need to be at most 8 bytes long.
-
-    b_value = io.BytesIO()
-
-    b_value.write(des(k[:7], d))
-    b_value.write(des(k[7:14], d))
-    b_value.write(des(k[14:], d))
-
-    return b_value.getvalue()
-
-
-def hmac_md5(key, data):
-    """ Simple wrapper function for a HMAC MD5 digest. """
-    return hmac.new(key, data, digestmod=hashlib.md5).digest()
-
-
-def rc4k(k, d):  # type: (bytes, bytes) -> bytes
-    """RC4 encryption with an explicit key.
-
-    Indicates the encryption of data item `d` with the key `k` using the `RC4`_ algorithm.
-
-    Args:
-        k: The key to use for the RC4 cipher.
-        d: The data to encrypt.
-
-    Returns:
-        bytes: The RC4 encrypted bytes.
-
-    .. _RC4K:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/26c42637-9549-46ae-be2e-90f6f1360193
-    """
-    arc4 = algorithms.ARC4(k)
-    cipher = Cipher(arc4, mode=None, backend=default_backend())
-    encryptor = cipher.encryptor()
-    return encryptor.update(d)
-
-
-def lmowfv1(password):  # type: (text_type) -> bytes
-    """NTLMv1 LMOWFv1 function
-
-    The Lan Manager v1 one way function as documented under `NTLM v1 Authentication`_.
-
-    The pseudo-code for this function is::
-
-        Define LMOWFv1(Passwd, User, UserDom) as
-            ConcatenationOf(
-                DES(UpperCase(Passwd)[0..6], "KGS!@#$%"),
-                DES(UpperCase(Passwd)[7..13], "KGS!@#$%"),
-            );
-
-    Args:
-        password: The password for the user.
-
-    Returns:
-        bytes: The LMv1 one way hash of the user's password.
-
-    .. _NTLM v1 Authentication:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
-    """
-    # Fix the password to upper case and pad the length to exactly 14 bytes.
-    b_password = to_bytes(password.upper()).ljust(14, b"\x00")[:14]
-
-    b_hash = io.BytesIO()
-    for start, end in [(0, 7), (7, 14)]:
-        b_hash.write(des(b_password[start:end], b'KGS!@#$%'))
-
-    return b_hash.getvalue()
-
-
-def ntowfv1(password):  # type: (text_type) -> bytes
-    """NTLMv1 NTOWFv1 function
-
-    The NT v1 one way function as documented under `NTLM v1 Authentication`_.
-
-    The pseudo-code for this function is::
-
-        Define NTOWFv1(Passwd, User, UserDom) as MD4(UNICODE(Passwd))
-
-    Args:
-        password: The password for the user.
-
-    Returns:
-        bytes: The NTv1 one way hash of the user's password.
-
-    .. _NTLM v1 Authentication:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
-    """
-    return hashlib.new('md4', to_bytes(password, encoding='utf-16-le')).digest()
-
-
-def ntowfv2(username, password, domain_name):  # type: (text_type, text_type, Optional[text_type]) -> bytes
-    """NTLMv2 NTOWFv2 function
-
-    The NT v2 one way function as documented under `NTLM v2 Authentication`_.
-
-    The pseudo-code for this function is::
-
-        Define NTOWFv2(Passwd, User, UserDom) as
-
-            HMAC_MD5(MD4(UNICODE(Passwd)), UNICODE(ConcatenationOf(Uppercase(User), UserDom)))
-
-    Args:
-
-    Returns:
-        bytes: The NTv2 one way has of the user's credentials.
-
-    .. _NTLM v2 Authentication:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/5e550938-91d4-459f-b67d-75d70009e3f3
-    """
-    digest = ntowfv1(password)  # ntowfv1 creates the MD4 hash of the user's password.
-    b_user = to_bytes(username.upper() + (domain_name or u""), encoding='utf-16-le')
-    return hmac_md5(digest, b_user)
+    def reset(self):  # type: () -> None
+        """ Reset's the cipher stream back to the original state. """
+        arc4 = algorithms.ARC4(self._key)
+        cipher = Cipher(arc4, mode=None, backend=default_backend())
+        self._handle = cipher.encryptor()
 
 
 def compute_response_v1(flags, response_key_nt, response_key_lm, server_challenge, client_challenge,
@@ -248,7 +122,7 @@ def compute_response_v1(flags, response_key_nt, response_key_lm, server_challeng
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
     """
     if flags & NegotiateFlags.extended_session_security:
-        nt_response = desl(response_key_nt, hashlib.md5(server_challenge + client_challenge[:8]).digest())
+        nt_response = desl(response_key_nt, md5(server_challenge + client_challenge[:8]))
         lm_response = client_challenge + (b"\x00" * 16)
 
     else:
@@ -257,7 +131,7 @@ def compute_response_v1(flags, response_key_nt, response_key_lm, server_challeng
         if not no_lm_response:
             lm_response = desl(response_key_lm, server_challenge)
 
-    session_base_key = hashlib.new('md4', response_key_nt).digest()
+    session_base_key = md4(response_key_nt)
     key_exchange_key = kxkey(flags, session_base_key, response_key_lm, lm_response, server_challenge)
 
     return nt_response, lm_response, key_exchange_key
@@ -322,6 +196,69 @@ def compute_response_v2(response_key_nt, server_challenge, client_challenge, tim
     return nt_response, lm_response, session_base_key  # Is KeyExchangeKey in NTLMv2.
 
 
+def crc32(m):  # type: (bytes) -> bytes
+    """ Simple wrapper function to generate a CRC32 checksum. """
+    # We bitand to ensure the value is the same across all Python versions.
+    return binascii.crc32(m) & 0xFFFFFFFF
+
+
+def des(k, d):  # type: (bytes, bytes) -> bytes
+    """DES encryption.
+
+    Indicates the encryption of an 8-byte data item `d` with the 7-byte key `k` using the Data Encryption Standard
+    (DES) algorithm in Electronic Codebook (ECB) mode. The result is 8 bytes in length ([FIPS46-2]).
+
+    Args:
+        k: The 7-byte key to use in the DES cipher.
+        d: The 8-byte data block to encrypt.
+
+    Returns:
+        bytes: The encrypted data block.
+    """
+    return DES(DES.key56_to_key64(k)).encrypt(d)
+
+
+def desl(k, d):  # type: (bytes, bytes) -> bytes
+    """Encryption using the DES Long algorithm.
+
+    Indicates the encryption of an 8-byte data item `d` with the 16-byte key `k` using the Data Encryption
+    Standard Long (DESL) algorithm. The result is 24 bytes in length.
+
+    `DESL(K, D)` as by MS-NLMP `DESL`_ is computed as follows::
+
+        ConcatenationOf(
+            DES(K[0..6], D),
+            DES(K[7..13], D),
+            DES(ConcatenationOf(K[14..15], Z(5)), D),
+        );
+
+    Args:
+        k: The key to use for the DES cipher, will be truncated to 16 bytes and then padded to 21 bytes.
+        d: The value to run through the DESL algorithm, will be truncated to 8 bytes.
+
+    Returns:
+        bytes: The output of the DESL algorithm.
+
+    .. _DESL:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/26c42637-9549-46ae-be2e-90f6f1360193
+    """
+    k = k[:16].ljust(21, b"\x00")  # Key needs to be stripped at 16 characters and then padded to 21 chars.
+    d = d[:8].ljust(8, b"\x00")  # Data need to be at most 8 bytes long.
+
+    b_value = io.BytesIO()
+
+    b_value.write(des(k[:7], d))
+    b_value.write(des(k[7:14], d))
+    b_value.write(des(k[14:], d))
+
+    return b_value.getvalue()
+
+
+def hmac_md5(key, data):
+    """ Simple wrapper function for a HMAC MD5 digest. """
+    return hmac.new(key, data, digestmod=hashlib.md5).digest()
+
+
 def kxkey(flags, session_base_key, lmowf, lm_response, server_challenge):
     # type: (NegotiateFlags, bytes, bytes, bytes, bytes) -> bytes
     """NTLM KXKEY function.
@@ -356,49 +293,119 @@ def kxkey(flags, session_base_key, lmowf, lm_response, server_challenge):
         return session_base_key
 
 
-def signkey(flags, session_key, usage):
-    # type: (NegotiateFlags, bytes, str) -> Optional[bytes]
-    """NTLM SIGNKEY function.
+def lmowfv1(password):  # type: (text_type) -> bytes
+    """NTLMv1 LMOWFv1 function
 
-    The MS-NLMP `SIGNKEY`_ function used to generate the signing keys for a security context.
+    The Lan Manager v1 one way function as documented under `NTLM v1 Authentication`_.
 
-    The pseudo-code for this function as documented under `SIGNKEY`_ is::
+    The pseudo-code for this function is::
 
-        Define SIGNKEY(NegFlg, ExportedSessionKey, Mode) as
-
-            If (NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY flag is set in NegFlg)
-                If (Mode equals "Client")
-                    Set SignKey to MD5(ConcatenationOf(ExportedSessionKey,
-                        "session key to client-to-server signing key magic constant"))
-
-                Else
-                    Set SignKey to MD5(ConcatenationOf(ExportedSessionKey,
-                        "session key to server-to-client signing key magic constant"))
-
-                Endif
-            Else
-                Set  SignKey to NIL
-
-            Endif
-        EndDefine
+        Define LMOWFv1(Passwd, User, UserDom) as
+            ConcatenationOf(
+                DES(UpperCase(Passwd)[0..6], "KGS!@#$%"),
+                DES(UpperCase(Passwd)[7..13], "KGS!@#$%"),
+            );
 
     Args:
-        flags: The negotiated flags between the initiator and acceptor.
-        session_key: The derived session key.
-        usage: Whether the signing key is for the 'initiate' or 'accept' context.
+        password: The password for the user.
 
     Returns:
-        bytes: The derived singing key.
+        bytes: The LMv1 one way hash of the user's password.
 
-    .. _SIGNKEY:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/524cdccb-563e-4793-92b0-7bc321fce096
+    .. _NTLM v1 Authentication:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
     """
-    if flags & NegotiateFlags.extended_session_security == 0:
-        return
+    # Fix the password to upper case and pad the length to exactly 14 bytes.
+    b_password = to_bytes(password.upper()).ljust(14, b"\x00")[:14]
 
-    direction = b"client-to-server" if usage == 'initiate' else b"server-to-client"
+    b_hash = io.BytesIO()
+    for start, end in [(0, 7), (7, 14)]:
+        b_hash.write(des(b_password[start:end], b'KGS!@#$%'))
 
-    return hashlib.md5(session_key + b"session key to %s signing key magic constant\x00" % direction).digest()
+    return b_hash.getvalue()
+
+
+def md4(m):  # type: (bytes) -> bytes
+    """ Simple wrapper to generate a MD4 checksum. """
+    return hashlib.new('md4', m).digest()
+
+
+def md5(m):  # type: (bytes) -> bytes
+    """ Simple wrapper to generate a MD5 checksum."""
+    return hashlib.md5(m).digest()
+
+
+def ntowfv1(password):  # type: (text_type) -> bytes
+    """NTLMv1 NTOWFv1 function
+
+    The NT v1 one way function as documented under `NTLM v1 Authentication`_.
+
+    The pseudo-code for this function is::
+
+        Define NTOWFv1(Passwd, User, UserDom) as MD4(UNICODE(Passwd))
+
+    Args:
+        password: The password for the user.
+
+    Returns:
+        bytes: The NTv1 one way hash of the user's password.
+
+    .. _NTLM v1 Authentication:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
+    """
+    return md4(to_bytes(password, encoding='utf-16-le'))
+
+
+def ntowfv2(username, password, domain_name):  # type: (text_type, text_type, Optional[text_type]) -> bytes
+    """NTLMv2 NTOWFv2 function
+
+    The NT v2 one way function as documented under `NTLM v2 Authentication`_.
+
+    The pseudo-code for this function is::
+
+        Define NTOWFv2(Passwd, User, UserDom) as
+
+            HMAC_MD5(MD4(UNICODE(Passwd)), UNICODE(ConcatenationOf(Uppercase(User), UserDom)))
+
+    Args:
+
+    Returns:
+        bytes: The NTv2 one way has of the user's credentials.
+
+    .. _NTLM v2 Authentication:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/5e550938-91d4-459f-b67d-75d70009e3f3
+    """
+    digest = md4(to_bytes(password, encoding='utf-16-le'))
+    b_user = to_bytes(username.upper() + (domain_name or u""), encoding='utf-16-le')
+    return hmac_md5(digest, b_user)
+
+
+def rc4(h, d):  # type: (RC4Handle, bytes) -> bytes
+    """ RC4 encryption of the data specified using the handle generated by rc4init. """
+    return h.update(d)
+
+
+def rc4k(k, d):  # type: (bytes, bytes) -> bytes
+    """RC4 encryption with an explicit key.
+
+    Indicates the encryption of data item `d` with the key `k` using the `RC4`_ algorithm.
+
+    Args:
+        k: The key to use for the RC4 cipher.
+        d: The data to encrypt.
+
+    Returns:
+        bytes: The RC4 encrypted bytes.
+
+    .. _RC4K:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/26c42637-9549-46ae-be2e-90f6f1360193
+    """
+    return rc4init(k).update(d)
+
+
+def rc4init(k):  # type: (bytes) -> RC4Handle
+    """ Initialization of the RC4 handle using the key specified. """
+    return RC4Handle(k)
 
 
 def sealkey(flags, session_key, usage):
@@ -472,7 +479,7 @@ def sealkey(flags, session_key, usage):
 
         direction = b"client-to-server" if usage == 'initiate' else b"server-to-client"
 
-        return hashlib.md5(seal_key + b"session key to %s sealing key magic constant\x00" % direction).digest()
+        return md5(seal_key + b"session key to %s sealing key magic constant\x00" % direction)
 
     elif flags & NegotiateFlags.lm_key or flags & NegotiateFlags.datagram:
         if flags & NegotiateFlags.key_56:
@@ -483,3 +490,48 @@ def sealkey(flags, session_key, usage):
 
     else:
         return session_key
+
+
+def signkey(flags, session_key, usage):
+    # type: (NegotiateFlags, bytes, str) -> Optional[bytes]
+    """NTLM SIGNKEY function.
+
+    The MS-NLMP `SIGNKEY`_ function used to generate the signing keys for a security context.
+
+    The pseudo-code for this function as documented under `SIGNKEY`_ is::
+
+        Define SIGNKEY(NegFlg, ExportedSessionKey, Mode) as
+
+            If (NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY flag is set in NegFlg)
+                If (Mode equals "Client")
+                    Set SignKey to MD5(ConcatenationOf(ExportedSessionKey,
+                        "session key to client-to-server signing key magic constant"))
+
+                Else
+                    Set SignKey to MD5(ConcatenationOf(ExportedSessionKey,
+                        "session key to server-to-client signing key magic constant"))
+
+                Endif
+            Else
+                Set  SignKey to NIL
+
+            Endif
+        EndDefine
+
+    Args:
+        flags: The negotiated flags between the initiator and acceptor.
+        session_key: The derived session key.
+        usage: Whether the signing key is for the 'initiate' or 'accept' context.
+
+    Returns:
+        bytes: The derived singing key.
+
+    .. _SIGNKEY:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/524cdccb-563e-4793-92b0-7bc321fce096
+    """
+    if flags & NegotiateFlags.extended_session_security == 0:
+        return
+
+    direction = b"client-to-server" if usage == 'initiate' else b"server-to-client"
+
+    return md5(session_key + b"session key to %s signing key magic constant\x00" % direction)

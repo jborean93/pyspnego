@@ -1,7 +1,6 @@
 import base64
 import logging
 import os
-import re
 import socket
 import struct
 import sys
@@ -38,7 +37,7 @@ def auth(server, username, password):
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
-        c = spnego.client(username, password, server, protocol='ntlm')
+        c = spnego.client(username, password, 'test', protocol='negotiate')
 
         while not c.complete or in_token:
             out_token = c.step(in_token)
@@ -71,34 +70,37 @@ def auth(server, username, password):
 
 
 def auth_local(server, username, password):
-    from spnego.sspi import SSPIClient, SSPIServer
+    with tempfile.NamedTemporaryFile() as temp_fd:
+        with open(temp_fd.name, mode='wb') as fd:
+            fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
-    c = SSPIClient(username, password, hostname='localhost')
-    s = SSPIServer(server)
+        os.environ['NTLM_USER_FILE'] = temp_fd.name
 
-    out_token = c.step()
-    in_token = s.step(out_token)
-
-    while not c.complete:
-        out_token = c.step(in_token)
+        c = spnego.client(username, password, server, protocol='ntlm',
+                          context_req=spnego.ContextReq.default | spnego.ContextReq.use_ntlm)
+        s = spnego.server(None, None, server, protocol='ntlm')
+        out_token = c.step()
         in_token = s.step(out_token)
 
-    c_enc_msg = c.wrap(b"Hello World")
-    s_dec_msg = s.unwrap(c_enc_msg)
-    s_enc_msg = s.wrap(s_dec_msg)
-    c_dec_msg = c.unwrap(s_enc_msg)
+        while not c.complete:
+            out_token = c.step(in_token)
+            in_token = s.step(out_token)
 
-    c_sig = c.sign(b"data")
-    s.verify(b"data", c_sig)
+        c_enc_msg = c.wrap(b"Hello World")
+        s_dec_msg = s.unwrap(c_enc_msg.data)
+        s_enc_msg = s.wrap(s_dec_msg.data)
+        c_dec_msg = c.unwrap(s_enc_msg.data)
 
-    s_sig = s.sign(b"data")
-    c.verify(b"data", s_sig)
+        c_sig = c.sign(b"data")
+        s.verify(b"data", c_sig)
 
-    print(c_dec_msg.decode('utf-8'))
-    print("Client Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
-    print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
-    a = ''
+        s_sig = s.sign(b"data")
+        c.verify(b"data", s_sig)
+
+        print(c_dec_msg.data.decode('utf-8'))
+        print("Client Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
+        print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
 
 
-auth(server, username, password)
-# auth_local(server, username, password)
+# auth(server, username, password)
+auth_local(server, username, password)

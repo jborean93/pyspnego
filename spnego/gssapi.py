@@ -15,7 +15,6 @@ from typing import (
 from spnego._context import (
     ContextProxy,
     ContextReq,
-    DEFAULT_REQ,
     GSSMech,
     IOVWrapResult,
     IOVUnwrapResult,
@@ -150,7 +149,7 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
 
         * macOS' implementation doesn't produce valid tokens, they are rejected by the server.
         * Pure Heimdal `gss_acquire_cred_with_password` isn't implemented for NTLM, no explicit creds.
-        * Doesn't seem to produce a NTLM v2 message so the strength is even less than what ntlm-auth can offer.
+        * Doesn't seem to produce a NTLM v2 message so the strength is even less than what our Python impl can offer.
         * It is doubtful it implements the required functions that MIT KRB5 relies on to get SPNEGO working.
 
         Because of these reasons we don't consider NTLM usable through GSSAPI on Heimdal based setups.
@@ -200,7 +199,7 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
         # before declaring session_key support is there as it might control whether it is used or not.
         # https://github.com/gssapi/gss-ntlmssp/issues/10
         try:
-            _ = context.session_key
+            inquire_sec_context_by_oid(context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))
         except gss_errors.OperationUnavailableError as o_err:
             # (GSS_S_UNAVAILABLE | ERR_NOTAVAIL) is raised when ntlmssp does support GSS_C_INQ_SSPI_SESSION key but
             # the context is not yet established. Any other errors would mean this isn't supported and we can't use
@@ -232,8 +231,8 @@ class GSSAPIProxy(ContextProxy):
 
     Args:
     """
-    def __init__(self, username=None, password=None, hostname='unspecified', service='host', channel_bindings=None,
-                 context_req=DEFAULT_REQ, usage='initiate', protocol='negotiate', is_wrapped=False):
+    def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
+                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', is_wrapped=False):
         super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                           protocol, is_wrapped)
 
@@ -398,7 +397,7 @@ class GSSAPIProxy(ContextProxy):
         return tuple(buffers)
 
     def _create_spn(self, service, principal):
-        return u"%s@%s" % (service.lower(), principal)
+        return u"%s@%s" % (service.lower() if service else u'host', principal or u'unspecified')
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
         if self.negotiated_protocol == u'ntlm':

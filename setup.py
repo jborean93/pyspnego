@@ -30,7 +30,7 @@ extensions = [
 
 setup(
     name='pyspnego',
-    version='0.0.1.dev0',
+    version='0.0.1.dev0',  # FIXME: read spnego/_version.py' for __version__ string.
     packages=['spnego', 'spnego._ntlm_raw', 'spnego._sspi_raw'],
     scripts=[
         'bin/pyspnego-parse',
@@ -38,12 +38,10 @@ setup(
     ext_modules=cythonize(extensions, language_level=3),
     include_package_data=True,
     install_requires=[
-        'ntlm-auth>=1.2.0',
+        'cryptography',
     ],
     extras_require={
-        'kerberos:sys_platform=="win32"': [
-            'pywin32'
-        ],
+        'kerberos:sys_platform=="win32"': [],
         'kerberos:sys_platform!="win32"': [
             'gssapi>=1.5.0'
         ],

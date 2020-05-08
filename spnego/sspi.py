@@ -14,7 +14,6 @@ from typing import (
 from spnego._context import (
     ContextProxy,
     ContextReq,
-    DEFAULT_REQ,
     IOVWrapResult,
     IOVUnwrapResult,
     split_username,
@@ -27,31 +26,35 @@ from spnego.iov import (
     IOVBuffer,
 )
 
-from spnego._sspi_raw import (
-    accept_security_context,
-    acquire_credentials_handle,
-    ClientContextReq,
-    CredentialUse,
-    decrypt_message,
-    encrypt_message,
-    initialize_security_context,
-    make_signature,
-    query_context_attributes,
-    SecBuffer,
-    SecBufferDesc,
-    SecBufferType,
-    SecPkgAttr,
-    SecStatus,
-    SecurityContext as SSPISecContext,
-    ServerContextReq,
-    SSPIQoP,
-    verify_signature,
-    WinNTAuthIdentity,
-)
-
 from spnego._text import (
     to_text,
 )
+
+HAS_SSPI = True
+try:
+    from spnego._sspi_raw import (
+        accept_security_context,
+        acquire_credentials_handle,
+        ClientContextReq,
+        CredentialUse,
+        decrypt_message,
+        encrypt_message,
+        initialize_security_context,
+        make_signature,
+        query_context_attributes,
+        SecBuffer,
+        SecBufferDesc,
+        SecBufferType,
+        SecPkgAttr,
+        SecStatus,
+        SecurityContext as SSPISecContext,
+        ServerContextReq,
+        SSPIQoP,
+        verify_signature,
+        WinNTAuthIdentity,
+    )
+except ImportError:
+    HAS_SSPI = False
 
 
 log = logging.getLogger(__name__)
@@ -67,8 +70,8 @@ class SSPIProxy(ContextProxy):
     Args:
     """
 
-    def __init__(self, username=None, password=None, hostname='unspecified', service='host', channel_bindings=None,
-                 context_req=DEFAULT_REQ, usage='initiate', protocol='negotiate'):
+    def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
+                 context_req=ContextReq.default, usage='initiate', protocol='negotiate'):
         super(SSPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                         protocol, False)
 
@@ -92,6 +95,13 @@ class SSPIProxy(ContextProxy):
                                                           credential_use=CredentialUse.outbound)
         else:
             self._credential = acquire_credentials_handle(self.spn, protocol, credential_use=CredentialUse.inbound)
+
+    @classmethod
+    def available_protocols(cls, context_req=None):
+        if HAS_SSPI:
+            return [u'kerberos', u'negotiate', u'ntlm']
+        else:
+            return []
 
     @property
     def complete(self):
@@ -147,15 +157,16 @@ class SSPIProxy(ContextProxy):
         # TODO: Determine if this returns None or an empty byte string.
         out_token = out_buffer[0].buffer
 
-        log.debug("GSSAPI step output: %s", to_text(base64.b64encode(out_token or b"")))
+        log.debug("SSPI step output: %s", to_text(base64.b64encode(out_token or b"")))
 
         return out_token
 
     def wrap(self, data, encrypt=True, qop=None):
         res = self.wrap_iov([BufferType.header, data, BufferType.padding], encrypt=encrypt, qop=qop)
-        return WrapResult(data=b"".join([r.data for r in res.buffers]), encrypted=res.encrypted)
+        return WrapResult(data=b"".join([r.data for r in res.buffers if r.data]), encrypted=res.encrypted)
 
     def wrap_iov(self, iov, encrypt=True, qop=None):
+        # FIXME: This doesn't actually fail with EncryptMessage, need to investigate furhter.
         if self.context_attr & ContextReq.integrity == 0:
             raise NotImplementedError("No integrity")
 
@@ -274,4 +285,7 @@ class SSPIProxy(ContextProxy):
         return tuple(buffers)
 
     def _create_spn(self, service, principal):
-        return u"%s\\%s" % (service.upper(), principal)
+        if not service and not principal:
+            return
+
+        return u"%s\\%s" % (service.upper() if service else u"HOST", principal or u"unspecified")

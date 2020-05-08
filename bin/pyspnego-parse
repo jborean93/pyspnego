@@ -28,7 +28,7 @@ from datetime import datetime
 
 from ntlm_auth.des import DES
 
-from spnego._ntlm_raw.keys import (
+from spnego._ntlm_raw.crypto import (
     hmac_md5,
     kxkey,
     lmowfv1,

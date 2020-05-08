@@ -33,7 +33,26 @@ from spnego.iov import (
 from spnego._text import (
     text_type,
     to_native,
+    to_text,
 )
+
+
+def add_metaclass(metaclass):
+    """Class decorator for creating a class with a metaclass. This has been copied from six under the MIT license. """
+    def wrapper(cls):
+        orig_vars = cls.__dict__.copy()
+        slots = orig_vars.get('__slots__')
+        if slots is not None:
+            if isinstance(slots, str):
+                slots = [slots]
+            for slots_var in slots:
+                orig_vars.pop(slots_var)
+        orig_vars.pop('__dict__', None)
+        orig_vars.pop('__weakref__', None)
+        if hasattr(cls, '__qualname__'):
+            orig_vars['__qualname__'] = cls.__qualname__
+        return metaclass(cls.__name__, cls.__bases__, orig_vars)
+    return wrapper
 
 
 def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], Optional[str]]
@@ -55,27 +74,9 @@ def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], O
     if '\\' in username:
         domain, username = username.split('\\', 1)
     else:
-        domain = ''
+        domain = None
 
-    return domain, username
-
-
-def add_metaclass(metaclass):
-    """Class decorator for creating a class with a metaclass. This has been copied from six under the MIT license. """
-    def wrapper(cls):
-        orig_vars = cls.__dict__.copy()
-        slots = orig_vars.get('__slots__')
-        if slots is not None:
-            if isinstance(slots, str):
-                slots = [slots]
-            for slots_var in slots:
-                orig_vars.pop(slots_var)
-        orig_vars.pop('__dict__', None)
-        orig_vars.pop('__weakref__', None)
-        if hasattr(cls, '__qualname__'):
-            orig_vars['__qualname__'] = cls.__qualname__
-        return metaclass(cls.__name__, cls.__bases__, orig_vars)
-    return wrapper
+    return to_text(domain, nonstring='passthru'), to_text(username, nonstring='passthru')
 
 
 WrapResult = namedtuple('WrapResult', ['data', 'encrypted'])
@@ -135,7 +136,7 @@ class ContextReq(enum.IntFlag):
     session_key:
         Ensure that the authenticated context will be able to return the session key that was negotiated between the
         client and the server. Older versions of `gss-ntlmssp`_ do not expose the functions required to retrieve this
-        info so when this feature flag is set then the NTLM fallback process will use `ntlm-auth`_ and not
+        info so when this feature flag is set then the NTLM fallback process will use a builtin NTLM process and not
         `gss-ntlmssp`_ if the latter is too old to retrieve the session key.
 
     wrapping_iov:
@@ -148,9 +149,6 @@ class ContextReq(enum.IntFlag):
     wrapping_winrm:
         To created a wrapped WinRM message the IOV extensions are required when using Kerberos auth. Setting this flag
         will skip Kerberos when `protocol='negotiate'` if the IOV headers aren't present and just fallback to NTLM.
-
-    .. _ntlm-auth:
-        https://github.com/jborean93/ntlm-auth
 
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
@@ -168,17 +166,21 @@ class ContextReq(enum.IntFlag):
     identify = 0x00002000
     delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
 
+    # mutual_auth | replay_detect | sequence_detect | confidentiality | anonymous
+    default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
+
     # pyspnego specific flags
-    negotiate_kerberos = 0x100000000
-    session_key = 0x200000000
-    wrapping_iov = 0x400000000
-    wrapping_winrm = 0x800000000
+    use_sspi = 0x0100000000  # Force the use of SSPIProxy
+    use_gssapi = 0x0200000000  # Force the use of GSSAPIProxy
+    use_negotiate = 0x0400000000  # Force use of NegotiateProxy
+    use_ntlm = 0x0800000000  # Force the use of NTLMProxy
+
+    negotiate_kerberos = 0x1000000000
+    session_key = 0x2000000000
+    wrapping_iov = 0x4000000000
+    wrapping_winrm = 0x8000000000
 
     # TODO ntlm_require_128_key - requires key_128 to be set.
-
-
-DEFAULT_REQ = ContextReq.integrity | ContextReq.confidentiality | ContextReq.sequence_detect | \
-              ContextReq.replay_detect | ContextReq.mutual_auth
 
 
 class FeatureMissingError(Exception):
@@ -190,15 +192,15 @@ class FeatureMissingError(Exception):
     @property
     def message(self):
         msg = {
-            ContextReq.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be negotiated.',
-            ContextReq.gssapi_iov_wrapping: 'The system is missing the GSSAPI IOV extension headers, cannot utilitze '
-                                       'wrap_iov and unwrap_iov',
-            ContextReq.negotiate_winrm_wrapping: 'The system is missing the GSSAPI IOV extension headers required for WinRM '
-                                         'encryption with Kerberos.',
+            ContextReq.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
+                                           'negotiated.',
 
-            # The below shouldn't be raised in an exception as it controls the negotiate logic but still have something
-            # here just in case.
-            ContextReq.session_key: 'The GSSAPI NTLM mech does not expose a mechanism to extract the session key.',
+            ContextReq.gssapi_iov_wrapping: 'The system is missing the GSSAPI IOV extension headers or NTLM is being'
+                                            'requested, cannot utilitze wrap_iov and unwrap_iov',
+
+            ContextReq.negotiate_winrm_wrapping: 'The system is missing the GSSAPI IOV extension headers required '
+                                                 'for WinRM encryption with Kerberos.',
+
         }.get(self.feature_id, 'Unknown feature flag: %d' % self.feature_id)
 
         return msg
@@ -305,9 +307,12 @@ class ContextProxy:
         if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
             raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
 
+        if self.protocol not in self.available_protocols():
+            raise ValueError("Protocol %s is not available" % self.protocol)
+
         self.username = username
         self.password = password
-        self.spn = self._create_spn(service or 'host', hostname or 'unspecified')
+        self.spn = self._create_spn(service, hostname)
 
         self._channel_bindings = None
         if self._channel_bindings:
@@ -324,9 +329,6 @@ class ContextProxy:
         # Whether the context is wrapped inside another context.
         self._is_wrapped = is_wrapped  # type: bool
 
-        if self.protocol not in self.available_protocols():
-            raise Exception("Protocol is not available")
-
         if context_req & ContextReq.negotiate_kerberos and (self.protocol == 'negotiate' and
                                                             'kerberos' not in self.available_protocols()):
             raise FeatureMissingError(ContextReq.negotiate_kerberos)
@@ -339,8 +341,8 @@ class ContextProxy:
         """A list of protocols that the provider can offer.
 
         Returns a list of protocols the underlying provider can implement. Currently only kerberos, negotiate, or ntlm
-        is understood. SSPI on Windows supports all 3, GSSAPI on Linux can support all 3 but depends on the environment
-        setup. ntlm-auth only supports NTLM.
+        is understood. The protocols that are available for each proxy context depend on the OS platform and what
+        libraries are installed. See each proxy's `available_protocols` function for more info.
 
         Args:
             context_req: The context requirements of :class:`ContextReq` that state what the client requires.
@@ -693,7 +695,8 @@ class ContextProxy:
         return provider_iov
 
     @abstractmethod
-    def _create_spn(self, service, principal):  # type: (text_type, text_type) -> text_type
+    def _create_spn(self, service, principal):
+        # type: (Optional[text_type], Optional[text_type]) -> Optional[text_type]
         """Creates the SPN.
 
         Creates the SPN in the format required by the context. An SPN is required for Kerberos auth to work correctly.
@@ -704,7 +707,7 @@ class ContextProxy:
             principal: The hostname or principal part of the SPN.
 
         Returns:
-            text_type: The SPN in the format required by the context provider.
+            Optional[text_type]: The SPN in the format required by the context provider.
         """
         pass
 

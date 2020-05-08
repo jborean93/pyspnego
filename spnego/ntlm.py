@@ -6,54 +6,35 @@ __metaclass__ = type
 
 import base64
 import hashlib
+import io
 import logging
 import os
 import socket
-import struct
-
-from typing import (
-    Optional,
-)
-
-from ntlm_auth.gss_channel_bindings import (
-    GssChannelBindingsStruct,
-)
-
-from ntlm_auth.constants import (
-    NegotiateFlags,
-)
-
-from ntlm_auth.ntlm import (
-    NtlmContext,
-)
-
-from ntlm_auth.session_security import (
-    SessionSecurity,
-)
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
 
 from spnego._context import (
     ContextProxy,
     ContextReq,
-    DEFAULT_REQ,
     split_username,
     UnwrapResult,
     WrapResult,
 )
 
-from spnego._ntlm_raw.keys import (
+from spnego._ntlm_raw.crypto import (
     compute_response_v1,
     compute_response_v2,
     hmac_md5,
     lmowfv1,
     ntowfv1,
     ntowfv2,
+    rc4init,
     rc4k,
     sealkey,
     signkey,
+)
+
+from spnego._ntlm_raw.security import (
+    seal,
+    sign,
 )
 
 from spnego._ntlm_raw.messages import (
@@ -65,12 +46,14 @@ from spnego._ntlm_raw.messages import (
     Negotiate,
     NegotiateFlags,
     TargetInfo,
-    Version,
 )
 
 from spnego._text import (
-    text_type,
     to_text,
+)
+
+from spnego._version import (
+    get_ntlm_version,
 )
 
 
@@ -79,17 +62,14 @@ log = logging.getLogger(__name__)
 
 class NTLMProxy(ContextProxy):
 
-    def __init__(self, username, password, hostname='unspecified', service='host', channel_bindings=None,
-                 context_req=DEFAULT_REQ, usage='initiate', protocol='ntlm', is_wrapped=False):
+    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None,
+                 context_req=ContextReq.default, usage='initiate', protocol='ntlm', is_wrapped=False):
         super(NTLMProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                         protocol, is_wrapped)
 
         self._complete = False
 
         self._domain, self._username = split_username(username)
-        self._workstation = None
-        self._server_name = None
-        self._domain_name = None
 
         # gss-ntlmssp uses the env var 'LM_COMPAT_LEVEL' to control the NTLM compatibility level. To try and make our
         # NTLM implementation similar in functionality we will also use that behaviour.
@@ -124,11 +104,17 @@ class NTLMProxy(ContextProxy):
 
         # TODO: handle lm_compat_level for acceptor.
 
-        self._negotiate = None
-        self._challenge = None
-        self._authenticate = None
+        self._mic_buffer = io.BytesIO()
         self._mic_required = False
+
+        # Crypto state for signing and sealing.
         self._session_key = None
+        self._sign_key_out = None
+        self._sign_key_in = None
+        self._handle_out = None
+        self._handle_in = None
+        self.__seq_num_in = 0
+        self.__seq_num_out = 0
 
     @classmethod
     def available_protocols(cls, context_req=None):
@@ -154,122 +140,105 @@ class NTLMProxy(ContextProxy):
         if not self._is_wrapped:
             log.debug("NTLM step input: %s", to_text(base64.b64encode(in_token or b"")))
 
+        self._mic_buffer.write(in_token or b"")
+
         out_token = getattr(self, '_step_%s' % self.usage)(in_token=in_token)
 
         if not self._is_wrapped:
             log.debug("NTLM step output: %s", to_text(base64.b64encode(out_token or b"")))
 
+        if self._complete:
+            in_usage = 'accept' if self.usage == 'initiate' else 'initiate'
+            self._sign_key_out = signkey(self._context_attr, self._session_key, self.usage)
+            self._sign_key_in = signkey(self._context_attr, self._session_key, in_usage)
+
+            self._handle_out = rc4init(sealkey(self._context_attr, self._session_key, self.usage))
+            self._handle_in = rc4init(sealkey(self._context_attr, self._session_key, in_usage))
+
+        elif out_token:
+            self._mic_buffer.write(out_token)
+
         return out_token
 
     def _step_initiate(self, in_token=None):
-        if not self._negotiate:
-            self._negotiate = Negotiate(self._context_req).pack()
-            return self._negotiate
+        # TODO: Find a better way for this
+        if not in_token:
+            return Negotiate(self._context_req).pack()
+
         else:
             challenge = Challenge.unpack(in_token)
-            self._challenge = in_token
 
             # If ClientRequire128bitEncryption and not negotiated, fail 'SEC_E_UNSUPPORTED_FUNCTION'.
 
-            client_challenge = os.urandom(8)
-            username = to_text(self._username)
-            domain_name = to_text(self._domain)
+            auth_kwargs = {
+                'domain_name': self._domain,
+                'username': self._username
+            }
 
-            workstation = None
-            version = None
             if challenge.flags & NegotiateFlags.version:
-                version = Version(major=10, minor=10, build=14393)  # TODO: hook into pyspnego version number.
-                workstation = to_text(socket.gethostname())
+                auth_kwargs['version'] = get_ntlm_version()
+                auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
 
-            if self._context_req & NegotiateFlags.anonymous:
-                nt_challenge = b""
-                lm_challenge = b"\x00"
-
-                key_exchange_key = None
-
-            elif self._ntlm_v2:
-                target_info = challenge.target_info.copy()
-
-                response_key_nt = ntowfv2(username, self.password, domain_name)
-                time = target_info.get(AvId.timestamp, FileTime.now())
-
-                # If Challenge does not contain both ComputerName and DomainName and integrity or confidentiality
-                #if (self.context_req & ContextReq.integrity or self.context_req & ContextReq.confidentiality) and \
-                #        AvId.dns_computer_name not in target_info and AvId.dns_domain_name not in target_info:
-                #    raise Exception("STATUS_LOGON_FAILURE")
-
-                if AvId.timestamp in target_info:
-                    self._mic_required = True
-                    target_info[AvId.flags] = target_info.get(AvId.flags, AvFlags(0)) | AvFlags.mic
-
-                cbt = hashlib.md5(self._channel_bindings).digest() if self._channel_bindings else b"\x00" * 16
-                target_info[AvId.channel_bindings] = cbt
-
-                # If ClientSuppliedTargetName not None:
-                #     Add MsvAvTargetName to ClietnSuppliedTargetName
-                #     Set MsvAvFlags |= AvFlags.untrusted_spn
-                # else:
-                target_info[AvId.target_name] = u""
-
-                nt_challenge, lm_challenge, key_exchange_key = compute_response_v2(
-                    response_key_nt, challenge.server_challenge, client_challenge, time, target_info)
-
-                if AvId.timestamp in challenge.target_info:
-                    lm_challenge = b"\x00" * 24
-
-            else:
-                response_key_nt = ntowfv1(self.password)
-                response_key_lm = lmowfv1(self.password)
-                nt_challenge, lm_challenge, key_exchange_key = compute_response_v1(
-                    challenge.flags, response_key_nt, response_key_lm, challenge.server_challenge, client_challenge,
-                    no_lm_response=self._no_lm)
-
+            nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge)
             if challenge.flags & NegotiateFlags.key_exch:
                 self._session_key = os.urandom(16)
-                encrypted_random_session_key = rc4k(key_exchange_key, self._session_key)
+                auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
+
             else:
                 self._session_key = key_exchange_key
-                encrypted_random_session_key = None
 
-            client_singing_key = signkey(challenge.flags, self._session_key, 'initiate')
-            server_signing_key = signkey(challenge.flags, self._session_key, 'accept')
-            client_sealing_key = sealkey(challenge.flags, self._session_key, 'initiate')
-            server_sealing_key = sealkey(challenge.flags, self._session_key, 'accept')
-
-            authenticate = Authenticate(challenge.flags, lm_challenge, nt_challenge, domain_name, username,
-                                        workstation, encrypted_random_session_key, version)
+            authenticate = Authenticate(challenge.flags, lm_challenge, nt_challenge, **auth_kwargs)
 
             if self._mic_required:
                 authenticate.mic = b"\x00" * 16
                 temp_auth = authenticate.pack()
-                authenticate.mic = hmac_md5(self._session_key, self._negotiate + self._challenge + temp_auth)
+                authenticate.mic = hmac_md5(self._session_key, self._mic_buffer.getvalue() + temp_auth)
 
-            self._authenticate = authenticate.pack()
+                self._mic_buffer = None  # No longer need to keep the previous messages around.
 
+            self._context_attr = authenticate.flags
             self._complete = True
 
-            return self._authenticate
+            return authenticate.pack()
 
     def _step_accept(self, in_token=None):
         raise NotImplementedError()
 
     def wrap(self, data, encrypt=True, qop=None):
-        raise NotImplementedError()
+        # gss-ntlmssp and SSPI always seals the data even if integrity wasn't negotiated.
+        # TODO: verify if gss-ntlmssp fails for the above, SSPI doesn't due to NTLMSSP_NEGOTIATE_ALWAYS_SING
+        msg, signature = seal(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out,
+                              data)
+
+        return WrapResult(data=signature + msg, encrypted=True)
 
     def wrap_iov(self, iov, encrypt=True, qop=None):
+        # While this technically works on SSPI by passing multiple data buffers we can achieve the same thing with
+        # wrap. Because this context proxy is meant to replicate gss-ntlmssp which doesn't support IOV in NTLM we just
+        # fail here.
+        # TODO: Figure out the NotImplementedError() equivalent in GSSAPI.
         raise NotImplementedError("NtlmContext does not offer IOV wrapping")
 
     def unwrap(self, data):
-        raise NotImplementedError()
+        signature = data[:16]
+        msg = self._handle_in.update(data[16:])
+        self.verify(msg, signature)
+
+        return UnwrapResult(data=msg, encrypted=True, qop=0)
 
     def unwrap_iov(self, iov):
         raise NotImplementedError("NtlmContext does not offer IOV wrapping")
 
     def sign(self, data, qop=None):
-        raise NotImplementedError()
+        return sign(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out, data)
 
     def verify(self, data, mic):
-        raise NotImplementedError()
+        expected_sig = sign(self._context_attr, self._handle_in, self._sign_key_in, self._seq_num_in, data)
+
+        if expected_sig != mic:
+            raise Exception("Invalid signature detected")
+
+        return 0
 
     @property
     def _context_attr_map(self):
@@ -284,174 +253,82 @@ class NTLMProxy(ContextProxy):
 
     @property
     def _requires_mech_list_mic(self):
+        # If called before the Authenticate message has been created it force the MIC to be present on the message.
+        # When called after the Auth message it will return whether the MIC was generated or not.
+        if not self._complete:
+            self._mic_required = True
+            return False
+
         return self._mic_required
 
-    def _create_spn(self, service, principal):
-        return u"%s/%s" % (service.upper(), principal)
-
-    def _convert_iov_buffer(self, iov):
-        pass  # IOV is not used in ntlm-auth.
-
-    def _reset_ntlm_crypto_state(self, outgoing=True):
-        raise NotImplementedError()
-
-
-
-class NTLMProxy2(ContextProxy):
-    """NtlmContext proxy class for ntlm-auth.
-
-    The proxy class for ntlm-auth that exposes this library into a common interface for SPNEGO authentication. This
-    context is a pure Python implementation of NTLM but does not offer an acceptor context or fine control over things
-    like confidentiality and integrity.
-
-    Args:
-        username: The username to authenticate with
-        password: The password to authenticate with
-        channel_bindings: The optional :class:`spnego.channel_bindings.GssChannelBindings` for the context.
-    """
-
-    def __init__(self, username, password, channel_bindings=None, context_req=DEFAULT_REQ, is_wrapped=False):
-        # type: (text_type, text_type, Optional[GssChannelBindings], ContextReq, bool) -> None
-        super(NTLMProxy, self).__init__(username, password, None, None, channel_bindings, context_req, 'initiate',
-                                        'ntlm', is_wrapped)
-
-        domain, username = split_username(self.username)
-        self._context = NtlmContext(username, password, domain=domain, cbt_data=self._channel_bindings)
-
-    @classmethod
-    def available_protocols(cls, context_req=None):
-        return [u'ntlm']
-
-    @classmethod
-    def iov_available(cls):
-        return False
+    @property
+    def _seq_num_in(self):
+        num = self.__seq_num_in
+        self.__seq_num_in += 1
+        return num
 
     @property
-    def complete(self):
-        return self._context.complete
+    def _seq_num_out(self):
+        num = self.__seq_num_out
+        self.__seq_num_out += 1
+        return num
 
-    @property
-    def negotiated_protocol(self):
-        return u'ntlm'
+    def _compute_response(self, challenge):  # type: (Challenge) -> Tuple[bytes, bytes, bytes]
+        """ Compute the NT and LM responses and the key exchange key. """
+        client_challenge = os.urandom(8)
 
-    @property
-    def session_key(self):
-        # session_key was only recently added in ntlm-auth, we have the fallback to the non-public interface for
-        # older versions where we know this still works.
-        # TODO: Remove getattr when ntlm-auth>=1.4.0.
-        return getattr(self._context, 'session_key', self._context._session_security.exported_session_key)
+        if self._context_req & NegotiateFlags.anonymous:
+            return b"", b"\x00", b""
 
-    def step(self, in_token=None):
-        out_token = self._context.step(input_token=in_token)
+        elif self._ntlm_v2:
+            response_key_nt = ntowfv2(self._username, self.password, self._domain)
 
-        if not self._is_wrapped:
-            log.debug("NTLM step input: %s", to_text(base64.b64encode(in_token or b"")))
+            target_info = challenge.target_info.copy() if challenge.target_info else TargetInfo()
 
-        if self.complete:
-            # ntlm-auth negotiate_flags set were the original flags the client sent and not what the server ultimately
-            # accepted. ntlm-auth 1.5.0 fixed this so we check for a new value added then to determine where to get the
-            # flags from.
-            # TODO: Remove hasattr when ntlm-auth>=1.5.0
-            if hasattr(self._context, 'reset_rc4_state'):
-                flags = self._context.negotiate_flags
+            if AvId.timestamp in target_info:
+                time = target_info[AvId.timestamp]
+                self._mic_required = True
+
             else:
-                flags = struct.unpack("<I", self._context._authenticate_message.negotiate_flags)[0]
+                time = FileTime.now()
 
-            integrity = False
-            if flags & NegotiateFlags.NTLMSSP_NEGOTIATE_SEAL:
-                self._context_attr |= ContextReq.confidentiality
-                integrity = True
+            # If Challenge does not contain both ComputerName and DomainName and integrity or confidentiality
+            # if (self.context_req & ContextReq.integrity or self.context_req & ContextReq.confidentiality) and \
+            #        AvId.dns_computer_name not in target_info and AvId.dns_domain_name not in target_info:
+            #    raise Exception("STATUS_LOGON_FAILURE")
 
-            elif flags & NegotiateFlags.NTLMSSP_NEGOTIATE_SIGN:
-                integrity = True
+            cbt = hashlib.md5(self._channel_bindings).digest() if self._channel_bindings else b"\x00" * 16
+            target_info[AvId.channel_bindings] = cbt
 
-            if integrity:
-                self._context_attr |= ContextReq.integrity | ContextReq.replay_detect | ContextReq.sequence_detect
+            # TODO: Find a way to pass in untrusted SPN.
+            target_info[AvId.target_name] = self.spn or u""
 
-        if not self._is_wrapped:
-            log.debug("ntlm-auth step output; %s", to_text(base64.b64encode(out_token or b"")))
+            if self._mic_required:
+                target_info[AvId.flags] = target_info.get(AvId.flags, AvFlags(0)) | AvFlags.mic
 
-        return out_token
+            nt_challenge, lm_challenge, key_exchange_key = compute_response_v2(
+                response_key_nt, challenge.server_challenge, client_challenge, time, target_info)
 
-    def wrap(self, data, encrypt=True, qop=None):
-        if not encrypt:
-            raise NotImplementedError("NtlmContext does not support non-confidential wrapping")
-        if qop:
-            raise NotImplementedError("NtlmContext does not support custom qop value")
+            if self._mic_required:
+                lm_challenge = b"\x00" * 24
 
-        is_encrypted = bool(self.context_req & ContextReq.confidentiality)
-        return WrapResult(data=self._context.wrap(data), encrypted=is_encrypted)
+            return nt_challenge, lm_challenge, key_exchange_key
 
-    def wrap_iov(self, iov, encrypt=True, qop=None):
-        raise NotImplementedError("NtlmContext does not offer IOV wrapping")
+        else:
+            response_key_nt = ntowfv1(self.password)
+            response_key_lm = lmowfv1(self.password)
 
-    def unwrap(self, data):
-        is_encrypted = bool(self.context_req & ContextReq.confidentiality)
-        return UnwrapResult(data=self._context.unwrap(data), encrypted=is_encrypted, qop=0)
-
-    def unwrap_iov(self, iov):
-        raise NotImplementedError("NtlmContext does not offer IOV wrapping")
-
-    def sign(self, data, qop=None):
-        if self.context_req & ContextReq.integrity == 0:
-            raise NotImplementedError("No integrity")
-
-        # ntlm-auth only added the sign function in v1.5.0. We try and get the value from there and fallback
-        # to a private interface we know is present on older versions.
-        # TODO: Remove getattr when ntlm-auth>=1.5.0.
-        return getattr(self._context, 'sign', self._context._session_security._get_signature)(data)
-
-    def verify(self, data, mic):
-        # ntlm-auth only added the verify function in v1.5.0. We try and get the value from there and fallback
-        # to a private interface we know is present on older versions.
-        # TODO: Remove gettr when ntlm-auth>=1.5.0
-        getattr(self._context, 'verify', self._context._session_security._verify_signature)(data, mic)
-
-        return 0
-
-    @property
-    def _context_attr_map(self):
-        return []  # ntlm-auth doesn't natively use these flags so we don't need to translate them.
-
-    @property
-    def _requires_mech_list_mic(self):
-        # ntlm-auth only added the mic_present attribute in v1.5.0. We try and get the value from there and fallback
-        # to a private interface we know is present on older versions.
-        # TODO: remove hasattr when ntlm-auth>=1.5.0.
-        if hasattr(self._context, 'mic_present'):
-            return self._context.mic_present
-
-        if self._context._authenticate_message:
-            return bool(self._context._authenticate_message.mic)
+            return compute_response_v1(challenge.flags, response_key_nt, response_key_lm, challenge.server_challenge,
+                                       client_challenge, no_lm_response=self._no_lm)
 
     def _create_spn(self, service, principal):
-        return u""  # SPNs are not used in ntlm-auth.
+        if not service and not principal:
+            return
+
+        return u"%s/%s" % (service or u"host", principal or u"unspecified")
 
     def _convert_iov_buffer(self, iov):
-        pass  # IOV is not used in ntlm-auth.
-
-    def _convert_channel_bindings(self, bindings):
-        cbt = GssChannelBindingsStruct()
-        cbt[cbt.INITIATOR_ADDTYPE] = bindings.initiator_addrtype
-        cbt[cbt.INITIATOR_ADDRESS] = bindings.initiator_address
-        cbt[cbt.ACCEPTOR_ADDRTYPE] = bindings.acceptor_addrtype
-        cbt[cbt.ACCEPTOR_ADDRESS] = bindings.acceptor_address
-        cbt[cbt.APPLICATION_DATA] = bindings.application_data
-
-        return cbt
+        pass  # IOV is not used in this NTLM provider like gss-ntlmssp.
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
-        # ntlm-auth only added the reset_rc4_state method in v1.5.0. We try and use that method if present and fallback
-        # to an internal mechanism we know will work with older versions.
-        # TODO: Remove hasattr when ntlm-auth>=1.5.0
-        if hasattr(self._context, 'reset_rc4_state'):
-            self._context.reset_rc4_state(outgoing=outgoing)
-        else:
-            existing_ss = self._context._session_security
-
-            # Can't just copy the keys, we need to derive the RC4 handle from the session_key so just recreate the obj.
-            new_ss = SessionSecurity(existing_ss.negotiate_flags, self.session_key)
-            new_ss.outgoing_seq_num = existing_ss.outgoing_seq_num
-            new_ss.incoming_seq_num = existing_ss.incoming_seq_num
-
-            self._context._session_security = new_ss
+        self._handle_out.reset() if outgoing else self._handle_in.reset()

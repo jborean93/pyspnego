@@ -9,17 +9,14 @@ import logging
 import logging.config
 import os
 
-from spnego.gssapi import GSSAPIProxy
-from spnego.negotiate import NegotiateProxy
-from spnego.ntlm import NTLMProxy
+from spnego._context import (
+    ContextReq,
+)
 
-from spnego._context import DEFAULT_REQ, ContextReq
-
-HAS_SSPI = True
-try:
-    from spnego.sspi import SSPIProxy
-except ImportError:
-    HAS_SSPI = False
+from spnego.auth import (
+    client,
+    server,
+)
 
 
 try:
@@ -46,37 +43,3 @@ def _setup_logging(l):
 
 logger = logging.getLogger(__name__)
 _setup_logging(logger)
-
-
-def _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, usage):
-    if HAS_SSPI:
-        # On Windows SSPI will be available, always favour this over our own Python implementation.
-        return SSPIProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
-
-    protocol = protocol.lower()
-    gssapi_protocols = GSSAPIProxy.available_protocols(context_req=context_req)
-    if protocol == 'kerberos' or protocol in gssapi_protocols:
-        # Use GSSAPI is someone has requested kerberos or it reports that it supports the protocol specified.
-        return GSSAPIProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
-
-    elif protocol == 'negotiate':
-        # If GSSAPI does not offer negotiate support, use our own wrapper.
-        return NegotiateProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
-
-    elif protocol == 'ntlm':
-        # Finally if GSSAPI does not support ntlm, use our own wrapper.
-        # FIXME: fail if usage='accept'
-        return NTLMProxy(username, password, hostname, service, channel_bindings, context_req, usage, protocol)
-
-    else:
-        raise ValueError("Invalid protocol specified '%s', must be kerberos, negotiate, or ntlm" % protocol)
-
-
-def client(username, password, hostname='unspecified', service='host', channel_bindings=None, context_req=DEFAULT_REQ,
-           protocol='negotiate'):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'initiate')
-
-
-def server(username, password, hostname='unspecified', service='host', channel_bindings=None, context_req=DEFAULT_REQ,
-           protocol='negotiate'):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'accept')
