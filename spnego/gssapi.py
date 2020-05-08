@@ -8,9 +8,10 @@ import base64
 import logging
 
 from typing import (
-    Union,
     Optional,
-    Tuple)
+    Tuple,
+    Union,
+)
 
 from spnego._context import (
     ContextProxy,

@@ -126,3 +126,23 @@ pip3 install gssapi
 
 echo "nameserver 192.168.56.10" > /etc/resolv.conf
 ```
+
+
+# TODO List
+
+* Look at optimising some of the large byte handling code by using `memory` view instead
+* Tidy up `NTLMProxy`, especially around `usage='accept'`
+* Try and simplify `pyspnego-parse` a bit more
+* Test out channel bindings
+* Unify exception handling
+* Unify behaviour when accessing attributes like session_key when the context hasn't been established
+* Tests, tests, and more tests
+* As part of the tests, make `pyspnego.ps1` a bit more API like, expose each function in a request and return the result back to the caller for easier debugging
+* Unify docstrings for public functions
+* Maybe even look at a read the docs
+* Create examples
+* Once the format of `pyspnego-parse` has been finalised, redo the `scenarios` folder against the newer standards
+* Test against `smbprotocol`
+* Test against `requests-credssp`
+* Test against `pypsrp`
+* See if `pywinrm` wants to use this

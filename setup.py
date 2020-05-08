@@ -3,39 +3,63 @@
 # Copyright: (c) 2020 Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-import os.path
+import os
 
 from setuptools import Extension, setup
-from Cython.Build import cythonize
 
 
-with open(os.path.join(os.path.dirname(__file__), 'README.md'), mode='rb') as fd:
+def abs_path(rel_path):
+    return os.path.join(os.path.dirname(__file__), rel_path)
+
+
+def get_version(rel_path):
+    with open(abs_path(rel_path), mode='r') as version_fd:
+        for line in version_fd.readlines():
+
+            if line.startswith('__version__'):
+                delim = '"' if '"' in line else "'"
+
+                return line.split(delim)[1]
+
+        else:
+            raise RuntimeError("Unable to find version string.")
+
+
+with open(abs_path('README.md'), mode='rb') as fd:
     long_description = fd.read().decode('utf-8')
 
+extensions = None
 
-extensions = [
-    Extension(
-        name='spnego._sspi_raw.sspi',
-        sources=['spnego/_sspi_raw/sspi.pyx'],
-        libraries=['Secur32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1'), ('SECURITY_WIN32', '1')],
-    ),
-    Extension(
-        name='spnego._sspi_raw.text',
-        sources=['spnego/_sspi_raw/text.pyx'],
-        libraries=['Kernel32'],
-        define_macros=[('UNICODE', '1'), ('_UNICODE', '1')],
-    ),
-]
+if os.name == 'nt':
+    from Cython.Build import cythonize
+
+    def build_sspi_extension(name, libraries):
+        rel_path = os.path.join('spnego', '_sspi_raw', name)
+
+        if not isinstance(libraries, list):
+            libraries = [libraries]
+
+        return Extension(
+            name=rel_path.replace(os.path.sep, '.'),
+            sources=[rel_path + '.pyx'],
+            libraries=libraries,
+            define_macros=[('UNICODE', '1'), ('_UNICODE', '1'), ('SECURITY_WIN32', '1')]
+        )
+
+    extensions = cythonize([
+        build_sspi_extension('sspi', 'Secur32'),
+        build_sspi_extension('text', 'Kernel32'),
+    ], language_level=3)
+
 
 setup(
     name='pyspnego',
-    version='0.0.1.dev0',  # FIXME: read spnego/_version.py' for __version__ string.
+    version=get_version(os.path.join('spnego', '_version.py')),
     packages=['spnego', 'spnego._ntlm_raw', 'spnego._sspi_raw'],
     scripts=[
         'bin/pyspnego-parse',
     ],
-    ext_modules=cythonize(extensions, language_level=3),
+    ext_modules=extensions,
     include_package_data=True,
     install_requires=[
         'cryptography',
@@ -49,10 +73,10 @@ setup(
     author='Jordan Borean',
     author_email='jborean93@gmail.com',
     url='https://github.com/jborean93/pyspnego',
-    description='Windows Negotiate Authentication CLient',
+    description='Windows Negotiate Authentication Client',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    keywords='windows spnego negotiate ntlm kerberos sspi gssapi',
+    keywords='windows spnego negotiate ntlm kerberos sspi gssapi auth',
     license='MIT',
     python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*',
     classifiers=[
