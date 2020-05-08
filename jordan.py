@@ -37,7 +37,8 @@ def auth(server, username, password):
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
-        c = spnego.client(username, password, 'test', protocol='negotiate')
+        c = spnego.client(username, password, 'test', protocol='ntlm',
+                          context_req=spnego.ContextReq.default | spnego.ContextReq.use_ntlm)
 
         while not c.complete or in_token:
             out_token = c.step(in_token)
@@ -77,9 +78,11 @@ def auth_local(server, username, password):
         os.environ['NTLM_USER_FILE'] = temp_fd.name
 
         c = spnego.client(username, password, server, protocol='ntlm',
+                          context_req=spnego.ContextReq.default | spnego.ContextReq.use_gssapi)
+        s = spnego.server(None, None, server, protocol='ntlm',
                           context_req=spnego.ContextReq.default | spnego.ContextReq.use_ntlm)
-        s = spnego.server(None, None, server, protocol='ntlm')
         out_token = c.step()
+        # _ = c._requires_mech_list_mic  # Test out when a MIC is set
         in_token = s.step(out_token)
 
         while not c.complete:

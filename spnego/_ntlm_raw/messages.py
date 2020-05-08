@@ -470,11 +470,19 @@ class Authenticate:
         workstation = to_text(_unpack_payload(b_data, 44), encoding=encoding, nonstring='passthru')
         enc_key = _unpack_payload(b_data, 52)
 
+        mic_offset = 64
         version = None
         if flags & NegotiateFlags.version:
             version = Version.unpack(b_data[64:72])
+            mic_offset += 8
 
-        mic = b_data[72:88]
+        # To detect whether a MIC was actually present we need to scan the NTLMv2 proof string for MsvAvFlags in the
+        # AV_PAIRS of the token
+        mic = None
+        if len(nt_response) > 24:
+            target_info = TargetInfo.unpack(nt_response[44:-4])
+            if target_info.get(AvId.flags, 0) & AvFlags.mic:
+                mic = b_data[mic_offset:mic_offset + 16]
 
         return Authenticate(flags, lm_response, nt_response, domain_name=domain, username=user,
                             workstation=workstation, encrypted_session_key=enc_key, version=version, mic=mic)
