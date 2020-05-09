@@ -65,6 +65,9 @@ setup(
         'cryptography',
     ],
     extras_require={
+        ':python_version<"3.5"': [
+            'enum34',
+        ],
         'kerberos:sys_platform=="win32"': [],
         'kerberos:sys_platform!="win32"': [
             'gssapi>=1.5.0'

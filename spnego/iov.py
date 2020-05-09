@@ -2,14 +2,18 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
+__metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-import enum
+from collections import (
+    namedtuple,
+)
 
-from collections import namedtuple
+from spnego._compat import (
+    IntFlag,
+)
 
 
-class BufferType(enum.IntFlag):
+class BufferType(IntFlag):
     """Buffer types to use for an IOVBuffer type.
 
     These are the IOVBuffer type flags that can be set for an IOVBuffer. The keys are a generified name for the
@@ -33,7 +37,7 @@ Defines the buffer inside a list that is passed to :meth:`wrap_iov()`. A list of
 `IOVUnwrapResult` under the `buffers` attribute.
 
 On SSPI only a buffer of the type `header`, `trailer`, or `padding` can be auto allocated. On GSSAPI all buffers can be
-auto allocated when `data=True` but the behaviour behind this is dependent on the mech it is run for. 
+auto allocated when `data=True` but the behaviour behind this is dependent on the mech it is run for.
 
 TODO: examples
 

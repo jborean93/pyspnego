@@ -37,6 +37,7 @@ def auth(server, username, password):
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
+        # os.environ['LM_COMPAT_LEVEL'] = '0'
         c = spnego.client(username, password, 'test', protocol='ntlm',
                           context_req=spnego.ContextReq.default | spnego.ContextReq.use_ntlm)
 
@@ -55,6 +56,16 @@ def auth(server, username, password):
                 in_token = None
 
         enc_data = c.wrap(b"Hello world").data
+
+        s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
+
+        server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
+        server_enc_msg = s.recv(server_enc_msg_len)
+
+        dec_msg = c.unwrap(server_enc_msg).data
+        print(dec_msg.decode('utf-8'))
+
+        enc_data = c.wrap(b"Jordan").data
 
         s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
 
@@ -105,5 +116,5 @@ def auth_local(server, username, password):
         print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
 
 
-# auth(server, username, password)
-auth_local(server, username, password)
+auth(server, username, password)
+# auth_local(server, username, password)

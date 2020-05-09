@@ -2,7 +2,7 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
+__metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import io
 import struct
@@ -305,17 +305,17 @@ class DES:
         block_bits = self._get_bits(block)
         lr = [block_bits[x] for x in self._ip]
 
-        l = [lr[0:32]]
-        r = [lr[32:64]]
+        left = [lr[0:32]]
+        right = [lr[32:64]]
         for i in range(16):
-            computed_block = self._compute_block(r[i], self._subkeys[i])
-            new_r = [int(computed_block[k] != l[i][k]) for k in range(32)]
+            computed_block = self._compute_block(right[i], self._subkeys[i])
+            new_r = [int(computed_block[k] != left[i][k]) for k in range(32)]
 
-            l.append(r[i])
-            r.append(new_r)
+            left.append(right[i])
+            right.append(new_r)
 
-        # apply the final permutation on the l and r bits backwards
-        rl = r[16] + l[16]
+        # apply the final permutation on the left and right bits backwards
+        rl = right[16] + left[16]
         encrypted_bits = [rl[x] for x in self._final_ip]
         encrypted_bytes = b""
         for i in range(0, 64, 8):
@@ -330,17 +330,17 @@ class DES:
         for i, idx in enumerate(self._final_ip):
             rl[idx] = block_bits[i]
 
-        r = [None] * 17
-        l = [None] * 17
-        r[16] = rl[0:32]
-        l[16] = rl[32:64]
+        right = [None] * 17
+        left = [None] * 17
+        right[16] = rl[0:32]
+        left[16] = rl[32:64]
         for i in range(15, -1, -1):
-            computed_block = self._compute_block(l[i + 1], self._subkeys[i])
-            new_l = [int(computed_block[k] != r[i + 1][k]) for k in range(32)]
-            r[i] = l[i + 1]
-            l[i] = new_l
+            computed_block = self._compute_block(left[i + 1], self._subkeys[i])
+            new_l = [int(computed_block[k] != right[i + 1][k]) for k in range(32)]
+            right[i] = left[i + 1]
+            left[i] = new_l
 
-        lr = l[0] + r[0]
+        lr = left[0] + right[0]
         decrypted_bits = [None] * 64
         for i, idx in enumerate(self._ip):
             decrypted_bits[idx] = lr[i]

@@ -2,9 +2,7 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
-
-import enum
+__metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 from abc import (
     ABCMeta,
@@ -15,11 +13,15 @@ from collections import (
     namedtuple,
 )
 
-from typing import (
+from spnego._compat import (
     List,
     Optional,
     Tuple,
-    Union)
+    Union,
+
+    Enum,
+    IntFlag,
+)
 
 from spnego.channel_bindings import (
     GssChannelBindings,
@@ -114,7 +116,7 @@ Attributes:
 """
 
 
-class ContextReq(enum.IntFlag):
+class ContextReq(IntFlag):
     """Flags that the caller can specify what features they require.
 
     A list of features as bit flags that the caller can specify when creating the security context. These flags can
@@ -209,7 +211,7 @@ class FeatureMissingError(Exception):
         return self.message
 
 
-class GSSMech(enum.Enum):
+class GSSMech(Enum):
     ntlm = '1.3.6.1.4.1.311.2.2.10'
     spnego = '1.3.6.1.5.5.2'
 

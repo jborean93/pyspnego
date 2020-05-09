@@ -2,9 +2,8 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
+__metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-import enum
 import io
 import struct
 
@@ -18,10 +17,12 @@ from datetime import (
     tzinfo,
 )
 
-from typing import (
+from spnego._compat import (
     Callable,
     Dict,
     Optional,
+    Tuple,
+    IntFlag,
 )
 
 from spnego._text import (
@@ -30,8 +31,12 @@ from spnego._text import (
     to_text,
 )
 
+from spnego._version import (
+    __version__ as pyspnego_version,
+)
 
-class NegotiateFlags(enum.IntFlag):
+
+class NegotiateFlags(IntFlag):
     """NTLM Negotiation flags.
 
     Used during NTLM negotiation to negotiate the capabilities between the client and server.
@@ -72,7 +77,7 @@ class NegotiateFlags(enum.IntFlag):
     request_target = 0x00000004
     oem = 0x00000002
     unicode = 0x00000001
-    
+
     @classmethod
     def native_labels(cls):  # type: () -> Dict[str, int]
         return {
@@ -111,7 +116,7 @@ class NegotiateFlags(enum.IntFlag):
         }
 
 
-class AvId(enum.IntEnum):
+class AvId(IntFlag):
     """ID for an NTLM AV_PAIR.
 
     These are the IDs that can be set as the `AvId` on an `AV_PAIR`_.
@@ -148,9 +153,9 @@ class AvId(enum.IntEnum):
         }
 
 
-class AvFlags(enum.IntFlag):
+class AvFlags(IntFlag):
     """MsvAvFlags for an AV_PAIR.
-    
+
     These are the flags that can be set on the MsvAvFlags entry of an NTLM `AV_PAIR`_.
 
     .. _AV_PAIR:
@@ -185,7 +190,7 @@ def _pack_payload(data, b_payload, payload_offset, pack_func=None):
     return b_field, payload_offset
 
 
-def _unpack_payload(b_data, field_offset, unpack_func=None): # type: (bytes, int, Callable[[bytes], any]) -> any
+def _unpack_payload(b_data, field_offset, unpack_func=None):  # type: (bytes, int, Callable[[bytes], any]) -> any
     field_len = struct.unpack("<H", b_data[field_offset:field_offset + 2])[0]
     if field_len:
         field_offset = struct.unpack("<I", b_data[field_offset + 4:field_offset + 8])[0]
@@ -211,7 +216,7 @@ class Negotiate:
     """
 
     def __init__(self, flags, domain_name=None, workstation=None, version=None):
-        # type: (int, Optional[text_type], Optional[text_type], Optional[Version] -> None
+        # type: (NegotiateFlags, Optional[text_type], Optional[text_type], Optional[Version]) -> None
         self.flags = flags  # type: NegotiateFlags
         self.domain_name = domain_name  # type: text_type
         self.workstation = workstation  # type: text_type
@@ -289,7 +294,7 @@ class Challenge:
     """
 
     def __init__(self, flags, server_challenge, target_name=None, target_info=None, version=None):
-        # type: (int, bytes, Optional[text_type], Optional[TargetInfo], Optional[Version] -> None
+        # type: (int, bytes, Optional[text_type], Optional[TargetInfo], Optional[Version]) -> None
 
         self.flags = NegotiateFlags(flags)  # type: NegotiateFlags
         self.server_challenge = server_challenge  # type: bytes
@@ -388,12 +393,12 @@ class Authenticate:
 
     def __init__(self, flags, lm_challenge_response, nt_challenge_response, domain_name=None, username=None,
                  workstation=None, encrypted_session_key=None, version=None, mic=None):
-        # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes] -> None # noqa
+        # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes]) -> None # noqa
 
         self.flags = NegotiateFlags(flags)    # type: NegotiateFlags
         self.lm_challenge_response = lm_challenge_response  # type: Optional[bytes]
         self.nt_challenge_response = nt_challenge_response  # type: Optional[bytes]
-        self.domain_name = domain_name  # type: Optional[text_text]
+        self.domain_name = domain_name  # type: Optional[text_type]
         self.username = username  # type: Optional[text_type]
         self.workstation = workstation  # type: Optional[text_type]
         self.encrypted_random_session_key = encrypted_session_key  # type: bytes
@@ -504,9 +509,13 @@ class FileTime(datetime):
 
     _EPOCH_FILETIME = 116444736000000000  # 1970-01-01 as FILETIME.
 
-    def __new__(cls, *args, nanosecond=0, **kwargs):
+    def __new__(cls, *args, **kwargs):
+        ns = 0
+        if 'nanosecond' in kwargs:
+            ns = kwargs.pop('nanosecond')
+
         dt = super(FileTime, cls).__new__(cls, *args, **kwargs)
-        dt.nanosecond = nanosecond
+        dt.nanosecond = ns
 
         return dt
 
@@ -731,6 +740,14 @@ class Version:
         """ Packs the structure to bytes. """
         return struct.pack("B", self.major) + struct.pack("B", self.minor) + struct.pack("<H", self.build) + \
             self.reserved + struct.pack("B", self.revision)
+
+    @staticmethod
+    def get_current():  # type: () -> Version
+        """ Generates an NTLM Version structure based on the pyspnego package version. """
+        v = [v for v in pyspnego_version.split('.', 3) if v]
+        v += [0] * (3 - len(v))
+
+        return Version(major=int(v[0]), minor=int(v[1]), build=int(v[2]))
 
     @staticmethod
     def unpack(b_data):  # type: (bytes) -> Version

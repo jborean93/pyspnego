@@ -11,12 +11,15 @@ operations aren't implemented due to it being a simple operation in Python.
 """
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
+__metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import base64
 import binascii
 import hashlib
 import hmac
 import io
+import re
+import struct
 
 from cryptography.hazmat.primitives.ciphers import (
     algorithms,
@@ -27,7 +30,7 @@ from cryptography.hazmat.backends import (
     default_backend,
 )
 
-from typing import (
+from spnego._compat import (
     Optional,
     Tuple,
 )
@@ -45,7 +48,14 @@ from spnego._ntlm_raw.messages import (
 from spnego._text import (
     text_type,
     to_bytes,
+    to_text,
 )
+
+
+# A user does not need to specify their actual plaintext password they can specify the LM and NT hash (from lmowfv1 and
+# ntowfv2) in the form 'lm_hash_hex:nt_hash_hex'. This is still considered a plaintext pass as we can use it to build
+# the LM and NT response but it's only usable for NTLM.
+_NTLM_HASH_PATTERN = re.compile(to_text(r'^[a-fA-F0-9]{32}:[a-fA-F0-9]{32}$'))
 
 
 class RC4Handle:
@@ -65,6 +75,10 @@ class RC4Handle:
         arc4 = algorithms.ARC4(self._key)
         cipher = Cipher(arc4, mode=None, backend=default_backend())
         self._handle = cipher.encryptor()
+
+
+def _is_ntlm_hash(password):  # type: (text_type) -> bool
+    return bool(_NTLM_HASH_PATTERN.match(password))
 
 
 def compute_response_v1(flags, response_key_nt, response_key_lm, server_challenge, client_challenge,
@@ -199,7 +213,7 @@ def compute_response_v2(response_key_nt, server_challenge, client_challenge, tim
 def crc32(m):  # type: (bytes) -> bytes
     """ Simple wrapper function to generate a CRC32 checksum. """
     # We bitand to ensure the value is the same across all Python versions.
-    return binascii.crc32(m) & 0xFFFFFFFF
+    return struct.pack("<I", binascii.crc32(m) & 0xFFFFFFFF)
 
 
 def des(k, d):  # type: (bytes, bytes) -> bytes
@@ -284,7 +298,7 @@ def kxkey(flags, session_base_key, lmowf, lm_response, server_challenge):
 
     elif flags & NegotiateFlags.lm_key:
         b_data = lm_response[:8]
-        return des(lmowf[:7], b_data) + des(lmowf[7:8] + b"\xbd\xbd\xbd\xbd\xbd\xbd", b_data)
+        return des(lmowf[:7], b_data) + des(lmowf[7:8] + b"\xBD\xBD\xBD\xBD\xBD\xBD", b_data)
 
     elif flags & NegotiateFlags.non_nt_session_key:
         return lmowf[:8] + b"\x00" * 8
@@ -315,6 +329,9 @@ def lmowfv1(password):  # type: (text_type) -> bytes
     .. _NTLM v1 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
     """
+    if _is_ntlm_hash(password):
+        return base64.b16decode(password.split(':')[0].upper())
+
     # Fix the password to upper case and pad the length to exactly 14 bytes.
     b_password = to_bytes(password.upper()).ljust(14, b"\x00")[:14]
 
@@ -353,6 +370,9 @@ def ntowfv1(password):  # type: (text_type) -> bytes
     .. _NTLM v1 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
     """
+    if _is_ntlm_hash(password):
+        return base64.b16decode(password.split(':')[1].upper())
+
     return md4(to_bytes(password, encoding='utf-16-le'))
 
 
@@ -375,9 +395,9 @@ def ntowfv2(username, password, domain_name):  # type: (text_type, text_type, Op
     .. _NTLM v2 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/5e550938-91d4-459f-b67d-75d70009e3f3
     """
-    digest = md4(to_bytes(password, encoding='utf-16-le'))
+    nt_hash = ntowfv1(password)
     b_user = to_bytes(username.upper() + (domain_name or u""), encoding='utf-16-le')
-    return hmac_md5(digest, b_user)
+    return hmac_md5(nt_hash, b_user)
 
 
 def rc4(h, d):  # type: (RC4Handle, bytes) -> bytes

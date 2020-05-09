@@ -2,11 +2,10 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
+__metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
 import hashlib
-import io
 import logging
 import os
 import socket
@@ -46,16 +45,12 @@ from spnego._ntlm_raw.messages import (
     Negotiate,
     NegotiateFlags,
     TargetInfo,
+    Version,
 )
 
 from spnego._text import (
     to_text,
 )
-
-from spnego._version import (
-    get_ntlm_version,
-)
-
 
 log = logging.getLogger(__name__)
 
@@ -85,19 +80,18 @@ class NTLMProxy(ContextProxy):
             NegotiateFlags.key_128 | \
             NegotiateFlags.key_56 | \
             NegotiateFlags.key_exch | \
-            NegotiateFlags.extended_session_security | \
             NegotiateFlags.always_sign | \
             NegotiateFlags.ntlm | \
-            NegotiateFlags.lm_key | \
             NegotiateFlags.request_target | \
             NegotiateFlags.oem | \
             NegotiateFlags.unicode
 
-        if self._lm_compat_level == 0:
-            self._context_req &= ~NegotiateFlags.extended_session_security
+        if self._lm_compat_level != 0:
+            self._context_req |= NegotiateFlags.extended_session_security
 
-        elif self._lm_compat_level > 1:
-            self._context_req &= ~NegotiateFlags.lm_key
+        # This should be possible but cannot get wrapping to work against a MS server.
+        # if self._lm_compat_level == 1:
+        #     self._context_req |= NegotiateFlags.lm_key
 
         self._no_lm = self._lm_compat_level > 1
         self._ntlm_v2 = self._lm_compat_level > 2
@@ -151,8 +145,16 @@ class NTLMProxy(ContextProxy):
             self._sign_key_out = signkey(self._context_attr, self._session_key, self.usage)
             self._sign_key_in = signkey(self._context_attr, self._session_key, in_usage)
 
-            self._handle_out = rc4init(sealkey(self._context_attr, self._session_key, self.usage))
-            self._handle_in = rc4init(sealkey(self._context_attr, self._session_key, in_usage))
+            # Found a vague reference in MS-NLMP that states if NTLMv2 authentication was not used then only 1 key is
+            # used for sealing. This seems to reference when NTLMSSP_NEGOTIATE_EXTENDED_SESSION_SECURITY is not set and
+            # not NTLMv2 messages itself.
+            # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/d1c86e81-eb66-47fd-8a6f-970050121347
+            if self._context_attr & NegotiateFlags.extended_session_security:
+                self._handle_out = rc4init(sealkey(self._context_attr, self._session_key, self.usage))
+                self._handle_in = rc4init(sealkey(self._context_attr, self._session_key, in_usage))
+            else:
+                self._handle_out = self._handle_in = rc4init(sealkey(self._context_attr, self._session_key,
+                                                                     self.usage))
 
         return out_token
 
@@ -173,7 +175,7 @@ class NTLMProxy(ContextProxy):
             }
 
             if challenge.flags & NegotiateFlags.version:
-                auth_kwargs['version'] = get_ntlm_version()
+                auth_kwargs['version'] = Version.get_current()
                 auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
 
             nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._username,
@@ -352,8 +354,14 @@ class NTLMProxy(ContextProxy):
 
     @property
     def _seq_num_in(self):
-        num = self.__seq_num_in
-        self.__seq_num_in += 1
+        if self._context_attr & NegotiateFlags.extended_session_security:
+            num = self.__seq_num_in
+            self.__seq_num_in += 1
+
+        else:
+            num = self.__seq_num_out
+            self.__seq_num_out += 1
+
         return num
 
     @property
