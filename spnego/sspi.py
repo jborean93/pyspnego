@@ -196,14 +196,11 @@ class SSPIProxy(ContextProxy):
         return IOVUnwrapResult(buffers=self._create_iov_result(buffer), encrypted=encrypted, qop=qop)
 
     def sign(self, data, qop=None):
-        if not self.integrity:
-            raise NotImplementedError("No integrity")
-
         iov = SecBufferDesc(self._build_iov_list([
             data,
             (BufferType.header, self._attr_sizes.max_signature)
         ]))
-        make_signature(self._context, qop, iov, self._seq_num)
+        make_signature(self._context, qop or 0, iov, self._seq_num)
 
         return iov[1].buffer
 

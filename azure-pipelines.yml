@@ -1,0 +1,39 @@
+trigger:
+- master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+strategy:
+  matrix:
+    Python27:
+      python.version: '2.7'
+    Python35:
+      python.version: '3.5'
+    Python36:
+      python.version: '3.6'
+    Python37:
+      python.version: '3.7'
+    Python38:
+      python.version: '3.8'
+
+steps:
+- displayName: Use python ${python.version}
+  task: UsePythonVersion@0
+  inputs:
+    versionSpec: '$(python.version)'
+
+- displayName: Install
+  script: |
+    python -m pip install --upgrade pip setuptools
+    pip install -r requirements-test.txt -c tests/constraints.txt
+    pip install .
+    pip install coveralls
+
+- displayName: Lint
+  script: |
+    pycodestyle . --verbose --show-source --statistics
+
+- displayName: Test
+  script: |
+    py.test -v --cov spnego --cov-report term-missing
