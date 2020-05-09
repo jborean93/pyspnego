@@ -117,3 +117,6 @@ ENV/
 # Cython
 *.c
 *.pyd
+
+# vim
+*.swp

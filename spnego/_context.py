@@ -117,6 +117,24 @@ Attributes:
 
 
 class ContextReq(IntFlag):
+    none = 0x00000000
+
+    # GSSAPI|SSPI flags
+    delegate = 0x00000001
+    mutual_auth = 0x00000002
+    replay_detect = 0x00000004
+    sequence_detect = 0x00000008
+    confidentiality = 0x00000010
+    integrity = 0x00000020
+    anonymous = 0x00000040
+    identify = 0x00002000
+    delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
+
+    # mutual_auth | replay_detect | sequence_detect | confidentiality | anonymous
+    default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
+
+
+class NegotiateOptions(IntFlag):
     """Flags that the caller can specify what features they require.
 
     A list of features as bit flags that the caller can specify when creating the security context. These flags can
@@ -155,32 +173,16 @@ class ContextReq(IntFlag):
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
     """
-    none = 0x00000000
+    # Force a specific provider
+    use_sspi = 0x00000001
+    use_gssapi = 0x00000002
+    use_negotiate = 0x00000004
+    use_ntlm = 0x00000008
 
-    # GSSAPI|SSPI flags
-    delegate = 0x00000001
-    mutual_auth = 0x00000002
-    replay_detect = 0x00000004
-    sequence_detect = 0x00000008
-    confidentiality = 0x00000010
-    integrity = 0x00000020
-    anonymous = 0x00000040
-    identify = 0x00002000
-    delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
-
-    # mutual_auth | replay_detect | sequence_detect | confidentiality | anonymous
-    default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
-
-    # pyspnego specific flags
-    use_sspi = 0x0100000000  # Force the use of SSPIProxy
-    use_gssapi = 0x0200000000  # Force the use of GSSAPIProxy
-    use_negotiate = 0x0400000000  # Force use of NegotiateProxy
-    use_ntlm = 0x0800000000  # Force the use of NTLMProxy
-
-    negotiate_kerberos = 0x1000000000
-    session_key = 0x2000000000
-    wrapping_iov = 0x4000000000
-    wrapping_winrm = 0x8000000000
+    negotiate_kerberos = 0x00000010
+    session_key = 0x00000020
+    wrapping_iov = 0x00000040
+    wrapping_winrm = 0x00000080
 
     # TODO ntlm_require_128_key - requires key_128 to be set.
 
@@ -194,16 +196,16 @@ class FeatureMissingError(Exception):
     @property
     def message(self):
         msg = {
-            ContextReq.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
-                                           'negotiated.',
+            NegotiateOptions.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
+                                                 'negotiated.',
 
-            ContextReq.gssapi_iov_wrapping: 'The system is missing the GSSAPI IOV extension headers or NTLM is being'
-                                            'requested, cannot utilitze wrap_iov and unwrap_iov',
+            NegotiateOptions.gssapi_iov_wrapping: 'The system is missing the GSSAPI IOV extension headers or NTLM is '
+                                                  'being requested, cannot utilitze wrap_iov and unwrap_iov',
 
-            ContextReq.negotiate_winrm_wrapping: 'The system is missing the GSSAPI IOV extension headers required '
-                                                 'for WinRM encryption with Kerberos.',
+            NegotiateOptions.negotiate_winrm_wrapping: 'The system is missing the GSSAPI IOV extension headers '
+                                                       'required for WinRM encryption with Kerberos.',
 
-        }.get(self.feature_id, 'Unknown feature flag: %d' % self.feature_id)
+        }.get(self.feature_id, 'Unknown option flag: %d' % self.feature_id)
 
         return msg
 
@@ -296,11 +298,12 @@ class ContextProxy:
         context_req (ContextReq): The context requirements flags as an int value specific to the context provider.
         usage (str): The usage of the context, `initiate` for a client and `accept` for a server.
         protocol (text_type): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
+        options (NegotiateOptions): The user specified negotiation options.
     """
 
-    def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol,
+    def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol, options,
                  is_wrapped):
-        # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, bool) -> None  # noqa
+        # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, NegotiateOptions, bool) -> None  # noqa
         self.usage = usage.lower()
         if self.usage not in ['initiate', 'accept']:
             raise ValueError("Invalid usage '%s', must be initiate or accept" % self.usage)
@@ -315,6 +318,7 @@ class ContextProxy:
         self.username = username
         self.password = password
         self.spn = self._create_spn(service, hostname)
+        self.options = NegotiateOptions(options)
 
         self._channel_bindings = None
         if self._channel_bindings:
@@ -331,15 +335,15 @@ class ContextProxy:
         # Whether the context is wrapped inside another context.
         self._is_wrapped = is_wrapped  # type: bool
 
-        if context_req & ContextReq.negotiate_kerberos and (self.protocol == 'negotiate' and
-                                                            'kerberos' not in self.available_protocols()):
+        if options & NegotiateOptions.negotiate_kerberos and (self.protocol == 'negotiate' and
+                                                              'kerberos' not in self.available_protocols()):
             raise FeatureMissingError(ContextReq.negotiate_kerberos)
 
-        if context_req & ContextReq.wrapping_iov and not self.iov_available():
+        if options & NegotiateOptions.wrapping_iov and not self.iov_available():
             raise FeatureMissingError(ContextReq.wrapping_iov)
 
     @classmethod
-    def available_protocols(cls, context_req=None):  # type: (Optional[ContextReq]) -> List[text_type, ...]
+    def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[text_type, ...]
         """A list of protocols that the provider can offer.
 
         Returns a list of protocols the underlying provider can implement. Currently only kerberos, negotiate, or ntlm
@@ -347,7 +351,7 @@ class ContextProxy:
         libraries are installed. See each proxy's `available_protocols` function for more info.
 
         Args:
-            context_req: The context requirements of :class:`ContextReq` that state what the client requires.
+            options: The context requirements of :class:`NegotiationOptions` that state what the client requires.
 
         Returns:
             List[text_type, ...]: The list of protocols that the context can use.

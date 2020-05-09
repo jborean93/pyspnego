@@ -58,9 +58,9 @@ log = logging.getLogger(__name__)
 class NTLMProxy(ContextProxy):
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='ntlm', is_wrapped=False):
+                 context_req=ContextReq.default, usage='initiate', protocol='ntlm', options=0, is_wrapped=False):
         super(NTLMProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                        protocol, is_wrapped)
+                                        protocol, options, is_wrapped)
 
         self._complete = False
 
@@ -112,7 +112,7 @@ class NTLMProxy(ContextProxy):
         self.__seq_num_out = 0
 
     @classmethod
-    def available_protocols(cls, context_req=None):
+    def available_protocols(cls, options=None):
         return [u'ntlm']
 
     @classmethod

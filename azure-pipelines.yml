@@ -1,33 +1,66 @@
 trigger:
-- master
+  branches:
+    include:
+    - master
+  tags:
+    include:
+    - v*
+  paths:
+    exclude:
+    - CHANGELOG.md
+    - LICENSE
+    - README.md
 
-pool:
-  vmImage: 'ubuntu-latest'
 
 strategy:
   matrix:
-    Python27:
-      python.version: '2.7'
-    Python35:
-      python.version: '3.5'
-    Python36:
-      python.version: '3.6'
-    Python37:
-      python.version: '3.7'
-    Python38:
-      python.version: '3.8'
+    Linux-Python27:
+      imageName: ubuntu-18.04
+      python.version: 2.7
+    Linux-Python35:
+      imageName: ubuntu-18.04
+      python.version: 3.5
+    Linux-Python36:
+      imageName: ubuntu-18.04
+      python.version: 3.6
+    Linux-Python37:
+      imageName: ubuntu-18.04
+      python.version: 3.7
+    Linux-Python38:
+      imageName: ubuntu-18.04
+      python.version: 3.8
+
+    Windows-Python27:
+      imageName: windows-2019
+      python.version: 2.7
+#    Windows-Python38-x86:
+#      imageName: windows-2019
+#      python.version: 3.8
+#      python.arch: x86
+    Windows-Python38:
+      imageName: windows-2019
+      python.version: 3.8
+
+pool:
+  vmImage: $(imageName)
 
 steps:
 - task: UsePythonVersion@0
   inputs:
-    versionSpec: '$(python.version)'
-  displayName: Use python ${python.version}
+    versionSpec: $(python.version)
+#    ${{ if endswith(python.arch, '-x86') }}:
+#      architecture: x86
+  displayName: Use python $(python.version)
 
 - script: |
-    python -m pip install --upgrade pip setuptools
+    echo "Installing baseline pip packages"
+    python -m pip install --upgrade pip setuptools wheel && python -m pip install coverage
+
+    echo "Installing test requirements"
     pip install -r requirements-test.txt -c tests/constraints.txt
+
+    echo "Installing package"
     pip install .
-    pip install coveralls
   displayName: Install
 
 - script: |
@@ -37,3 +70,14 @@ steps:
 - script: |
     py.test -v --cov spnego --cov-report term-missing
   displayName: Test
+
+- script: |
+    choco.exe install codecov --yes --no-progress
+    codecov.exe
+  displayName: 'Upload to codecov.io - Windows'
+  condition: and(succeededOrFailed(), eq(variables['imageName'], 'windows-2019'))
+
+- script: |
+    bash <(curl -s https://codecov.io/bash)
+  displayName: 'Upload to codecov.io - Linux'
+  condition: and(succeededOrFailed(), eq(variables['imageName'], 'ubuntu-18.04'))

@@ -22,44 +22,48 @@ from spnego.sspi import (
 
 from spnego._context import (
     ContextReq,
+    NegotiateOptions,
 )
 
 
-def _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, usage):
+def _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options, usage):
     proto = protocol.lower()
 
     # Unless otherwise specified, we always favour the platform implementations (SSPI/GSSAPI) if they are available.
     # Otherwise fallback to the Python implementations (NegotiateProxy/NTLMProxy).
-    use_flags = (ContextReq.use_sspi | ContextReq.use_gssapi | ContextReq.use_negotiate | ContextReq.use_ntlm)
-    use_specified = context_req & use_flags != 0
+    use_flags = (NegotiateOptions.use_sspi | NegotiateOptions.use_gssapi | NegotiateOptions.use_negotiate |
+                 NegotiateOptions.use_ntlm)
+    use_specified = options & use_flags != 0
 
-    if context_req & ContextReq.use_sspi or (not use_specified and
-                                             proto in SSPIProxy.available_protocols(context_req=context_req)):
+    if options & NegotiateOptions.use_sspi or (not use_specified and
+                                               proto in SSPIProxy.available_protocols(context_req=context_req)):
         proxy = SSPIProxy
 
-    elif context_req & ContextReq.use_gssapi or (not use_specified and (proto == 'kerberos' or
-                                                 proto in GSSAPIProxy.available_protocols(context_req=context_req))):
+    elif options & NegotiateOptions.use_gssapi or (not use_specified and (proto == 'kerberos' or
+                                                   proto in GSSAPIProxy.available_protocols(context_req=context_req))):
         proxy = GSSAPIProxy
 
-    elif context_req & ContextReq.use_negotiate or (not use_specified and proto == 'negotiate'):
+    elif options & NegotiateOptions.use_negotiate or (not use_specified and proto == 'negotiate'):
         # If GSSAPI does not offer negotiate support, use our own wrapper.
         proxy = NegotiateProxy
 
-    elif context_req & ContextReq.use_ntlm or (not use_specified and proto == 'ntlm'):
+    elif options & NegotiateOptions.use_ntlm or (not use_specified and proto == 'ntlm'):
         # Finally if GSSAPI does not support ntlm, use our own wrapper.
         proxy = NTLMProxy
 
     else:
         raise ValueError("Invalid protocol specified '%s', must be kerberos, negotiate, or ntlm" % protocol)
 
-    return proxy(username, password, hostname, service, channel_bindings, context_req, usage, proto)
+    return proxy(username, password, hostname, service, channel_bindings, context_req, usage, proto, options)
 
 
 def client(username, password, hostname='unspecified', service='host', channel_bindings=None,
-           context_req=ContextReq.default, protocol='negotiate'):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'initiate')
+           context_req=ContextReq.default, protocol='negotiate', options=0):
+    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'initiate',
+                        options)
 
 
 def server(username, password, hostname='unspecified', service='host', channel_bindings=None,
-           context_req=ContextReq.default, protocol='negotiate'):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'accept')
+           context_req=ContextReq.default, protocol='negotiate', options=0):
+    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'accept',
+                        options)

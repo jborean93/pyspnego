@@ -19,6 +19,7 @@ from spnego._context import (
     GSSMech,
     IOVWrapResult,
     IOVUnwrapResult,
+    NegotiateOptions,
     UnwrapResult,
     WrapResult,
 )
@@ -233,9 +234,9 @@ class GSSAPIProxy(ContextProxy):
     Args:
     """
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', is_wrapped=False):
+                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0, is_wrapped=False):
         super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                          protocol, is_wrapped)
+                                          protocol, options, is_wrapped)
 
         if not HAS_GSSAPI:
             raise Exception("Requires gssapi")
@@ -258,18 +259,18 @@ class GSSAPIProxy(ContextProxy):
                                                **context_kwargs)
 
     @classmethod
-    def available_protocols(cls, context_req=None):
-        if not context_req:
-            context_req = ContextReq(0)
+    def available_protocols(cls, options=None):
+        if not options:
+            options = NegotiateOptions(0)
 
         protocols = []
         if HAS_GSSAPI:
             # We can't offer Kerberos if the caller requires WinRM wrapping and IOV isn't available.
-            if not (context_req & ContextReq.wrapping_winrm and not HAS_IOV):
+            if not (options & NegotiateOptions.wrapping_winrm and not HAS_IOV):
                 protocols = [u'kerberos']
 
             # We can only offer NTLM if the mech is installed and can retrieve the functionality the caller desires.
-            if _gss_ntlmssp_available(session_key=bool(context_req & ContextReq.session_key)):
+            if _gss_ntlmssp_available(session_key=bool(options & NegotiateOptions.session_key)):
                 protocols.append(u'ntlm')
 
             # We can only offer Negotiate if we can offer both Kerberos and NTLM.

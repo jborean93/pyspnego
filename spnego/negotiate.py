@@ -58,9 +58,9 @@ class NegotiateProxy(ContextProxy):
     """
 
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='negotiate'):
+                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0):
         super(NegotiateProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req,
-                                             usage, protocol, False)
+                                             usage, protocol, False, options)
 
         self._hostname = hostname  # type: str
         self._service = service  # type: str
@@ -75,13 +75,13 @@ class NegotiateProxy(ContextProxy):
         self._mic_required = False  # type: bool
 
     @classmethod
-    def available_protocols(cls, context_req=None):
+    def available_protocols(cls, options=None):
         # We always support Negotiate and NTLM as we have our builtin NTLM backend and only support kerberos if gssapi
         # is present.
         protocols = [u'ntlm', u'negotiate']
 
         # Make sure we add Kerberos first as the order is important.
-        if u'kerberos' in GSSAPIProxy.available_protocols(context_req=context_req):
+        if u'kerberos' in GSSAPIProxy.available_protocols(options=options):
             protocols.insert(0, u'kerberos')
 
         return protocols

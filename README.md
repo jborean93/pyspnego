@@ -1,5 +1,8 @@
 # Python SPNEGO Library
 
+[![Build Status](https://dev.azure.com/jborean93/jborean93/_apis/build/status/jborean93.pyspnego?branchName=master)](https://dev.azure.com/jborean93/jborean93/_build/latest?definitionId=2&branchName=master)
+[![codecov](https://codecov.io/gh/jborean93/pyspnego/branch/master/graph/badge.svg)](https://codecov.io/gh/jborean93/pyspnego)
+
 Library to handle SPNEGO (Negotiate, NTLM, Kerberos) authentication.
 
 Still in progress.

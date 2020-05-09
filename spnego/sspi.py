@@ -71,9 +71,9 @@ class SSPIProxy(ContextProxy):
     """
 
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='negotiate'):
+                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0):
         super(SSPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                        protocol, False)
+                                        protocol, options, False)
 
         self._attr_sizes = None
         self._complete = False
