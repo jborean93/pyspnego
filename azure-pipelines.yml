@@ -18,22 +18,22 @@ strategy:
       python.version: '3.8'
 
 steps:
-- displayName: Use python ${python.version}
-  task: UsePythonVersion@0
+- task: UsePythonVersion@0
   inputs:
     versionSpec: '$(python.version)'
+  displayName: Use python ${python.version}
 
-- displayName: Install
-  script: |
+- script: |
     python -m pip install --upgrade pip setuptools
     pip install -r requirements-test.txt -c tests/constraints.txt
     pip install .
     pip install coveralls
+  displayName: Install
 
-- displayName: Lint
-  script: |
+- script: |
     pycodestyle . --verbose --show-source --statistics
+  displayName: Lint
 
-- displayName: Test
-  script: |
+- script: |
     py.test -v --cov spnego --cov-report term-missing
+  displayName: Test
