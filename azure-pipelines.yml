@@ -142,14 +142,17 @@ stages:
           image.name: ubuntu-18.04
           python.version: 3.8
           python.arch: x64
+          wheel.args: --universal
         Windows-38-x86:
           image.name: windows-2019
           python.version: 3.8
           python.arch: x86
+          wheel.args: ''
         Windows-38-x64:
           image.name: windows-2019
           python.version: 3.8
           python.arch: x64
+          wheel.args: ''
 
     steps:
     - task: UsePythonVersion@0
@@ -162,14 +165,14 @@ stages:
       displayName: Install build requirements
 
     - script: |
-        python setup.py bdist_wheel
+        python setup.py bdist_wheel $(wheel.args)
       displayName: Build wheel
 
     - task: TwineAuthenticate@1
       displayName: Twine Authenticate
       inputs:
-        artifactFeed: jborean93/pyspnego
+        artifactFeed: jborean93/jborean93
 
     - script: |
-        python -m twine upload -r pyspnego --config-file $(PYPIRC_PATH) dist/*.whl
+        python -m twine upload -r jborean93 --config-file $(PYPIRC_PATH) dist/*.whl
       displayName: Upload wheel to Azure Artifacts
