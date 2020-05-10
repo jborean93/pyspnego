@@ -17,7 +17,7 @@ stages:
 
   - job: Test_Linux
     pool:
-      vmImage: Ubuntu-18.04
+      vmImage: ubuntu-18.04
     strategy:
       matrix:
         Python27:
@@ -38,14 +38,14 @@ stages:
 
     - script: |
         echo "Installing baseline pip packages"
-        python -m pip install setuptools wheel coverage
-        python -m pip install --upgrade pip setuptools wheel coverage
+        python -m pip install setuptools wheel coverage twine -c tests/constraints.txt
+        python -m pip install --upgrade pip setuptools wheel coverage -c test/constraints.txt
 
         echo "Installing test requirements"
         python -m pip install -r requirements-test.txt -c tests/constraints.txt
 
         echo "Installing package"
-        python -m pip install .
+        python -m pip install . -c tests/constraints.txt
       displayName: Install
 
     - script: |
@@ -66,12 +66,13 @@ stages:
       vmImage: windows-2019
     strategy:
       matrix:
-        Python27-x86:
-          python.version: 2.7
-          python.arch: x86
-        Python27-x64:
-          python.version: 2.7
-          python.arch: x64
+        # Need to fix NegotiateFlags being greater than a C long size.
+        #Python27-x86:
+        #  python.version: 2.7
+        #  python.arch: x86
+        #Python27-x64:
+        #  python.version: 2.7
+        #  python.arch: x64
         Python35-x64:
           python.version: 3.5
           python.arch: x64
@@ -121,6 +122,49 @@ stages:
 
     - script: |
         choco.exe install codecov --yes --no-progress
+        dir
         codecov.exe
       displayName: Upload to codecov.io
       condition: succeededOrFailed()
+
+- stage: Build
+  - job: Build
+    pool:
+      vmImage: $(image.name)
+    strategy:
+      matrix:
+        Linux:
+          image.name: ubuntu-18.04
+          python.version: 3.8
+          python.arch: x64
+        Windows-38-x86:
+          image.name: windows-2019
+          python.version: 3.8
+          python.arch: x86
+        Windows-38-x64:
+          image.name: windows-2019
+          python.version: 3.8
+          python.arch: x64
+
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: $(python.version)
+        architecture: $(python.arch)
+
+    - script: |
+        python -m pip install cython twine wheel -c tests/constraints.txt
+      displayName: Install build requirements
+
+    - script: |
+        python setup.py bdist_wheel
+      displayName: Build wheel
+
+    - task: TwineAuthenticate@1
+      displayName: Twine Authenticate
+      inputs:
+        artifactFeed: jborean93/pyspnego
+
+    - script: |
+        python -m twine upload -r pyspnego --config-file $(PYPIRC_PATH) dist/*.whl
+      displayName: Upload wheel to Azure Artifacts
