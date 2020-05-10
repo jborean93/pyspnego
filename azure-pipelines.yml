@@ -59,6 +59,8 @@ stages:
     - script: |
         bash <(curl -s https://codecov.io/bash)
       displayName: Upload to codecov.io
+      continueOnError: true
+      timeoutInMinutes: 3
       condition: succeededOrFailed()
 
   - job: Test_Windows
@@ -122,9 +124,10 @@ stages:
 
     - script: |
         choco.exe install codecov --yes --no-progress
-        dir
-        codecov.exe
+        codecov.exe -f .coverage
       displayName: Upload to codecov.io
+      continueOnError: true
+      timeoutInMinutes: 3
       condition: succeededOrFailed()
 
 - stage: Build
