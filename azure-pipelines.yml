@@ -11,73 +11,116 @@ trigger:
     - LICENSE
     - README.md
 
+stages:
+- stage: Test
+  jobs:
 
-strategy:
-  matrix:
-    Linux-Python27:
-      imageName: ubuntu-18.04
-      python.version: 2.7
-    Linux-Python35:
-      imageName: ubuntu-18.04
-      python.version: 3.5
-    Linux-Python36:
-      imageName: ubuntu-18.04
-      python.version: 3.6
-    Linux-Python37:
-      imageName: ubuntu-18.04
-      python.version: 3.7
-    Linux-Python38:
-      imageName: ubuntu-18.04
-      python.version: 3.8
+  - job: Test_Linux
+    pool:
+      vmImage: Ubuntu-18.04
+    strategy:
+      matrix:
+        Python27:
+          python.version: 2.7
+        Python35:
+          python.version: 3.5
+        Python36:
+          python.version: 3.6
+        Python37:
+          python.version: 3.7
+        Python38:
+          python.version: 3.7
 
-    Windows-Python27:
-      imageName: windows-2019
-      python.version: 2.7
-#    Windows-Python38-x86:
-#      imageName: windows-2019
-#      python.version: 3.8
-#      python.arch: x86
-    Windows-Python38:
-      imageName: windows-2019
-      python.version: 3.8
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: $(python.version)
 
-pool:
-  vmImage: $(imageName)
+    - script: |
+        echo "Installing baseline pip packages"
+        python -m pip install setuptools wheel coverage
+        python -m pip install --upgrade pip setuptools wheel coverage
 
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: $(python.version)
-#    ${{ if endswith(python.arch, '-x86') }}:
-#      architecture: x86
-  displayName: Use python $(python.version)
+        echo "Installing test requirements"
+        python -m pip install -r requirements-test.txt -c tests/constraints.txt
 
-- script: |
-    echo "Installing baseline pip packages"
-    python -m pip install --upgrade pip setuptools wheel && python -m pip install coverage
+        echo "Installing package"
+        python -m pip install .
+      displayName: Install
 
-    echo "Installing test requirements"
-    pip install -r requirements-test.txt -c tests/constraints.txt
+    - script: |
+        python -m pycodestyle . --verbose --show-source --statistics
+      displayName: Lint
 
-    echo "Installing package"
-    pip install .
-  displayName: Install
+    - script: |
+        python -m py.test -v --cov spnego --cov-report term-missing
+      displayName: Test
 
-- script: |
-    pycodestyle . --verbose --show-source --statistics
-  displayName: Lint
+    - script: |
+        bash <(curl -s https://codecov.io/bash)
+      displayName: Upload to codecov.io
+      condition: succeededOrFailed()
 
-- script: |
-    py.test -v --cov spnego --cov-report term-missing
-  displayName: Test
+  - job: Test_Windows
+    pool:
+      vmImage: windows-2019
+    strategy:
+      matrix:
+        Python27-x86:
+          python.version: 2.7
+          python.arch: x86
+        Python27-x64:
+          python.version: 2.7
+          python.arch: x64
+        Python35-x64:
+          python.version: 3.5
+          python.arch: x64
+        Python36-x64:
+          python.version: 3.6
+          python.arch: x64
+        Python37-x64:
+          python.version: 3.7
+          python.arch: x64
+        Python38-x86:
+          python.version: 3.8
+          python.arch: x86
+        Python38-x64:
+          python.version: 3.8
+          python.arch: x64
 
-- script: |
-    choco.exe install codecov --yes --no-progress
-    codecov.exe
-  displayName: 'Upload to codecov.io - Windows'
-  condition: and(succeededOrFailed(), eq(variables['imageName'], 'windows-2019'))
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: $(python.version)
+        architecture: $(python.arch)
 
-- script: |
-    bash <(curl -s https://codecov.io/bash)
-  displayName: 'Upload to codecov.io - Linux'
-  condition: and(succeededOrFailed(), eq(variables['imageName'], 'ubuntu-18.04'))
+    - script: |
+        choco.exe install vcpython27 --yes --no-progress
+      displayName: Install Python C++ build tools
+      condition: eq(variables['python.version'], '2.7')
+
+    - script: |
+        echo "Installing baseline pip packages"
+        python -m pip install setuptools wheel coverage cython
+        python -m pip install --upgrade pip setuptools wheel coverage
+
+        echo "Installing test requirements"
+        python -m pip install -r requirements-test.txt -c tests/constraints.txt
+
+        echo "Installing package"
+        python -m pip install .
+      displayName: Install
+
+    - script: |
+        python -m pycodestyle . --verbose --show-source --statistics
+      displayName: Lint
+
+    - script: |
+        python -m py.test -v --cov spnego --cov-report term-missing
+      displayName: Test
+
+    - script: |
+        choco.exe install codecov --yes --no-progress
+        codecov.exe
+      displayName: Upload to codecov.io
+      condition: succeededOrFailed()
