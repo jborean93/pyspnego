@@ -59,11 +59,11 @@ def _new_context(username, password, hostname, service, channel_bindings, contex
 
 def client(username, password, hostname='unspecified', service='host', channel_bindings=None,
            context_req=ContextReq.default, protocol='negotiate', options=0):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'initiate',
-                        options)
+    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options,
+                        'initiate')
 
 
 def server(username, password, hostname='unspecified', service='host', channel_bindings=None,
            context_req=ContextReq.default, protocol='negotiate', options=0):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, 'accept',
-                        options)
+    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options,
+                        'accept')

@@ -11,6 +11,7 @@ import os
 
 from spnego._context import (
     ContextReq,
+    NegotiateOptions,
 )
 
 from spnego.auth import (

@@ -148,6 +148,13 @@ namespace Pyspnego
         }
 
         [StructLayout(LayoutKind.Sequential)]
+        public struct SecPkgContext_SessionKey
+        {
+            public UInt32 SessionKeyLength;
+            public IntPtr SessionKey;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
         public struct SecPkgContextSizes
         {
             public Int32 cbMaxToken;
@@ -440,6 +447,7 @@ namespace Pyspnego
         public bool Complete = false;
         public UInt32 ContextAttributes;
         public Int64 Expiry;
+        public byte[] SessionKey;
 
         public SecurityContext(ServerCredential credential) : base(true)
         {
@@ -489,6 +497,7 @@ namespace Pyspnego
                 if (res == SEC_E_OK)
                 {
                     Complete = true;
+                    GetSecPkgSessionKey();
                     GetSecPkgSizes();
                 }
                 else if (res != SEC_I_CONTINUE_NEEDED)
@@ -570,6 +579,31 @@ namespace Pyspnego
             }
         }
 
+        private void GetSecPkgSessionKey()
+        {
+            using (SafeMemoryBuffer sessionPtr = new SafeMemoryBuffer(Marshal.SizeOf(
+                typeof(NativeHelpers.SecPkgContext_SessionKey))))
+            {
+                Int32 res = NativeMethods.QueryContextAttributesW(this.handle, SecPackageAttribute.SessionKey,
+                    sessionPtr.DangerousGetHandle());
+                if (res != SEC_E_OK)
+                    throw new Win32Exception(res, "QueryContextAttributesW(SessionKey) failed");
+
+                var sessionKey = (NativeHelpers.SecPkgContext_SessionKey)Marshal.PtrToStructure(
+                    sessionPtr.DangerousGetHandle(), typeof(NativeHelpers.SecPkgContext_SessionKey));
+
+                try
+                {
+                    SessionKey = new byte[sessionKey.SessionKeyLength];
+                    Marshal.Copy(sessionKey.SessionKey, SessionKey, 0, SessionKey.Length);
+                }
+                finally
+                {
+                    NativeMethods.FreeContextBuffer(sessionKey.SessionKey);
+                }
+            }
+        }
+
         private void GetSecPkgSizes()
         {
             using (SafeMemoryBuffer sizePtr = new SafeMemoryBuffer(Marshal.SizeOf(
@@ -578,7 +612,7 @@ namespace Pyspnego
                 Int32 res = NativeMethods.QueryContextAttributesW(this.handle, SecPackageAttribute.Sizes,
                     sizePtr.DangerousGetHandle());
                 if (res != SEC_E_OK)
-                    throw new Win32Exception(res, "QueryContextAttributesW() failed");
+                    throw new Win32Exception(res, "QueryContextAttributesW(Sizes) failed");
 
                 NativeHelpers.SecPkgContextSizes sizes = (NativeHelpers.SecPkgContextSizes)Marshal.PtrToStructure(
                     sizePtr.DangerousGetHandle(), typeof(NativeHelpers.SecPkgContextSizes));
@@ -836,6 +870,7 @@ namespace Pyspnego
         CertTrustStatus = 0x80000084,
         Creds2 = 0x80000086,
         Sizes = 0x00000000,
+        SessionKey = 0x00000009,
         PackageInfo = 0x0000000A,
         SubjectSecurityAttributes = 0x0000007C,
     }
@@ -978,6 +1013,8 @@ $clientProcessor = {
                     $data = Get-StreamData -Stream $Stream
                 }
 
+                Write-Verbose -Message ("SessionKey: {0}" -f ([System.Convert]::ToBase64String($context.SessionKey)))
+
                 while ($true) {
                     if ($data.Length -eq 0) {
                         Write-Verbose -Message "Received empty msg from the server, exiting client context"
@@ -986,6 +1023,7 @@ $clientProcessor = {
 
                     Write-Verbose -Message "Unwrapping message from client"
                     $output = $context.Unwrap($data)
+					Write-Verbose -Message "Unwrapped data: $([System.Text.Encoding]::UTF8.GetString($output))"
 
                     Write-Verbose -Message "Wrapping message for client"
                     $output = $context.Wrap($output)
