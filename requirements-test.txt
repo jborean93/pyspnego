@@ -1,4 +1,3 @@
 cython ; sys_platform == 'win32'
 pytest
 pytest-cov
-pytest-pycodestyle
