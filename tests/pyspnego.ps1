@@ -1,5 +1,3 @@
-using namespace System.Management.Automation.Runspaces
-
 [CmdletBinding()]
 param (
     [int]
@@ -924,12 +922,12 @@ $clientProcessor = {
         )
 
         Write-Verbose -Message "Reading data from $clientIp"
-        $data = [byte[]]::new(4)
+        $data = New-Object -TypeName System.Byte[] -ArgumentList 4
         $null = $Stream.Read($data, 0, $data.Length)
         $length = [System.BitConverter]::ToInt32($data, 0)
 
         Write-Verbose -Message "Trying to read $length bytes from $clientIp"
-        $data = [byte[]]::new($length)
+        $data = New-Object -TypeName System.Byte[] -ArgumentList $length
         $null = $Stream.Read($data, 0, $data.Length)
 
         ,$data
@@ -972,11 +970,11 @@ $clientProcessor = {
         )
 
         # SeDebugPrivilege is used to make sure we can interrogate each process on the system.
-        $privEnabler = [Pyspnego.PrivilegeEnabler]::new('SeDebugPrivilege')
+        $privEnabler = New-Object -TypeName Pyspnego.PrivilegeEnabler -ArgumentList 'SeDebugPrivilege'
         try {
             $accountName = $Account.Translate([System.Security.Principal.NTAccount]).Value
             Write-Verbose -Message "Attempting to impersonate existing token for $accountName"
-            $userImpersonation = [Pyspnego.UserImpersonation]::new($Account)
+            $userImpersonation = New-Object -TypeName Pyspnego.UserImpersonation -ArgumentList $Account
             try {
                 .$ScriptBlock @Parameters
             } finally {
@@ -1000,10 +998,10 @@ $clientProcessor = {
         $data = Get-StreamData -Stream $Stream
 
         Write-Verbose -Message "Creating server credential with the protocol $protocol"
-        $cred = [Pyspnego.ServerCredential]::new($protocol)
+        $cred = New-Object -TypeName Pyspnego.ServerCredential -ArgumentList $protocol
         try {
             Write-Verbose -Message "Creating server context"
-            $context = [Pyspnego.SecurityContext]::new($cred)
+            $context = New-Object -TypeName Pyspnego.SecurityContext -ArgumentList $cred
             try {
                 while (-not $context.Complete) {
                     Write-Verbose -Message "Process token from client"
@@ -1042,8 +1040,9 @@ $clientProcessor = {
     }
 
     $clientIp = $Client.Client.RemoteEndPoint
-    $systemSid = [System.Security.Principal.SecurityIdentifier]::new(
-        [System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $systemSid = New-Object -TypeName System.Security.Principal.SecurityIdentifier -ArgumentList @(
+        [System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null
+    )
 
     try {
         Write-Verbose -Message "Started client pipeline for $clientIp"
@@ -1115,19 +1114,35 @@ $serverListener = {
     Write-Verbose -Message "Ending TCP listener"
 }
 
-$ss = [InitialSessionState]::CreateDefault()
-$ss.Variables.Add([SessionStateVariableEntry]::new('ErrorActionPreference', $ErrorActionPreference, $null))
-$ss.Variables.Add([SessionStateVariableEntry]::new('VerbosePreference', $VerbosePreference, $null))
-$ss.Variables.Add([SessionStateVariableEntry]::new('ClientProcessor', $clientProcessor, $null))
-$ss.Commands.Add([SessionStateFunctionEntry]::new('Write-Verbose', (Get-Content function:\Write-Verbose)))
+$ss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+$ss.Variables.Add(
+    (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList @(
+        'ErrorActionPreference', $ErrorActionPreference, $null
+    ))
+)
+$ss.Variables.Add(
+    (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList @(
+        'VerbosePreference', $VerbosePreference, $null
+    ))
+)
+$ss.Variables.Add(
+    (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateVariableEntry -ArgumentList @(
+        'ClientProcessor', $clientProcessor, $null
+    ))
+)
+$ss.Commands.Add(
+    (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList @(
+        'Write-Verbose', (Get-Content function:\Write-Verbose)
+    ))
+)
 
 Write-Verbose -Message "Creating runspace pool"
-$pool = [RunspaceFactory]::CreateRunspacePool(2, 4, $ss, $Host)
+$pool = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspacePool(2, 4, $ss, $Host)
 $pool.Open()
 
 try {
     Write-Verbose -Message "Creating TCP listener on port $Port"
-    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::new(0), $Port)
+    $listener = New-Object -TypeName System.Net.Sockets.TcpListener -ArgumentList @([System.Net.IPAddress]0, $Port)
 
     Write-Verbose -Message "Creating TCP server pipeline"
     $serverPs = [PowerShell]::Create()
