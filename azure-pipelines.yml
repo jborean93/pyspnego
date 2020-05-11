@@ -53,8 +53,15 @@ stages:
       displayName: Lint
 
     - script: |
-        python -m py.test -v --cov spnego --cov-report term-missing
+        python -m py.test -v --cov spnego --cov-report term-missing --junitxml pytest-results.xml
       displayName: Test
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: pytest-results.xml
+        testRunTitle: $(Agent.OS) - $(Build.BuildNumber)[$($Agent.JobName)] - Python $(python.version)
+      displayName: Publish test results
+      condition: succeededOrFailed()
 
     - script: |
         bash <(curl -s https://codecov.io/bash)
@@ -119,8 +126,15 @@ stages:
       displayName: Lint
 
     - script: |
-        python -m py.test -v --cov spnego --cov-report term-missing
+        python -m py.test -v --cov spnego --cov-report term-missing --junitxml pytest-results.xml
       displayName: Test
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: pytest-results.xml
+        testRunTitle: $(Agent.OS) - $(Build.BuildNumber)[$($Agent.JobName)] - Python $(python.version) $(python.arch)
+      displayName: Publish test results
+      condition: succeededOrFailed()
 
     - script: |
         choco.exe install codecov --yes --no-progress
@@ -130,49 +144,49 @@ stages:
       timeoutInMinutes: 3
       condition: succeededOrFailed()
 
-- stage: Build
-  jobs:
-
-  - job: Build
-    pool:
-      vmImage: $(image.name)
-    strategy:
-      matrix:
-        Linux:
-          image.name: ubuntu-18.04
-          python.version: 3.8
-          python.arch: x64
-          wheel.args: --universal
-        Windows-38-x86:
-          image.name: windows-2019
-          python.version: 3.8
-          python.arch: x86
-          wheel.args: ''
-        Windows-38-x64:
-          image.name: windows-2019
-          python.version: 3.8
-          python.arch: x64
-          wheel.args: ''
-
-    steps:
-    - task: UsePythonVersion@0
-      inputs:
-        versionSpec: $(python.version)
-        architecture: $(python.arch)
-
-    - script: |
-        python -m pip install cython twine wheel -c tests/constraints.txt
-      displayName: Install build requirements
-
-    - script: |
-        python setup.py bdist_wheel $(wheel.args)
-      displayName: Build wheel
-
-    - task: TwineAuthenticate@1
-      displayName: Twine Authenticate
-      inputs:
-        artifactFeed: jborean93/jborean93
-
-    - script: |
-        python -m twine upload -r jborean93 --config-file $(PYPIRC_PATH) dist/*.whl
-      displayName: Upload wheel to Azure Artifacts
+#- stage: Build
+#  jobs:
+#
+#  - job: Build
+#    pool:
+#      vmImage: $(image.name)
+#    strategy:
+#      matrix:
+#        Linux:
+#          image.name: ubuntu-18.04
+#          python.version: 3.8
+#          python.arch: x64
+#          wheel.args: --universal
+#        Windows-38-x86:
+#          image.name: windows-2019
+#          python.version: 3.8
+#          python.arch: x86
+#          wheel.args: ''
+#        Windows-38-x64:
+#          image.name: windows-2019
+#          python.version: 3.8
+#          python.arch: x64
+#          wheel.args: ''
+#
+#    steps:
+#    - task: UsePythonVersion@0
+#      inputs:
+#        versionSpec: $(python.version)
+#        architecture: $(python.arch)
+#
+#    - script: |
+#        python -m pip install cython twine wheel -c tests/constraints.txt
+#      displayName: Install build requirements
+#
+#    - script: |
+#        python setup.py bdist_wheel $(wheel.args)
+#      displayName: Build wheel
+#
+#    - task: TwineAuthenticate@1
+#      displayName: Twine Authenticate
+#      inputs:
+#        artifactFeed: jborean93/jborean93
+#
+#    - script: |
+#        python -m twine upload -r jborean93 --config-file $(PYPIRC_PATH) dist/*.whl
+#      displayName: Upload wheel to Azure Artifacts
