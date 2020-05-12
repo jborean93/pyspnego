@@ -601,7 +601,7 @@ class TargetInfo(OrderedDict):
             if key == AvId.timestamp:
                 value = FileTime.unpack(value)
             elif key == AvId.single_host:
-                value = SingleHost.unpack(value)
+                value = SingleHost(value)
 
         super(TargetInfo, self).__setitem__(key, value)
 
@@ -652,7 +652,7 @@ class TargetInfo(OrderedDict):
                 value = FileTime.unpack(b_value)
 
             elif av_id == AvId.single_host:
-                value = SingleHost.unpack(b_value)
+                value = SingleHost(b_value)
 
             else:
                 value = b_value
@@ -671,6 +671,7 @@ class SingleHost:
     different hosts, then the information MUST be ignores.
 
     Args:
+        b_data: The raw SingleHost byte data.
         size: A 32-bit unsigned int that defines size of the structure.
         z4: A 32-bit integer value, currently set to 0.
         custom_data: An 8-byte platform-specific blob containing info only relevant when the client and server are on
@@ -687,11 +688,19 @@ class SingleHost:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/f221c061-cc40-4471-95da-d2ff71c85c5b
     """
 
-    def __init__(self, size, z4, custom_data, machine_id):  # type: (int, int, bytes, bytes) -> None
-        self.size = size  # type: int
-        self.z4 = z4  # type: int
-        self.custom_data = custom_data  # type: bytes
-        self.machine_id = machine_id  # type; bytes
+    def __init__(self, b_data=None, size=0, z4=0, custom_data=None, machine_id=None):
+        # type: (Optional[bytes], int, int, Optional[bytes], Optional[bytes]) -> None
+        if b_data:
+            if len(b_data) != 48:
+                raise ValueError("SingleHost bytes must have a length of 48")
+            self._data = memoryview(b_data)
+
+        else:
+            self._data = memoryview(bytearray(48))
+            self.size = size
+            self.z4 = z4
+            self.custom_data = custom_data or b"\x00" * 8
+            self.machine_id = machine_id or b"\x00" * 32
 
     def __eq__(self, other):  # type: (Union[bytes, SingleHost]) -> bool
         if not isinstance(other, (bytes, SingleHost)):
@@ -702,17 +711,47 @@ class SingleHost:
 
         return self.pack() == other
 
+    @property
+    def size(self):  # type: () -> None
+        return struct.unpack("<I", self._data[:4].tobytes())[0]
+
+    @size.setter
+    def size(self, value):  # type: (int) -> None
+        self._data[:4] = struct.pack("<I", value)
+
+    @property
+    def z4(self):  # type: () -> int
+        return struct.unpack("<I", self._data[4:8].tobytes())[0]
+
+    @z4.setter
+    def z4(self, value):  # type: (int) -> None
+        self._data[4:8] = struct.pack("<I", value)
+
+    @property
+    def custom_data(self):  # type: () -> bytes
+        return self._data[8:16].tobytes()
+
+    @custom_data.setter
+    def custom_data(self, value):  # type: (bytes) -> None
+        if len(value) != 8:
+            raise ValueError("custom_data length must be 8 bytes long")
+
+        self._data[8:16] = value
+
+    @property
+    def machine_id(self):  # type:() -> bytes
+        return self._data[16:48].tobytes()
+
+    @machine_id.setter
+    def machine_id(self, value):  # type: (bytes) -> None
+        if len(value) != 32:
+            raise ValueError("machine_id length must be 32 bytes long")
+
+        self._data[16:48] = value
+
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
-        return struct.pack("<I", self.size) + struct.pack("<I", self.z4) + self.custom_data + self.machine_id
-
-    @staticmethod
-    def unpack(b_data):  # type: (bytes) -> SingleHost
-        """ Unpacks the structure from bytes. """
-        size = struct.unpack("<I", b_data[:4])[0]
-        z4 = struct.unpack("<I", b_data[4:8])[0]
-
-        return SingleHost(size, z4, b_data[8:16], b_data[16:48])
+        return self._data.tobytes()
 
 
 class Version:
@@ -723,29 +762,36 @@ class Version:
     messages only if `NTLMSSP_NEGOTIATE_VERSION` (`NegotiateFlags.version`) is negotiated.
 
     Args:
-        major: The 8-bit unsigned int for the version major part.
+        b_data: The raw Version bytes. If set the remaining kwargs will be ignored.
+        major: See args. The 8-bit unsigned int for the version major part.
         minor: The 8-bit unsigned int for the version minor part.
         build: The 16-bit unsigned int for the version build part.
-        revision: An 8-bit unsigned integer that contains a value indicating the current revision of the NTLMSSP in
-            use. This field SHOULD be `0x0F`.
+        revision: An 8-bit unsigned integer for the current NTLMSSP revision. This field SHOULD be `0x0F`.
 
     Attrs:
         major: See args.
         minor: See args.
         build: See args.
-        reserved: A reserved field that shouldn't be set.
+        reserved: A reserved 3-byte field that isn't used in the NTLM spec.
         revision: See args.
 
     .. _VERSION:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b1a6ceb2-f8ad-462b-b5af-f18527c48175
     """
 
-    def __init__(self, major=0, minor=0, build=0, revision=0x0F):  # type: (int, int, int, int) -> None
-        self.major = major  # type: int
-        self.minor = minor  # type: int
-        self.build = build  # type: int
-        self.reserved = b"\x00\x00\x00"  # type: bytes
-        self.revision = revision  # type: int
+    def __init__(self, b_data=None, major=0, minor=0, build=0, revision=0x0F):
+        # type: (Optional[bytes], int, int, int, int) -> None
+        if b_data:
+            if len(b_data) != 8:
+                raise ValueError("Version bytes must have a length of 48")
+            self._data = memoryview(b_data)
+
+        else:
+            self._data = memoryview(bytearray(8))
+            self.major = major
+            self.minor = minor
+            self.build = build
+            self.revision = revision
 
     def __eq__(self, other):  # type: (Union[bytes, Version]) -> bool
         if not isinstance(other, (bytes, Version)):
@@ -756,13 +802,52 @@ class Version:
 
         return self.pack() == other
 
+    @property
+    def major(self):  # type: () -> int
+        return struct.unpack("B", self._data[0:1].tobytes())[0]
+
+    @major.setter
+    def major(self, value):  # type: (int) -> None
+        self._data[0:1] = struct.pack("B", value)
+
+    @property
+    def minor(self):  # type: () -> int
+        return struct.unpack("B", self._data[1:2].tobytes())[0]
+
+    @minor.setter
+    def minor(self, value):  # type: (int) -> None
+        self._data[1:2] = struct.pack("B", value)
+
+    @property
+    def build(self):  # type: () -> int
+        return struct.unpack("<H", self._data[2:4].tobytes())[0]
+
+    @build.setter
+    def build(self, value):  # type: (int) -> None
+        self._data[2:4] = struct.pack("<H", value)
+
+    @property
+    def reserved(self):  # type: () -> bytes
+        return self._data[4:7].tobytes()
+
+    @property
+    def revision(self):  # type: () -> int
+        return struct.unpack("B", self._data[7:8].tobytes())[0]
+
+    @revision.setter
+    def revision(self, value):  # type: (int) -> None
+        self._data[7:8] = struct.pack("B", value)
+
+    def __repr__(self):
+        return "<{0}.{1} {2}.{3}.{4}.{5}>".format(type(self).__module__, type(self).__name__, self.major, self.minor,
+                                                  self.build, self.revision)
+
     def __str__(self):
         return "%s.%s.%s.%s" % (self.major, self.minor, self.build, self.revision)
 
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
-        return struct.pack("B", self.major) + struct.pack("B", self.minor) + struct.pack("<H", self.build) + \
-            self.reserved + struct.pack("B", self.revision)
+        return self._data.tobytes()
 
     @staticmethod
     def get_current():  # type: () -> Version
@@ -771,16 +856,3 @@ class Version:
         v += [0] * (3 - len(v))
 
         return Version(major=int(v[0]), minor=int(v[1]), build=int(v[2]))
-
-    @staticmethod
-    def unpack(b_data):  # type: (bytes) -> Version
-        """ Unpacks the structure from bytes. """
-        major = struct.unpack("B", b_data[:1])[0]
-        minor = struct.unpack("B", b_data[1:2])[0]
-        build = struct.unpack("<H", b_data[2:4])[0]
-        revision = struct.unpack("B", b_data[7:8])[0]
-
-        v = Version(major=major, minor=minor, build=build, revision=revision)
-        v.reserved = b_data[4:7]
-
-        return v
