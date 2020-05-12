@@ -36,7 +36,10 @@ from spnego._version import (
 )
 
 
-class NegotiateFlags(IntFlag):
+# TODO: Use _compat.IntFlag once Python 2.7 is dropped.
+# Cannot use it today as Python 2.7 on some systems have sys.maxint as a signed 32 bit integer and cannot have anything
+# > 0x7FFFFFFF set.
+class NegotiateFlags:
     """NTLM Negotiation flags.
 
     Used during NTLM negotiation to negotiate the capabilities between the client and server.
@@ -216,8 +219,8 @@ class Negotiate:
     """
 
     def __init__(self, flags, domain_name=None, workstation=None, version=None):
-        # type: (NegotiateFlags, Optional[text_type], Optional[text_type], Optional[Version]) -> None
-        self.flags = flags  # type: NegotiateFlags
+        # type: (int, Optional[text_type], Optional[text_type], Optional[Version]) -> None
+        self.flags = flags  # type: int
         self.domain_name = domain_name  # type: text_type
         self.workstation = workstation  # type: text_type
         self.version = version  # type: Version
@@ -264,7 +267,7 @@ class Negotiate:
         if message_type != 1:
             raise ValueError("Invalid NTLM Negotiate message type %d, expecting 1" % message_type)
 
-        flags = NegotiateFlags(struct.unpack("<I", b_data[12:16])[0])
+        flags = struct.unpack("<I", b_data[12:16])[0]
 
         domain = to_text(_unpack_payload(b_data, 16), encoding=encoding, nonstring='passthru')
         workstation = to_text(_unpack_payload(b_data, 24), encoding=encoding, nonstring='passthru')
@@ -296,7 +299,7 @@ class Challenge:
     def __init__(self, flags, server_challenge, target_name=None, target_info=None, version=None):
         # type: (int, bytes, Optional[text_type], Optional[TargetInfo], Optional[Version]) -> None
 
-        self.flags = NegotiateFlags(flags)  # type: NegotiateFlags
+        self.flags = flags  # type: int
         self.server_challenge = server_challenge  # type: bytes
         self.reserved = b"\x00" * 8  # type: bytes
         self.target_name = target_name  # type: Optional[text_type]
@@ -350,7 +353,7 @@ class Challenge:
         if message_type != 2:
             raise ValueError("Invalid NTLM Challenge message type %d, expecting 2" % message_type)
 
-        flags = NegotiateFlags(struct.unpack("<I", b_data[20:24])[0])
+        flags = struct.unpack("<I", b_data[20:24])[0]
         if flags & NegotiateFlags.unicode:
             encoding = 'utf-16-le'
 
@@ -395,7 +398,7 @@ class Authenticate:
                  workstation=None, encrypted_session_key=None, version=None, mic=None):
         # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes]) -> None # noqa
 
-        self.flags = NegotiateFlags(flags)    # type: NegotiateFlags
+        self.flags = flags    # type: int
         self.lm_challenge_response = lm_challenge_response  # type: Optional[bytes]
         self.nt_challenge_response = nt_challenge_response  # type: Optional[bytes]
         self.domain_name = domain_name  # type: Optional[text_type]
@@ -464,7 +467,7 @@ class Authenticate:
         if message_type != 3:
             raise ValueError("Invalid NTLM Authenticate message type %d, expecting 3" % message_type)
 
-        flags = NegotiateFlags(struct.unpack("<I", b_data[60:64])[0])
+        flags = struct.unpack("<I", b_data[60:64])[0]
         if flags & NegotiateFlags.unicode:
             encoding = 'utf-16-le'
 

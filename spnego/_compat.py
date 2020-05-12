@@ -5,7 +5,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-# typing, remove once Python 2.7 is dropped
+
+# TODO: Remove once Python 2.7 is dropped, use typing directly.
 try:
     from typing import (
         Callable,
@@ -25,7 +26,26 @@ except ImportError:
     Union = any
 
 
-# enum.IntFlag, remove once Python 2.7, 3.5 is dropped.
+# TODO: Remove once Python 2.7 is dropped, use 'class Name(metadata=metaclass):' instead.
+def add_metaclass(metaclass):
+    """Class decorator for creating a class with a metaclass. This has been copied from six under the MIT license. """
+    def wrapper(cls):
+        orig_vars = cls.__dict__.copy()
+        slots = orig_vars.get('__slots__')
+        if slots is not None:
+            if isinstance(slots, str):
+                slots = [slots]
+            for slots_var in slots:
+                orig_vars.pop(slots_var)
+        orig_vars.pop('__dict__', None)
+        orig_vars.pop('__weakref__', None)
+        if hasattr(cls, '__qualname__'):
+            orig_vars['__qualname__'] = cls.__qualname__
+        return metaclass(cls.__name__, cls.__bases__, orig_vars)
+    return wrapper
+
+
+# TODO: Remove once Python 2.7 and 3.5 is dropped, use enum.IntFlag instead.
 try:
     # IntFlag was added in Python 3.6.
     from enum import (

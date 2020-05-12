@@ -38,8 +38,7 @@ def auth(server, username, password):
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
         # os.environ['LM_COMPAT_LEVEL'] = '0'
-        c = spnego.client(username, password, 'test', protocol='ntlm',
-                          context_req=spnego.ContextReq.default | spnego.ContextReq.use_ntlm)
+        c = spnego.client(username, password, 'test', protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
         while not c.complete or in_token:
             out_token = c.step(in_token)

@@ -79,13 +79,12 @@ stages:
       vmImage: windows-2019
     strategy:
       matrix:
-        # Need to fix NegotiateFlags being greater than a C long size.
-        #Python27-x86:
-        #  python.version: 2.7
-        #  python.arch: x86
-        #Python27-x64:
-        #  python.version: 2.7
-        #  python.arch: x64
+        Python27-x86:
+          python.version: 2.7
+          python.arch: x86
+        Python27-x64:
+          python.version: 2.7
+          python.arch: x64
         Python35-x64:
           python.version: 3.5
           python.arch: x64

@@ -76,7 +76,7 @@ class NTLMProxy(ContextProxy):
             raise ValueError("The env var LM_COMPAT_LEVEL is set to %d but needs to be between 0 and 5"
                              % self._lm_compat_level)
 
-        self._context_req = NegotiateFlags(self._context_req) | \
+        self._context_req = self._context_req | \
             NegotiateFlags.key_128 | \
             NegotiateFlags.key_56 | \
             NegotiateFlags.key_exch | \

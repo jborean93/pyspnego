@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover
             pass
 
 
-def _setup_logging(l):
+def _setup_logging(logger):
     log_path = os.environ.get('PYSPNEGO_LOG_CFG', None)
 
     if log_path is not None and os.path.exists(log_path):  # pragma: no cover
@@ -39,7 +39,7 @@ def _setup_logging(l):
         logging.config.dictConfig(config)
     else:
         # no logging was provided
-        l.addHandler(NullHandler())
+        logger.addHandler(NullHandler())
 
 
 logger = logging.getLogger(__name__)
