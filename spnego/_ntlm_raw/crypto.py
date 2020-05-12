@@ -83,7 +83,7 @@ def _is_ntlm_hash(password):  # type: (text_type) -> bool
 
 def compute_response_v1(flags, response_key_nt, response_key_lm, server_challenge, client_challenge,
                         no_lm_response=True):
-    # type: (NegotiateFlags, bytes, bytes, bytes, bytes, bool) -> Tuple[bytes, bytes, bytes]
+    # type: (int, bytes, bytes, bytes, bytes, bool) -> Tuple[bytes, bytes, bytes]
     """Compute NT and LM Response for NTLMv1.
 
     Computes the NT and LM Response for NTLMv1 messages. The response is dependent on the flags that were negotiated
@@ -274,7 +274,7 @@ def hmac_md5(key, data):
 
 
 def kxkey(flags, session_base_key, lmowf, lm_response, server_challenge):
-    # type: (NegotiateFlags, bytes, bytes, bytes, bytes) -> bytes
+    # type: (int, bytes, bytes, bytes, bytes) -> bytes
     """NTLM KXKEY function.
 
     The MS-NLMP `KXKEY`_ function used to derive the key exchange key for a security context. This is only for NTLMv1
@@ -429,7 +429,7 @@ def rc4init(k):  # type: (bytes) -> RC4Handle
 
 
 def sealkey(flags, session_key, usage):
-    # type: (NegotiateFlags, bytes, str) -> bytes
+    # type: (int, bytes, str) -> bytes
     """NTLM SEALKEY function.
 
     The MS-NLMP `SEALKEY`_ function used to generate the sealing keys for a security context.
@@ -513,7 +513,7 @@ def sealkey(flags, session_key, usage):
 
 
 def signkey(flags, session_key, usage):
-    # type: (NegotiateFlags, bytes, str) -> Optional[bytes]
+    # type: (int, bytes, str) -> Optional[bytes]
     """NTLM SIGNKEY function.
 
     The MS-NLMP `SIGNKEY`_ function used to generate the signing keys for a security context.

@@ -22,6 +22,8 @@ from spnego._compat import (
     Dict,
     Optional,
     Tuple,
+    Union,
+
     IntFlag,
 )
 
@@ -597,7 +599,7 @@ class TargetInfo(OrderedDict):
     def __setitem__(self, key, value):
         if isinstance(value, bytes):
             if key == AvId.timestamp:
-                FileTime.unpack(value)
+                value = FileTime.unpack(value)
             elif key == AvId.single_host:
                 value = SingleHost.unpack(value)
 
@@ -691,6 +693,15 @@ class SingleHost:
         self.custom_data = custom_data  # type: bytes
         self.machine_id = machine_id  # type; bytes
 
+    def __eq__(self, other):  # type: (Union[bytes, SingleHost]) -> bool
+        if not isinstance(other, (bytes, SingleHost)):
+            return False
+
+        if isinstance(other, SingleHost):
+            other = other.pack()
+
+        return self.pack() == other
+
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
         return struct.pack("<I", self.size) + struct.pack("<I", self.z4) + self.custom_data + self.machine_id
@@ -735,6 +746,15 @@ class Version:
         self.build = build  # type: int
         self.reserved = b"\x00\x00\x00"  # type: bytes
         self.revision = revision  # type: int
+
+    def __eq__(self, other):  # type: (Union[bytes, Version]) -> bool
+        if not isinstance(other, (bytes, Version)):
+            return False
+
+        if isinstance(other, Version):
+            other = other.pack()
+
+        return self.pack() == other
 
     def __str__(self):
         return "%s.%s.%s.%s" % (self.major, self.minor, self.build, self.revision)

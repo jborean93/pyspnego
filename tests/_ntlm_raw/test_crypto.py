@@ -7,6 +7,8 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 import base64
 import os
 
+import pytest
+
 import spnego._ntlm_raw.crypto as crypto
 
 from .._ntlm_raw import (
@@ -30,6 +32,13 @@ from spnego._ntlm_raw.messages import (
 from spnego._text import (
     to_text,
 )
+
+
+def test_crc32():
+    actual = crypto.crc32(b"123456789")
+
+    # http://reveng.sourceforge.net/crc-catalogue/17plus.htm#crc.cat.crc-32
+    assert actual == b"\x26\x39\xF4\xCB"
 
 
 def test_lmowfv1():
@@ -192,3 +201,59 @@ def test_compute_response_v2():
     # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/4a84eb20-870a-421e-984f-29a842cd6504
     actual_enc_key = crypto.rc4k(actual_kek, TEST_RANDOM_SESSION_KEY)
     assert actual_enc_key == b"\xC5\xDA\xD2\x54\x4F\xC9\x79\x90\x94\xCE\x1C\xE9\x0B\xC9\xD0\x3E"
+
+
+@pytest.mark.parametrize('flags, usage, expected', [
+    # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/9cdb7bb2-17e6-409c-99cc-04590db064d4
+    (NegotiateFlags.key_128, 'initiate', b"\x59\xF6\x00\x97\x3C\xC4\x96\x0A\x25\x48\x0A\x7C\x19\x6E\x4C\x58"),
+    (NegotiateFlags.key_128, 'accept', b"\x93\x55\xF3\xA9\x57\xC1\x58\x3D\x25\xC4\xC2\xF1\x1E\x40\x39\x0E"),
+    (NegotiateFlags.key_56, 'initiate', b"\xA5\xF7\x25\x3C\x10\x65\xE8\xD3\xD6\x86\x42\x04\x0E\x71\xCF\xE0"),
+    (NegotiateFlags.key_56, 'accept', b"\x58\x3E\x2F\x98\x95\x9B\x38\x5C\xD1\x58\xF3\x73\x4B\x5F\x5D\x3F"),
+    (0, 'initiate', b"\x42\xF9\x64\xA4\x71\x09\x1A\x02\xFF\x4A\x77\x45\x53\x66\xE4\xE5"),
+    (0, 'accept', b"\xC5\xD3\x85\x3B\x40\x6B\x7C\x12\x41\xC5\x95\xF0\xCE\x07\x50\xE2"),
+])
+def test_seal_key_ess(flags, usage, expected):
+    actual = crypto.sealkey(NegotiateFlags.extended_session_security | flags, TEST_RANDOM_SESSION_KEY, usage)
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize('flags, expected', [
+    (NegotiateFlags.lm_key | NegotiateFlags.key_56, b"\x55\x55\x55\x55\x55\x55\x55\xA0"),
+    (NegotiateFlags.datagram | NegotiateFlags.key_56, b"\x55\x55\x55\x55\x55\x55\x55\xA0"),
+    (NegotiateFlags.lm_key, b"\x55\x55\x55\x55\x55\xE5\x38\xB0"),
+    (NegotiateFlags.datagram, b"\x55\x55\x55\x55\x55\xE5\x38\xB0"),
+])
+def test_seal_key_lm_key_or_datagram(flags, expected):
+    actual = crypto.sealkey(flags, TEST_RANDOM_SESSION_KEY, 'initiate')
+
+    print(base64.b16encode(actual).decode('ascii'))
+
+    assert actual == expected
+
+
+def test_seal_key_no_flags():
+    actual = crypto.sealkey(0, TEST_RANDOM_SESSION_KEY, 'initiate')
+
+    assert actual == TEST_RANDOM_SESSION_KEY
+
+
+def test_signkey_no_ess():
+    actual = crypto.signkey(0, b"\x01", 'initiate')
+
+    # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/524cdccb-563e-4793-92b0-7bc321fce096
+    # If extended session security is not negotiated then no signing keys are available.
+    assert not actual
+
+
+def test_signkey_client():
+    actual = crypto.signkey(NegotiateFlags.extended_session_security, TEST_RANDOM_SESSION_KEY, 'initiate')
+
+    # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/9cdb7bb2-17e6-409c-99cc-04590db064d4
+    assert actual == b"\x47\x88\xDC\x86\x1B\x47\x82\xF3\x5D\x43\xFD\x98\xFE\x1A\x2D\x39"
+
+
+def test_signkey_server():
+    actual = crypto.signkey(NegotiateFlags.extended_session_security, TEST_RANDOM_SESSION_KEY, 'accept')
+
+    assert actual == b"\xD0\x4D\x6F\x10\x74\x10\x41\xD1\xD2\x46\xD6\x41\x88\xD7\xA8\xAD"

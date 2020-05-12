@@ -23,7 +23,7 @@ from spnego._ntlm_raw.messages import (
 
 
 def seal(flags, handle, signing_key, seq_num, b_data):
-    # type: (NegotiateFlags, RC4Handle, bytes, int, bytes) -> Tuple[bytes, bytes]
+    # type: (int, RC4Handle, bytes, int, bytes) -> Tuple[bytes, bytes]
     """Create a sealed NTLM message.
 
     Creates a sealed NTLM message as documented at `NTLM Message Confidentiality`_.
@@ -46,7 +46,7 @@ def seal(flags, handle, signing_key, seq_num, b_data):
     return seal_msg, signature
 
 
-def sign(flags, handle, signing_key, seq_num, b_data):  # type: (NegotiateFlags, RC4Handle, bytes, int, bytes) -> bytes
+def sign(flags, handle, signing_key, seq_num, b_data):  # type: (int, RC4Handle, bytes, int, bytes) -> bytes
     """Create a NTLM signature.
 
     Creates a NTLM signature as documented at `NTLM Message Integrity`_ and appends it to the end of the message.
@@ -72,13 +72,13 @@ def sign(flags, handle, signing_key, seq_num, b_data):  # type: (NegotiateFlags,
         return b"\x01\x00\x00\x00" + (b"\x00" * 14)
 
     elif flags & NegotiateFlags.extended_session_security:
-        return mac_with_ess(flags, handle, signing_key, seq_num, b_data)
+        return _mac_with_ess(flags, handle, signing_key, seq_num, b_data)
 
     else:
-        return mac_without_ess(handle, seq_num, b_data)
+        return _mac_without_ess(handle, seq_num, b_data)
 
 
-def mac_without_ess(handle, seq_num, b_data):
+def _mac_without_ess(handle, seq_num, b_data):
     # type: (RC4Handle, int, bytes) -> bytes
     """NTLM MAC without Extended Session Security
 
@@ -128,11 +128,11 @@ def mac_without_ess(handle, seq_num, b_data):
     temp_seq_num = struct.unpack("<I", rc4(handle, b"\x00\x00\x00\x00"))[0]
     b_seq_num = struct.pack("<I", temp_seq_num ^ seq_num)
 
-    return b"\x01\x00\x00\x00\x00\x00\x00\x00" + checksum + b_seq_num
+    return b"\x01\x00\x00\x00" + b"\x00\x00\x00\x00" + checksum + b_seq_num
 
 
-def mac_with_ess(flags, handle, signing_key, seq_num, b_data):
-    # type: (NegotiateFlags, RC4Handle, bytes, int, bytes) -> bytes
+def _mac_with_ess(flags, handle, signing_key, seq_num, b_data):
+    # type: (int, RC4Handle, bytes, int, bytes) -> bytes
     """NTLM MAC with Extended Session Security
 
     Generates the NTLM signature when Extended Session Security has been negotiated. The structure of the signature is
