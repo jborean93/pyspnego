@@ -86,15 +86,19 @@ class NTLMProxy(ContextProxy):
             NegotiateFlags.oem | \
             NegotiateFlags.unicode
 
+        self._no_lm = True
+        self._ntlm_v2 = self._lm_compat_level > 2
+
         if self._lm_compat_level != 0:
             self._context_req |= NegotiateFlags.extended_session_security
 
-        # This should be possible but cannot get wrapping to work against a MS server.
-        # if self._lm_compat_level == 1:
-        #     self._context_req |= NegotiateFlags.lm_key
-
-        self._no_lm = self._lm_compat_level > 1
-        self._ntlm_v2 = self._lm_compat_level > 2
+        if self._lm_compat_level < 2:
+            # This could affect the wrapping of data when negotiated against hosts that do not store the LM hash for a
+            # user. In reality the LM_COMPAT_LEVEL 0 or 1 should only be set for really old hosts where the LM hash is
+            # still stored and a proper session key can be derived.
+            # https://github.com/gssapi/gss-ntlmssp/issues/13
+            self._context_req |= NegotiateFlags.lm_key
+            self._no_lm = False
 
         # TODO: handle lm_compat_level for acceptor.
 
@@ -297,7 +301,7 @@ class NTLMProxy(ContextProxy):
 
     def wrap(self, data, encrypt=True, qop=None):
         # gss-ntlmssp and SSPI always seals the data even if integrity wasn't negotiated.
-        # TODO: verify if gss-ntlmssp fails for the above, SSPI doesn't due to NTLMSSP_NEGOTIATE_ALWAYS_SING
+        # TODO: verify if gss-ntlmssp fails for the above, SSPI doesn't due to NTLMSSP_NEGOTIATE_ALWAYS_SIGN
         msg, signature = seal(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out,
                               data)
 
@@ -414,7 +418,7 @@ class NTLMProxy(ContextProxy):
 
         else:
             response_key_nt = ntowfv1(password)
-            response_key_lm = lmowfv1(password)
+            response_key_lm = lmowfv1(password, no_lm=self._no_lm)
 
             return compute_response_v1(challenge.flags, response_key_nt, response_key_lm, challenge.server_challenge,
                                        client_challenge, no_lm_response=self._no_lm)

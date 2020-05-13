@@ -4,9 +4,77 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import base64
+import datetime
+import struct
+
 import pytest
 
 import spnego._ntlm_raw.messages as messages
+
+
+class UTC10(datetime.tzinfo):
+    """ Test UTC+10 timezone class. """
+
+    def utcoffset(self, dt):
+        return datetime.timedelta(hours=10)
+
+    def tzname(self, dt):
+        return "UTC+10"
+
+    def dst(self, dt):
+        return datetime.timedelta(hours=10)
+
+
+def test_filetime_pack():
+    filetime = messages.FileTime(1970, 1, 1, 0, 0, 0)
+    actual = filetime.pack()
+
+    assert actual == b"\x00\x80\x3E\xD5\xDE\xB1\x9D\x01"
+
+
+def test_filetime_unpack():
+    actual = messages.FileTime.unpack(b"\x00\x80\x3E\xD5\xDE\xB1\x9D\x01")
+
+    assert isinstance(actual, messages.FileTime)
+    assert str(actual) == '1970-01-01T00:00:00Z'
+    assert actual.year == 1970
+    assert actual.month == 1
+    assert actual.day == 1
+    assert actual.hour == 0
+    assert actual.minute == 0
+    assert actual.second == 0
+    assert actual.microsecond == 0
+    assert actual.nanosecond == 0
+
+
+def test_filetime_from_datetime_nanoseconds():
+    filetime = messages.FileTime.from_datetime(datetime.datetime(1970, 1, 1, 0, 0, 0), ns=500)
+    actual = filetime.pack()
+
+    assert str(filetime) == '1970-01-01T00:00:00.0000005Z'
+    assert filetime.nanosecond == 500
+
+    assert actual == b"\x05\x80\x3E\xD5\xDE\xB1\x9D\x01"
+
+
+def test_filetime_now():
+    current = messages.FileTime.from_datetime(datetime.datetime.now())
+    now = messages.FileTime.now()
+
+    current_int = struct.unpack("<Q", current.pack())[0]
+    now_int = struct.unpack("<Q", now.pack())[0]
+
+    assert now_int >= current_int
+
+
+def test_filetime_with_timezone():
+    filetime = messages.FileTime(1970, 1, 1, 10, 0, 0, tzinfo=UTC10())
+
+    assert str(filetime) == "1970-01-01T10:00:00+10:00"
+
+    actual = filetime.pack()  # Should be the same as EPOCH in UTC as FILETIME.
+    assert actual == b"\x00\x80\x3E\xD5\xDE\xB1\x9D\x01"
 
 
 def test_target_info_pack():
@@ -53,7 +121,7 @@ def test_target_info_unpack():
     assert isinstance(actual, messages.TargetInfo)
     assert len(actual) == 6
     assert actual[messages.AvId.timestamp] == messages.FileTime.unpack(b"\x00" * 8)
-    assert actual[messages.AvId.single_host] == messages.SingleHost(b"\x00" * 48)
+    assert actual[messages.AvId.single_host] == messages.SingleHost.unpack(b"\x00" * 48)
     assert actual[messages.AvId.dns_computer_name] == u"caf\u00e9-host"
     assert actual[messages.AvId.channel_bindings] == b"\xFF" * 16
     assert actual[messages.AvId.flags] == messages.AvFlags.constrained
@@ -80,7 +148,7 @@ def test_single_host_defaults():
 
 def test_single_host_invalid_size():
     with pytest.raises(ValueError, match="SingleHost bytes must have a length of 48"):
-        messages.SingleHost(b_data=b"\x00")
+        messages.SingleHost.unpack(b_data=b"\x00")
 
 
 def test_single_host_invalid_custom_data_size():
@@ -98,9 +166,9 @@ def test_single_host_invalid_machine_id_size():
 
 
 def test_single_host_unpack():
-    actual = messages.SingleHost(b"\x04\x00\x00\x00\x00\x00\x00\x00\x01\x01\x01\x01\x01\x01\x01\x01"
-                                 b"\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02"
-                                 b"\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02")
+    actual = messages.SingleHost.unpack(b"\x04\x00\x00\x00\x00\x00\x00\x00\x01\x01\x01\x01\x01\x01\x01\x01"
+                                        b"\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02"
+                                        b"\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02\x02")
 
     assert isinstance(actual, messages.SingleHost)
     assert actual.size == 4
@@ -110,10 +178,10 @@ def test_single_host_unpack():
 
 
 def test_single_host_eq():
-    assert messages.SingleHost(b"\x00" * 48) == b"\x00" * 48
-    assert messages.SingleHost(b"\x00" * 48) != b"\x11" * 48
-    assert messages.SingleHost(b"\x00" * 48) != 1
-    assert messages.SingleHost(b"\x00" * 48) == messages.SingleHost(b"\x00" * 48)
+    assert messages.SingleHost.unpack(b"\x00" * 48) == b"\x00" * 48
+    assert messages.SingleHost.unpack(b"\x00" * 48) != b"\x11" * 48
+    assert messages.SingleHost.unpack(b"\x00" * 48) != 1
+    assert messages.SingleHost.unpack(b"\x00" * 48) == messages.SingleHost.unpack(b"\x00" * 48)
 
 
 def test_version_pack():
@@ -122,6 +190,7 @@ def test_version_pack():
     assert version.minor == 2
     assert version.build == 3
     assert version.revision == 4
+    assert len(version) == 8
 
     version.major = 1
     version.minor = 1
@@ -140,10 +209,11 @@ def test_version_defaults():
     assert version.build == 0
     assert version.reserved == b"\x00\x00\x00"
     assert version.revision == 15
+    assert len(version) == 8
 
 
 def test_version_unpack():
-    actual = messages.Version(b"\x01\x01\x01\x00\x00\x00\x00\x0F")
+    actual = messages.Version.unpack(b"\x01\x01\x01\x00\x00\x00\x00\x0F")
 
     assert isinstance(actual, messages.Version)
     assert str(actual) == "1.1.1.15"
@@ -153,17 +223,19 @@ def test_version_unpack():
     assert actual.build == 1
     assert actual.reserved == b"\x00\x00\x00"
     assert actual.revision == 15
+    assert len(actual) == 8
 
 
 def test_version_unpack_incorrect_length():
-    with pytest.raises(ValueError, match="Version bytes must have a length of 48"):
-        messages.Version(b_data=b"\x00")
+    with pytest.raises(ValueError, match="Version bytes must have a length of 8"):
+        messages.Version.unpack(b"\x00")
 
 
 def test_version_get_current():
     actual = messages.Version.get_current()
 
     assert isinstance(actual, messages.Version)
+    assert len(actual) == 8
     assert len(actual.pack()) == 8
 
 

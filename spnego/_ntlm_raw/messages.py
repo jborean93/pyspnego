@@ -4,18 +4,10 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import collections
+import datetime
 import io
 import struct
-
-from collections import (
-    OrderedDict,
-)
-
-from datetime import (
-    datetime,
-    timedelta,
-    tzinfo,
-)
 
 from spnego._compat import (
     Callable,
@@ -177,6 +169,19 @@ class AvFlags(IntFlag):
             'MIC_PROVIDED': AvFlags.mic,
             'UNTRUSTED_SPN_SOURCE': AvFlags.untrusted_spn
         }
+
+
+class _UTC(datetime.tzinfo):
+    """ UTC TimeZone. Used with FileTime to convert tz aware datetime to a UTC FILETIME value. """
+
+    def utcoffset(self, dt):
+        return datetime.timedelta(0)
+
+    def tzname(self, dt):
+        return "UTC"
+
+    def dst(self, dt):
+        return datetime.timedelta(0)
 
 
 def _pack_payload(data, b_payload, payload_offset, pack_func=None):
@@ -489,7 +494,7 @@ class Authenticate:
         # To detect whether a MIC was actually present we need to scan the NTLMv2 proof string for MsvAvFlags in the
         # AV_PAIRS of the token
         mic = None
-        if len(nt_response) > 24:
+        if nt_response and len(nt_response) > 24:
             target_info = TargetInfo.unpack(nt_response[44:-4])
             if target_info.get(AvId.flags, 0) & AvFlags.mic:
                 mic = b_data[mic_offset:mic_offset + 16]
@@ -498,7 +503,7 @@ class Authenticate:
                             workstation=workstation, encrypted_session_key=enc_key, version=version, mic=mic)
 
 
-class FileTime(datetime):
+class FileTime(datetime.datetime):
     """Windows FILETIME structure.
 
     FILETIME structure representing number of 100-nanosecond intervals that have elapsed since January 1, 1601 UTC.
@@ -525,12 +530,12 @@ class FileTime(datetime):
         return dt
 
     @classmethod
-    def now(cls, tz=None):  # type: (tzinfo) -> FileTime
+    def now(cls, tz=None):  # type: (datetime.tzinfo) -> FileTime
         """ Construct a FileTime from the current time and optional time zone info. """
-        return FileTime.from_datetime(datetime.now(tz=tz))
+        return FileTime.from_datetime(datetime.datetime.now(tz=tz))
 
     @classmethod
-    def from_datetime(cls, dt, ns=0):  # type: (datetime, int) -> FileTime
+    def from_datetime(cls, dt, ns=0):  # type: (datetime.datetime, int) -> FileTime
         """ Creates a FileTime object from a datetime object. """
         return FileTime(year=dt.year, month=dt.month, day=dt.day, hour=dt.hour, minute=dt.minute, second=dt.second,
                         microsecond=dt.microsecond, tzinfo=dt.tzinfo, nanosecond=ns)
@@ -554,8 +559,12 @@ class FileTime(datetime):
 
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
-        # Get the time since EPOCH in microseconds
-        td = self - datetime.utcfromtimestamp(0)
+        # Make sure we are dealing with a timezone aware datetime
+        utc_tz = _UTC()
+        utc_dt = self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz)
+
+        # Get the time since UTC EPOCH in microseconds
+        td = utc_dt.astimezone(utc_tz) - datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=utc_tz)
         epoch_time_ms = (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10 ** 6)
 
         # Add the EPOCH_FILETIME to the microseconds since EPOCH and finally the nanoseconds part.
@@ -570,7 +579,7 @@ class FileTime(datetime):
 
         # Create a datetime object based on the filetime microseconds
         epoch_time_ms = (filetime - FileTime._EPOCH_FILETIME) // 10
-        dt = datetime(1970, 1, 1) + timedelta(microseconds=epoch_time_ms)
+        dt = datetime.datetime(1970, 1, 1) + datetime.timedelta(microseconds=epoch_time_ms)
 
         # Create the FileTime object from the datetime object and add the nanoseconds.
         ns = int(filetime % 10) * 100
@@ -578,7 +587,7 @@ class FileTime(datetime):
         return FileTime.from_datetime(dt, ns=ns)
 
 
-class TargetInfo(OrderedDict):
+class TargetInfo(collections.OrderedDict):
     """A collection of AV_PAIR structures for the TargetInfo field.
 
     The `AV_PAIR`_ structure defines an attribute/value pair and sequences of these pairs are using in the
@@ -601,7 +610,7 @@ class TargetInfo(OrderedDict):
             if key == AvId.timestamp:
                 value = FileTime.unpack(value)
             elif key == AvId.single_host:
-                value = SingleHost(value)
+                value = SingleHost.unpack(value)
 
         super(TargetInfo, self).__setitem__(key, value)
 
@@ -652,7 +661,7 @@ class TargetInfo(OrderedDict):
                 value = FileTime.unpack(b_value)
 
             elif av_id == AvId.single_host:
-                value = SingleHost(b_value)
+                value = SingleHost.unpack(b_value)
 
             else:
                 value = b_value
@@ -671,12 +680,12 @@ class SingleHost:
     different hosts, then the information MUST be ignores.
 
     Args:
-        b_data: The raw SingleHost byte data.
         size: A 32-bit unsigned int that defines size of the structure.
         z4: A 32-bit integer value, currently set to 0.
         custom_data: An 8-byte platform-specific blob containing info only relevant when the client and server are on
             the same host.
         machine_id: A 32-byte random number created at computer startup to identify the calling machine.
+        _b_data: Create a SingleHost object from the raw data byte string.
 
     Attributes:
         size: See args.
@@ -688,12 +697,12 @@ class SingleHost:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/f221c061-cc40-4471-95da-d2ff71c85c5b
     """
 
-    def __init__(self, b_data=None, size=0, z4=0, custom_data=None, machine_id=None):
-        # type: (Optional[bytes], int, int, Optional[bytes], Optional[bytes]) -> None
-        if b_data:
-            if len(b_data) != 48:
+    def __init__(self, size=0, z4=0, custom_data=None, machine_id=None, _b_data=None):
+        # type: (int, int, Optional[bytes], Optional[bytes], Optional[bytes]) -> None
+        if _b_data:
+            if len(_b_data) != 48:
                 raise ValueError("SingleHost bytes must have a length of 48")
-            self._data = memoryview(b_data)
+            self._data = memoryview(_b_data)
 
         else:
             self._data = memoryview(bytearray(48))
@@ -753,6 +762,11 @@ class SingleHost:
         """ Packs the structure to bytes. """
         return self._data.tobytes()
 
+    @staticmethod
+    def unpack(b_data):  # type: (bytes) -> SingleHost
+        """ Creates a SignleHost object from raw bytes. """
+        return SingleHost(_b_data=b_data)
+
 
 class Version:
     """A structure contains the OS information.
@@ -762,11 +776,11 @@ class Version:
     messages only if `NTLMSSP_NEGOTIATE_VERSION` (`NegotiateFlags.version`) is negotiated.
 
     Args:
-        b_data: The raw Version bytes. If set the remaining kwargs will be ignored.
         major: See args. The 8-bit unsigned int for the version major part.
         minor: The 8-bit unsigned int for the version minor part.
         build: The 16-bit unsigned int for the version build part.
         revision: An 8-bit unsigned integer for the current NTLMSSP revision. This field SHOULD be `0x0F`.
+        _b_data: Create a Version object from the raw data byte string.
 
     Attrs:
         major: See args.
@@ -779,12 +793,13 @@ class Version:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b1a6ceb2-f8ad-462b-b5af-f18527c48175
     """
 
-    def __init__(self, b_data=None, major=0, minor=0, build=0, revision=0x0F):
-        # type: (Optional[bytes], int, int, int, int) -> None
-        if b_data:
-            if len(b_data) != 8:
-                raise ValueError("Version bytes must have a length of 48")
-            self._data = memoryview(b_data)
+    def __init__(self, major=0, minor=0, build=0, revision=0x0F, _b_data=None):
+        # type: (int, int, int, int, Optional[bytes]) -> None
+        if _b_data:
+            if len(_b_data) != 8:
+                raise ValueError("Version bytes must have a length of 8")
+
+            self._data = memoryview(_b_data)
 
         else:
             self._data = memoryview(bytearray(8))
@@ -801,6 +816,9 @@ class Version:
             other = other.pack()
 
         return self.pack() == other
+
+    def __len__(self):
+        return 8
 
     @property
     def major(self):  # type: () -> int
@@ -856,3 +874,8 @@ class Version:
         v += [0] * (3 - len(v))
 
         return Version(major=int(v[0]), minor=int(v[1]), build=int(v[2]))
+
+    @staticmethod
+    def unpack(b_data):  # type: (bytes) -> Version
+        """ Creates a Version object from raw bytes. """
+        return Version(_b_data=b_data)

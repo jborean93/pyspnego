@@ -37,7 +37,7 @@ def auth(server, username, password):
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
-        os.environ['LM_COMPAT_LEVEL'] = '0'
+        # os.environ['LM_COMPAT_LEVEL'] = '0'
         c = spnego.client(username, password, 'test', protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
         while not c.complete or in_token:
@@ -53,6 +53,9 @@ def auth(server, username, password):
                 in_token = s.recv(in_token_len)
             else:
                 in_token = None
+
+        print("Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
+        print("Protocol: %s" % c.negotiated_protocol)
 
         enc_data = c.wrap(b"Hello world").data
 
@@ -73,9 +76,6 @@ def auth(server, username, password):
 
         dec_msg = c.unwrap(server_enc_msg).data
         print(dec_msg.decode('utf-8'))
-
-        print("Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
-        print("Protocol: %s" % c.negotiated_protocol)
 
         s.close()
 

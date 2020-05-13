@@ -250,11 +250,13 @@ def _get_flag_ids(value, enum_class):
     return flags
 
 
-def _get_flag_ids2(value):
+def _get_flag_ids2(value, enum_type=None):
     raw_value = int(value)
     flags = []
 
-    for k, v in value.native_labels().items():
+    labels = enum_type.native_labels() if enum_type else value.native_labels()
+
+    for k, v in labels.items():
         if value & v == v:
             value &= ~v
             flags.append("%s (%d)" % (k, v))
@@ -716,7 +718,7 @@ def _parse_ntlm_negotiate(b_data, oem_cp):
     negotiate = Negotiate.unpack(b_data, encoding=oem_cp)
 
     msg = {
-        'NegotiateFlags': _get_flag_ids2(negotiate.flags),
+        'NegotiateFlags': _get_flag_ids2(negotiate.flags, enum_type=NegotiateFlags),
         'DomainNameFields': {
             'Len': struct.unpack("<H", b_data[16:18])[0],
             'MaxLen': struct.unpack("<H", b_data[18:20])[0],
@@ -750,7 +752,7 @@ def _parse_ntlm_challenge(b_data, oem_cp):
             'MaxLen': struct.unpack("<H", b_data[14:16])[0],
             'BufferOffset': struct.unpack("<I", b_data[16:20])[0],
         },
-        'NegotiateFlags': _get_flag_ids2(challenge.flags),
+        'NegotiateFlags': _get_flag_ids2(challenge.flags, enum_type=NegotiateFlags),
         'ServerChallenge': to_text(base64.b16encode(b_data[24:32])),
         'Reserved': to_text(base64.b16encode(b_data[32:40])),
         'TargetInfoFields': {
@@ -806,7 +808,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
             'MaxLen': struct.unpack("<H", b_data[54:56])[0],
             'BufferOffset': struct.unpack("<I", b_data[56:60])[0],
         },
-        'NegotiateFlags': _get_flag_ids2(auth.flags),
+        'NegotiateFlags': _get_flag_ids2(auth.flags, enum_type=NegotiateFlags),
         'Version': _parse_ntlm_version(auth.version),
         'MIC': to_text(base64.b16encode(auth.mic)) if auth.mic else None,
         'Payload': {
@@ -865,7 +867,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
 
         if len(nt_response_data) == 24:
             nt_response['ResponseType'] = 'NTLMv1'
-            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data)),
+            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data))
 
             if password and lm_response_data:
                 session_base_key = hashlib.new('md4', ntowfv1(password)).digest()
