@@ -815,7 +815,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
             'LmChallengeResponse': None,
             'NtChallengeResponse': None,
             'DomainName': auth.domain_name,
-            'UserName': auth.username,
+            'UserName': auth.user_name,
             'Workstation': auth.workstation,
             'EncryptedRandomSessionKey': None,
         },

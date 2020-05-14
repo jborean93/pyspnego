@@ -97,7 +97,7 @@ class SSPIProxy(ContextProxy):
             self._credential = acquire_credentials_handle(self.spn, protocol, credential_use=CredentialUse.inbound)
 
     @classmethod
-    def available_protocols(cls, context_req=None):
+    def available_protocols(cls, options=None):
         if HAS_SSPI:
             return [u'kerberos', u'negotiate', u'ntlm']
         else:

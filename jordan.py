@@ -35,6 +35,7 @@ def auth(server, username, password):
     with tempfile.NamedTemporaryFile() as temp_fd:
         with open(temp_fd.name, mode='wb') as fd:
             fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
+            # fd.write(b'vagrant-domain@DOMAIN.LOCAL:1000:00000000000000000000000000000000:35816CD15A8A341DD2828BFC6C375E06:[U]:LCT-1')
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
         # os.environ['LM_COMPAT_LEVEL'] = '0'
@@ -83,16 +84,14 @@ def auth(server, username, password):
 def auth_local(server, username, password):
     with tempfile.NamedTemporaryFile() as temp_fd:
         with open(temp_fd.name, mode='wb') as fd:
-            fd.write(b':vagrant-domain@DOMAIN.LOCAL:VagrantPass1')
+            fd.write((u':%s:%s' % (username, password)).encode('utf-8'))
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
 
-        c = spnego.client(username, password, server, protocol='ntlm',
-                          context_req=spnego.ContextReq.default | spnego.ContextReq.use_gssapi)
-        s = spnego.server(None, None, server, protocol='ntlm',
-                          context_req=spnego.ContextReq.default | spnego.ContextReq.use_ntlm)
+        c = spnego.client(username, password, server, protocol='ntlm', options=spnego.NegotiateOptions.use_gssapi)
+        s = spnego.server(None, None, server, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         out_token = c.step()
-        # _ = c._requires_mech_list_mic  # Test out when a MIC is set
+        _ = c._requires_mech_list_mic  # Test out when a MIC is set
         in_token = s.step(out_token)
 
         while not c.complete:
@@ -115,5 +114,5 @@ def auth_local(server, username, password):
         print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
 
 
-auth(server, username, password)
+# auth(server, username, password)
 # auth_local(server, username, password)

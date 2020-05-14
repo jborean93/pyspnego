@@ -153,18 +153,7 @@ def test_compute_response_v1_session_security():
 
 
 def test_ntowfv2():
-    actual = crypto.ntowfv2(TEST_USER, TEST_PASSWD, TEST_USER_DOM)
-
-    # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/7795bd0e-fd5e-43ec-bd9c-994704d8ee26
-    assert actual == b"\x0C\x86\x8A\x40\x3B\xFD\x7A\x93\xA3\x00\x1E\xF2\x2E\xF0\x2E\x3F"
-
-
-def test_ntowfv2_hash():
-    lm_hash = os.urandom(16)
-    nt_hash = crypto.ntowfv1(TEST_PASSWD)
-    ntlm_hash = to_text(b"%s:%s" % (base64.b16encode(lm_hash), base64.b16encode(nt_hash)))
-
-    actual = crypto.ntowfv2(TEST_USER, ntlm_hash, TEST_USER_DOM)
+    actual = crypto.ntowfv2(TEST_USER, crypto.ntowfv1(TEST_PASSWD), TEST_USER_DOM)
 
     # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/7795bd0e-fd5e-43ec-bd9c-994704d8ee26
     assert actual == b"\x0C\x86\x8A\x40\x3B\xFD\x7A\x93\xA3\x00\x1E\xF2\x2E\xF0\x2E\x3F"
@@ -178,8 +167,8 @@ def test_compute_response_v2():
                                  b"\x00\x00\x00\x00")
 
     actual_nt, actual_lm, actual_kek = crypto.compute_response_v2(
-        crypto.ntowfv2(TEST_USER, TEST_PASSWD, TEST_USER_DOM), TEST_SERVER_CHALLENGE, TEST_CLIENT_CHALLENGE, time,
-        av_pairs)
+        crypto.ntowfv2(TEST_USER, crypto.ntowfv1(TEST_PASSWD), TEST_USER_DOM), TEST_SERVER_CHALLENGE,
+        TEST_CLIENT_CHALLENGE, time, av_pairs)
 
     # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/946f54bd-76b5-4b18-ace8-6e8c992d5847
     temp = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" \

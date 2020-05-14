@@ -306,7 +306,7 @@ def kxkey(flags, session_base_key, lmowf, lm_response, server_challenge):
         return session_base_key
 
 
-def lmowfv1(password, no_lm=False):  # type: (text_type, bool) -> bytes
+def lmowfv1(password):  # type: (text_type) -> bytes
     """NTLMv1 LMOWFv1 function
 
     The Lan Manager v1 one way function as documented under `NTLM v1 Authentication`_.
@@ -321,7 +321,6 @@ def lmowfv1(password, no_lm=False):  # type: (text_type, bool) -> bytes
 
     Args:
         password: The password for the user.
-        no_lm: Whether to generate the LM hash or not.
 
     Returns:
         bytes: The LMv1 one way hash of the user's password.
@@ -331,12 +330,6 @@ def lmowfv1(password, no_lm=False):  # type: (text_type, bool) -> bytes
     """
     if _is_ntlm_hash(password):
         return base64.b16decode(password.split(':')[0].upper())
-
-    if no_lm:
-        # Modern Windows hosts don't store the LM hash, this reflects that behaviour if no LM hash was passed in.
-        # This affect the KeyExchangeKey that was negotiated if NTLMSSP_NEGOTIATE_LM_KEY was negotiated.
-        # https://github.com/gssapi/gss-ntlmssp/issues/13.
-        return b"\x00" * 16
 
     # Fix the password to upper case and pad the length to exactly 14 bytes.
     b_password = to_bytes(password.upper()).ljust(14, b"\x00")[:14]
@@ -382,7 +375,7 @@ def ntowfv1(password):  # type: (text_type) -> bytes
     return md4(to_bytes(password, encoding='utf-16-le'))
 
 
-def ntowfv2(username, password, domain_name):  # type: (text_type, text_type, Optional[text_type]) -> bytes
+def ntowfv2(username, nt_hash, domain_name):  # type: (text_type, bytes, Optional[text_type]) -> bytes
     """NTLMv2 NTOWFv2 function
 
     The NT v2 one way function as documented under `NTLM v2 Authentication`_.
@@ -394,6 +387,9 @@ def ntowfv2(username, password, domain_name):  # type: (text_type, text_type, Op
             HMAC_MD5(MD4(UNICODE(Passwd)), UNICODE(ConcatenationOf(Uppercase(User), UserDom)))
 
     Args:
+        username: The username.
+        nt_hash: The NT hash from :meth:`ntowfv1`.
+        domain_name: The optional domain name of the user.
 
     Returns:
         bytes: The NTv2 one way has of the user's credentials.
@@ -401,7 +397,6 @@ def ntowfv2(username, password, domain_name):  # type: (text_type, text_type, Op
     .. _NTLM v2 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/5e550938-91d4-459f-b67d-75d70009e3f3
     """
-    nt_hash = ntowfv1(password)
     b_user = to_bytes(username.upper() + (domain_name or u""), encoding='utf-16-le')
     return hmac_md5(nt_hash, b_user)
 

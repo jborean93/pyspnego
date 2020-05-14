@@ -194,8 +194,7 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
 
         ntlm_features['available'] = True
     except GSSError as err:
-        pass
-        # log.debug("GSSAPI does not support required the NTLM interfaces: %s" % str(err))
+        log.debug("GSSAPI does not support required the NTLM interfaces: %s" % str(err))
     else:
         # gss-ntlmssp only recently added support for GSS_C_INQ_SSPI_SESSION_KEY in v0.9.0, we check if it is present
         # before declaring session_key support is there as it might control whether it is used or not.

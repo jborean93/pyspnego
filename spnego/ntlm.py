@@ -10,6 +10,11 @@ import logging
 import os
 import socket
 
+from spnego._compat import (
+    Optional,
+    Tuple,
+)
+
 from spnego._context import (
     ContextProxy,
     ContextReq,
@@ -49,10 +54,126 @@ from spnego._ntlm_raw.messages import (
 )
 
 from spnego._text import (
+    text_type,
+    to_bytes,
+    to_native,
     to_text,
 )
 
 log = logging.getLogger(__name__)
+
+
+def _get_credential_file():  # type: () -> Optional[bytes]
+    """Get the path to the NTLM credential store.
+
+    Returns the path to the NTLM credential store specified by the environment variable `NTLM_USER_FILE`.
+
+    Returns:
+        Optional[bytes]: The path to the NTLM credential file or None if not set or found.
+    """
+    user_file_path = os.environ.get('NTLM_USER_FILE', None)
+    if not user_file_path:
+        return
+
+    b_user_file_path = to_bytes(user_file_path, encoding='utf-8')
+    if os.path.exists(b_user_file_path):
+        return b_user_file_path
+
+
+def _get_credential(store, username=None, domain=None):
+    # type: (bytes, Optional[text_type], Optional[text_type]) -> Tuple[bytes, bytes]
+    """Look up NTLM credentials from the common flat file.
+
+    Retrieves the LM and NT hash for use with authentication or validating a credential from an initiator.
+
+    Each line in the store can be in the Heimdal format `DOMAIN:USER:PASSWORD` like::
+
+        testdom:testuser:Password01
+        :testuser@TESTDOM.COM:Password01
+
+    Or it can use the `smbpasswd`_ file format `USERNAME:UID:LM_HASH:NT_HASH:ACCT_FLAGS:TIMESTAMP` like::
+
+        testuser:1000:278623D830DABE161104594F8C2EF12B:C3C6F4FD8A02A6C1268F1A8074B6E7E0:[U]:LCT-1589398321
+        TESTDOM\testuser:1000:4588C64B89437893AAD3B435B51404EE:65202355FA01AEF26B89B19E00F52679:[U]:LCT-1589398321
+        testuser@TESTDOM.COM:1000:00000000000000000000000000000000:8ADB9B997580D69E69CAA2BBB68F4697:[U]:LCT-1589398321
+
+    While only the `USERNAME`, `LM_HASH`, and `NT_HASH` fields are used, the colons are still required to differentiate
+    between the 2 formats. See `ntlm hash generator`_ for ways to generate the `LM_HASH` and `NT_HASH`.
+
+    The username is case insensitive but the format of the domain and user part must match up with the value used as
+    the username specified by the caller.
+
+    While each line can use a different format, it is recommended to stick to 1 throughout the file.
+
+    The same env var and format can also be read with gss-ntlmssp.
+
+    Args:
+        store: The credential store to lookup the credential from.
+        username: The username to get the credentials for. If omitted then the first entry in the store is used.
+        domain: The domain for the user to get the credentials for. Should be `None` for a user in the UPN form.
+
+    Returns:
+        Tuple[bytes, bytes]: The LM and NT hash of the user specified.
+
+    .. _smbpasswd:
+        https://www.samba.org/samba/docs/current/man-html/smbpasswd.5.html
+
+    .. _ntlm hash generator:
+        https://asecuritysite.com/encryption/lmhash
+    """
+    if not store:
+        raise Exception("Missing credential store")
+
+    domain = domain or u""
+
+    def process_line(line):
+        line_split = line.split(':')
+
+        if len(line_split) == 3:
+            return line_split[0], line_split[1], line_split[2], None, None
+
+        elif len(line_split) == 6:
+            line_domain, line_user = split_username(line_split[0])
+            lm_hash = base64.b16decode(line_split[2].upper())
+            nt_hash = base64.b16decode(line_split[3].upper())
+
+            return line_domain or u"", line_user, None, lm_hash, nt_hash
+
+    with open(store, mode='r', encoding='utf-8') as fd:
+        for line in fd:
+            line_details = process_line(line)
+            if not line_details:
+                continue
+
+            line_domain, line_user, line_passwd, lm_hash, nt_hash = line_details
+
+            if not username or (username.upper() == line_user.upper() and domain.upper() == line_domain.upper()):
+                # The Heimdal format uses the password so if the LM or NT hash isn't set generate it ourselves.
+                if not lm_hash:
+                    lm_hash = lmowfv1(line_passwd)
+                if not nt_hash:
+                    nt_hash = ntowfv1(line_passwd)
+
+                return lm_hash, nt_hash
+
+        else:
+            raise Exception("No matching credential")
+
+
+class _NTLMCredential:
+
+    def __init__(self, username=None, domain=None, password=None):
+        self.username = username
+        self.domain = domain
+
+        if password:
+            self._store = 'explicit'
+            self.lm_hash = lmowfv1(password)
+            self.nt_hash = ntowfv1(password)
+
+        else:
+            self._store = _get_credential_file()
+            self.lm_hash, self.nt_hash = _get_credential(self._store, self.username, self.domain)
 
 
 class NTLMProxy(ContextProxy):
@@ -63,8 +184,7 @@ class NTLMProxy(ContextProxy):
                                         protocol, options, is_wrapped)
 
         self._complete = False
-
-        self._domain, self._username = split_username(username)
+        self._credential = _NTLMCredential(username=self.username, password=self.password)
 
         # gss-ntlmssp uses the env var 'LM_COMPAT_LEVEL' to control the NTLM compatibility level. To try and make our
         # NTLM implementation similar in functionality we will also use that behaviour.
@@ -86,7 +206,6 @@ class NTLMProxy(ContextProxy):
             NegotiateFlags.oem | \
             NegotiateFlags.unicode
 
-        self._no_lm = True
         self._ntlm_v2 = self._lm_compat_level > 2
 
         if self._lm_compat_level != 0:
@@ -99,6 +218,10 @@ class NTLMProxy(ContextProxy):
             # https://github.com/gssapi/gss-ntlmssp/issues/13
             self._context_req |= NegotiateFlags.lm_key
             self._no_lm = False
+
+        else:
+            self._no_lm = True
+            self._credential.lm_hash = b"\x00" * 16
 
         # TODO: handle lm_compat_level for acceptor.
 
@@ -174,16 +297,15 @@ class NTLMProxy(ContextProxy):
             # If ClientRequire128bitEncryption and not negotiated, fail 'SEC_E_UNSUPPORTED_FUNCTION'.
 
             auth_kwargs = {
-                'domain_name': self._domain,
-                'username': self._username
+                'domain_name': self._credential.domain,
+                'username': self._credential.username,
             }
 
             if challenge.flags & NegotiateFlags.version:
                 auth_kwargs['version'] = Version.get_current()
                 auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
 
-            nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._username,
-                                                                                  self.password, self._domain)
+            nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._credential)
             if challenge.flags & NegotiateFlags.key_exch:
                 self._session_key = os.urandom(16)
                 auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
@@ -194,7 +316,6 @@ class NTLMProxy(ContextProxy):
             authenticate = Authenticate(challenge.flags, lm_challenge, nt_challenge, **auth_kwargs)
 
             if self._mic_required:
-                authenticate.mic = b"\x00" * 16
                 temp_auth = authenticate.pack()
                 authenticate.mic = hmac_md5(self._session_key, self._negotiate_msg + in_token + temp_auth)
 
@@ -208,11 +329,9 @@ class NTLMProxy(ContextProxy):
     def _step_accept(self, in_token=None):
         # TODO: Clean this up majorly
         if not self._negotiate_msg:
-            self._negotiate_msg = in_token
+            self._negotiate_msg = Negotiate.unpack(in_token)
 
-            negotiate = Negotiate.unpack(in_token)
-
-            flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
+            flags = self._negotiate_msg.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
                 NegotiateFlags.always_sign | NegotiateFlags.target_info | NegotiateFlags.target_type_server
 
             # Make sure either UNICODE or OEM is set, not both.
@@ -226,7 +345,6 @@ class NTLMProxy(ContextProxy):
                 flags &= ~NegotiateFlags.lm_key
 
             server_challenge = os.urandom(8)
-            self._server_nonce = server_challenge
             target_name = to_text(socket.gethostname()).upper()
 
             target_info = TargetInfo()
@@ -234,30 +352,22 @@ class NTLMProxy(ContextProxy):
             target_info[AvId.nb_domain_name] = u"WORKSTATION"
             target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
             target_info[AvId.timestamp] = FileTime.now()
-            self._server_target_info = target_info
 
-            challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info)
-            self._challenge_msg = challenge.pack(encoding='windows-1252')
+            self._challenge_msg = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info)
 
-            return self._challenge_msg
+            return self._challenge_msg.pack()
 
         else:
             auth = Authenticate.unpack(in_token)
 
-            if not auth.username and not auth.nt_challenge_response and (not auth.lm_challenge_response or
-                                                                         auth.lm_challenge_response == b"\x00"):
+            if not auth.user_name and not auth.nt_challenge_response and (not auth.lm_challenge_response or
+                                                                          auth.lm_challenge_response == b"\x00"):
 
                 # Anonymous user.
                 raise Exception("Anonymous user")
 
             else:
-                # TODO: Lookup NTLM_USER_FILE for creds
-                expected_user = u"vagrant-domain@DOMAIN.LOCAL"
-
-                if auth.username.upper() != expected_user.upper():
-                    raise Exception("Auth error, no matching user")
-
-                actual_pass = u"VagrantPass1"
+                credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
 
                 if len(auth.nt_challenge_response) > 24:
                     client_challenge = auth.nt_challenge_response[32:40]
@@ -266,14 +376,14 @@ class NTLMProxy(ContextProxy):
                 else:
                     client_challenge = None
 
-                ntow = ntowfv2(expected_user, actual_pass, None)
+                ntow = ntowfv2(credential.username, credential.nt_hash, credential.domain)
 
                 b_challenge = auth.nt_challenge_response[16:]
                 time = FileTime.unpack(b_challenge[8:16])
                 target_info = TargetInfo.unpack(b_challenge[28:-4])
 
                 expected_nt, expected_lm, key_exchange_key = compute_response_v2(
-                    ntow, self._server_nonce, client_challenge, time, target_info)
+                    ntow, self._challenge_msg.server_challenge, client_challenge, time, target_info)
 
                 if expected_nt != auth.nt_challenge_response:
                     raise Exception("Invalid credential")
@@ -287,10 +397,13 @@ class NTLMProxy(ContextProxy):
                     self._session_key = key_exchange_key
 
                 if target_info.get(AvId.flags, 0) & AvFlags.mic:
-                    temp_auth = in_token[:64] + (b"\x00" * 16) + in_token[80:]
-                    expected_mic = hmac_md5(self._session_key, self._negotiate_msg + self._challenge_msg + temp_auth)
+                    expected_mic = auth.mic
+                    auth.mic = b"\x00" * 16
 
-                    if auth.mic != expected_mic:
+                    actual_mic = hmac_md5(self._session_key,
+                                          self._negotiate_msg.pack() + self._challenge_msg.pack() + auth.pack())
+
+                    if actual_mic != expected_mic:
                         raise Exception("Invalid MIC")
 
                 self._context_attr = auth.flags
@@ -374,8 +487,8 @@ class NTLMProxy(ContextProxy):
         self.__seq_num_out += 1
         return num
 
-    def _compute_response(self, challenge, username, password, domain):
-        # type: (Challenge, text_type, text_type) -> Tuple[bytes, bytes, bytes]
+    def _compute_response(self, challenge, credential):
+        # type: (Challenge, _NTLMCredential) -> Tuple[bytes, bytes, bytes]
         """ Compute the NT and LM responses and the key exchange key. """
         client_challenge = os.urandom(8)
 
@@ -383,8 +496,6 @@ class NTLMProxy(ContextProxy):
             return b"", b"\x00", b""
 
         elif self._ntlm_v2:
-            response_key_nt = ntowfv2(username, password, domain)
-
             target_info = challenge.target_info.copy() if challenge.target_info else TargetInfo()
 
             if AvId.timestamp in target_info:
@@ -408,8 +519,9 @@ class NTLMProxy(ContextProxy):
             if self._mic_required:
                 target_info[AvId.flags] = target_info.get(AvId.flags, AvFlags(0)) | AvFlags.mic
 
+            ntv2_hash = ntowfv2(credential.username, credential.nt_hash, credential.domain)
             nt_challenge, lm_challenge, key_exchange_key = compute_response_v2(
-                response_key_nt, challenge.server_challenge, client_challenge, time, target_info)
+                ntv2_hash, challenge.server_challenge, client_challenge, time, target_info)
 
             if self._mic_required:
                 lm_challenge = b"\x00" * 24
@@ -417,11 +529,8 @@ class NTLMProxy(ContextProxy):
             return nt_challenge, lm_challenge, key_exchange_key
 
         else:
-            response_key_nt = ntowfv1(password)
-            response_key_lm = lmowfv1(password, no_lm=self._no_lm)
-
-            return compute_response_v1(challenge.flags, response_key_nt, response_key_lm, challenge.server_challenge,
-                                       client_challenge, no_lm_response=self._no_lm)
+            return compute_response_v1(challenge.flags, credential.nt_hash, credential.lm_hash,
+                                       challenge.server_challenge, client_challenge, no_lm_response=self._no_lm)
 
     def _create_spn(self, service, principal):
         if not service and not principal:

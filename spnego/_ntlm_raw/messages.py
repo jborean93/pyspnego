@@ -184,14 +184,29 @@ class _UTC(datetime.tzinfo):
         return datetime.timedelta(0)
 
 
+def _get_payload_offset(b_data, field_offsets):
+    payload_offset = None
+
+    for field_offset in field_offsets:
+        offset = struct.unpack("<I", b_data[field_offset + 4:field_offset + 8].tobytes())[0]
+        if not payload_offset or (offset and offset < payload_offset):
+            payload_offset = offset
+
+    return payload_offset
+
+
+def _min_offset(b_data, field_offset, offset):
+    return min(offset, struct.unpack("<I", b_data[field_offset + 4:field_offset + 8].tobytes())[0] or offset)
+
+
 def _pack_payload(data, b_payload, payload_offset, pack_func=None):
-    # type: (Optional[any], io.BytesIO, int, Callable[[any], bytes]) -> Tuple[bytes, int]
+    # type: (Optional[any], bytearray, int, Callable[[any], bytes]) -> Tuple[bytes, int]
     if data:
         b_data = pack_func(data) if pack_func else data
     else:
         b_data = b""
 
-    b_payload.write(b_data)
+    b_payload.extend(b_data)
     length = len(b_data)
 
     b_field = (struct.pack("<H", length) * 2) + struct.pack("<I", payload_offset)
@@ -220,70 +235,101 @@ class Negotiate:
         domain_name: The `DomainName` of the client authentication domain.
         workstation: The `Workstation` of the client.
         version: The `Version` of the client.
+        encoding: The OEM encoding to use for text fields.
+        _b_data: The raw bytes of the message to unpack from.
 
     .. _NEGOTIATE_MESSAGE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b34032e5-3aae-4bc6-84c3-c6d80eadf7f2
     """
 
-    def __init__(self, flags, domain_name=None, workstation=None, version=None):
-        # type: (int, Optional[text_type], Optional[text_type], Optional[Version]) -> None
-        self.flags = flags  # type: int
-        self.domain_name = domain_name  # type: text_type
-        self.workstation = workstation  # type: text_type
-        self.version = version  # type: Version
+    def __init__(self, flags=0, domain_name=None, workstation=None, version=None, encoding='windows-1252',
+                 _b_data=None):
+        # type: (int, Optional[text_type], Optional[text_type], Optional[Version], str, Optional[bytes]) -> None
+        self._encoding = encoding
 
-    def pack(self, encoding='windows-1252'):  # type: (str) -> bytes
+        signature = b"NTLMSSP\x00\x01\x00\x00\x00"
+
+        if _b_data:
+            if len(_b_data) < 32:
+                raise ValueError("Invalid NTLM Negotiate raw byte length")
+
+            if not _b_data.startswith(signature):
+                raise ValueError("Invalid NTLM Negotiate signature")
+
+            self._data = memoryview(bytearray(_b_data))
+
+        else:
+            b_payload = bytearray()
+
+            payload_offset = 32
+
+            b_version = b""
+            if version:
+                flags |= NegotiateFlags.version
+                b_version = version.pack()
+            payload_offset = _pack_payload(b_version, b_payload, payload_offset)[1]
+
+            b_domain_name = b""
+            if domain_name:
+                flags |= NegotiateFlags.oem_domain_name_supplied
+                b_domain_name = to_bytes(domain_name, encoding=encoding)
+            b_domain_name_fields, payload_offset = _pack_payload(b_domain_name, b_payload, payload_offset)
+
+            b_workstation = b""
+            if workstation:
+                flags |= NegotiateFlags.oem_workstation_supplied
+                b_workstation = to_bytes(workstation, encoding=encoding)
+            b_workstation_fields = _pack_payload(b_workstation, b_payload, payload_offset)[0]
+
+            b_data = bytearray(signature)
+            b_data.extend(struct.pack("<I", flags))
+            b_data.extend(b_domain_name_fields)
+            b_data.extend(b_workstation_fields)
+            b_data.extend(b_payload)
+
+            self._data = memoryview(b_data)
+
+    @property
+    def flags(self):  # type: () -> int
+        """ The negotiate flags for the Negotiate message. """
+        return struct.unpack("<I", self._data[12:16].tobytes())[0]
+
+    @flags.setter
+    def flags(self, value):  # type: (int) -> None
+        self._data[12:16] = struct.pack("<I", value)
+
+    @property
+    def domain_name(self):  # type: () -> Optional[text_type]
+        """ The name of the client authentication domain. """
+        return to_text(_unpack_payload(self._data.tobytes(), 16), encoding=self._encoding, nonstring='passthru')
+
+    @property
+    def workstation(self):  # type: () -> Optional[text_type]
+        """ The name of the client machine. """
+        return to_text(_unpack_payload(self._data.tobytes(), 24), encoding=self._encoding, nonstring='passthru')
+
+    @property
+    def version(self):  # type: () -> Optional[Version]
+        """ The client NTLM version. """
+        payload_offset = self._payload_offset
+
+        # If the payload offset is at 40 or more then the Version, or at least empty bytes, is in the payload.
+        if payload_offset >= 40:
+            return Version.unpack(self._data[32:40].tobytes())
+
+    @property
+    def _payload_offset(self):  # type: () -> int
+        """ Gets the offset of the first payload value. """
+        return _get_payload_offset(self._data, [16, 24])
+
+    def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
-        b_data = io.BytesIO()
-        b_payload = io.BytesIO()
-
-        flags = self.flags
-        payload_offset = 40
-
-        if self.domain_name:
-            flags |= NegotiateFlags.oem_domain_name_supplied
-        b_domain_field, payload_offset = _pack_payload(self.domain_name, b_payload, payload_offset,
-                                                       lambda d: to_bytes(d, encoding=encoding))
-
-        if self.workstation:
-            flags |= NegotiateFlags.oem_workstation_supplied
-        b_workstation_field, payload_offset = _pack_payload(self.workstation, b_payload, payload_offset,
-                                                            lambda d: to_bytes(d, encoding=encoding))
-
-        b_version = b"\x00" * 8
-        if self.version:
-            flags |= NegotiateFlags.version
-            b_version = self.version.pack()
-
-        b_data.write(b"NTLMSSP\x00\x01\x00\x00\x00")
-        b_data.write(struct.pack("<I", int(flags)))
-        b_data.write(b_domain_field)
-        b_data.write(b_workstation_field)
-        b_data.write(b_version)
-
-        return b_data.getvalue() + b_payload.getvalue()
+        return self._data.tobytes()
 
     @staticmethod
     def unpack(b_data, encoding='windows-1252'):  # type: (bytes, str) -> Negotiate
         """ Unpacks the structure from bytes. """
-        signature = b_data[:8]
-        if signature != b"NTLMSSP\x00":
-            raise ValueError("Invalid NTLM Negotiate signature")
-
-        message_type = struct.unpack("<I", b_data[8:12])[0]
-        if message_type != 1:
-            raise ValueError("Invalid NTLM Negotiate message type %d, expecting 1" % message_type)
-
-        flags = struct.unpack("<I", b_data[12:16])[0]
-
-        domain = to_text(_unpack_payload(b_data, 16), encoding=encoding, nonstring='passthru')
-        workstation = to_text(_unpack_payload(b_data, 24), encoding=encoding, nonstring='passthru')
-
-        version = None
-        if flags & NegotiateFlags.version:
-            version = Version.unpack(b_data[32:40])
-
-        return Negotiate(flags, domain_name=domain, workstation=workstation, version=version)
+        return Negotiate(encoding=encoding, _b_data=b_data)
 
 
 class Challenge:
@@ -298,86 +344,121 @@ class Challenge:
         target_name: The name of the acceptor server.
         target_info: The variable length `TargetInfo` information.
         version: The `Version` of the server.
+        encoding: The OEM encoding to use for text fields if `NTLMSSP_NEGOTIATE_UNICODE` was not supported.
+        _b_data: The raw NTLM Challenge bytes to unpack from.
 
     .. _CHALLENGE_MESSAGE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/801a4681-8809-4be9-ab0d-61dcfe762786
     """
 
-    def __init__(self, flags, server_challenge, target_name=None, target_info=None, version=None):
-        # type: (int, bytes, Optional[text_type], Optional[TargetInfo], Optional[Version]) -> None
+    def __init__(self, flags=0, server_challenge=None, target_name=None, target_info=None, version=None,
+                 encoding='windows-1252', _b_data=None):
+        # type: (int, Optional[bytes], Optional[text_type], Optional[TargetInfo], Optional[Version], str, Optional[bytes]) -> None  # noqa
 
-        self.flags = flags  # type: int
-        self.server_challenge = server_challenge  # type: bytes
-        self.reserved = b"\x00" * 8  # type: bytes
-        self.target_name = target_name  # type: Optional[text_type]
-        self.target_info = target_info  # type: Optional[TargetInfo]
-        self.version = version
+        signature = b"NTLMSSP\x00\x02\x00\x00\x00"
 
-    def pack(self, encoding='windows-1252'):  # type: (str) -> bytes
+        if _b_data:
+            if len(_b_data) < 48:
+                raise ValueError("Invalid NTLM Challenge raw byte length")
+
+            if not _b_data.startswith(signature):
+                raise ValueError("Invalid NTLM Challenge signature")
+
+            self._data = memoryview(bytearray(_b_data))
+            self._encoding = encoding if self.flags & NegotiateFlags.oem else 'utf-16-le'
+
+        else:
+            self._encoding = encoding if flags & NegotiateFlags.oem else 'utf-16-le'
+
+            server_challenge = server_challenge or b"\x00" * 8
+            if len(server_challenge) != 8:
+                raise ValueError("NTLM Challenge ServerChallenge must be 8 bytes long")
+
+            b_payload = bytearray()
+
+            payload_offset = 48
+
+            b_version = b""
+            if version:
+                flags |= NegotiateFlags.version
+                b_version = version.pack()
+            payload_offset = _pack_payload(b_version, b_payload, payload_offset)[1]
+
+            b_target_name = b""
+            if target_name:
+                flags |= NegotiateFlags.request_target
+                b_target_name = to_bytes(target_name, encoding=self._encoding)
+            b_target_name_fields, payload_offset = _pack_payload(b_target_name, b_payload, payload_offset)
+
+            b_target_info = b""
+            if target_info:
+                flags |= NegotiateFlags.target_info
+                b_target_info = target_info.pack()
+            b_target_info_fields = _pack_payload(b_target_info, b_payload, payload_offset)[0]
+
+            b_data = bytearray(signature)
+            b_data.extend(b_target_name_fields)
+            b_data.extend(struct.pack("<I", flags))
+            b_data.extend(server_challenge)
+            b_data.extend(b"\x00" * 8)  # Reserved
+            b_data.extend(b_target_info_fields)
+            b_data.extend(b_payload)
+
+            self._data = memoryview(b_data)
+
+    @property
+    def target_name(self):  # type: () -> Optional[text_type]
+        """ The name of the server authentication realm. """
+        return to_text(_unpack_payload(self._data.tobytes(), 12), encoding=self._encoding, nonstring='passthru')
+
+    @property
+    def flags(self):  # type: () -> int
+        """ The negotiate flags supported by the server. """
+        return struct.unpack("<I", self._data[20:24].tobytes())[0]
+
+    @flags.setter
+    def flags(self, value):  # type: (int) -> None
+        self._data[20:24] = struct.pack("<I", value)
+
+    @property
+    def server_challenge(self):  # type: () -> bytes
+        """ The server's 8 byte nonce challenge. """
+        return self._data[24:32].tobytes()
+
+    @server_challenge.setter
+    def server_challenge(self, value):  # type: (bytes) -> None
+        if len(value) != 8:
+            raise ValueError("NTLM Challenge ServerChallenge must be 8 bytes long")
+
+        self._data[24:32] = value
+
+    @property
+    def target_info(self):  # type: () -> Optional[TargetInfo]
+        """ The AV_PAIR structures generated by the server. """
+        return _unpack_payload(self._data.tobytes(), 40, lambda d: TargetInfo.unpack(d))
+
+    @property
+    def version(self):  # type: () -> Optional[Version]
+        """ The server NTLM version. """
+        payload_offset = self._payload_offset
+
+        # If the payload offset is at 56 or more then the Version, or at least empty bytes, is in the payload.
+        if payload_offset >= 56:
+            return Version.unpack(self._data[48:56].tobytes())
+
+    @property
+    def _payload_offset(self):  # type: () -> int
+        """ Gets the offset of the first payload value. """
+        return _get_payload_offset(self._data, [12, 40])
+
+    def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
-        b_data = io.BytesIO()
-        b_payload = io.BytesIO()
-        flags = int(self.flags)
-
-        if flags & NegotiateFlags.unicode:
-            encoding = 'utf-16-le'
-
-        payload_offset = 56
-
-        if self.target_name:
-            flags |= NegotiateFlags.request_target
-        b_target_name_fields, payload_offset = _pack_payload(self.target_name, b_payload, payload_offset,
-                                                             lambda d: to_bytes(d, encoding=encoding))
-
-        if self.target_info:
-            flags |= NegotiateFlags.target_info
-        b_target_info_fields, payload_offset = _pack_payload(self.target_info, b_payload, payload_offset,
-                                                             lambda d: d.pack())
-
-        b_version = b"\x00" * 8
-        if self.version:
-            flags |= NegotiateFlags.version
-            b_version = self.version.pack()
-
-        b_data.write(b"NTLMSSP\x00\x02\x00\x00\x00")
-        b_data.write(b_target_name_fields)
-        b_data.write(struct.pack("<I", flags))
-        b_data.write(self.server_challenge)
-        b_data.write(self.reserved)
-        b_data.write(b_target_info_fields)
-        b_data.write(b_version)
-
-        return b_data.getvalue() + b_payload.getvalue()
+        return self._data.tobytes()
 
     @staticmethod
     def unpack(b_data, encoding='windows-1252'):  # type: (bytes, str) -> Challenge
         """ Unpacks the structure from bytes. """
-        signature = b_data[:8]
-        if signature != b"NTLMSSP\x00":
-            raise ValueError("Invalid NTLM Challenge signature")
-
-        message_type = struct.unpack("<I", b_data[8:12])[0]
-        if message_type != 2:
-            raise ValueError("Invalid NTLM Challenge message type %d, expecting 2" % message_type)
-
-        flags = struct.unpack("<I", b_data[20:24])[0]
-        if flags & NegotiateFlags.unicode:
-            encoding = 'utf-16-le'
-
-        target_name = to_text(_unpack_payload(b_data, 12), encoding=encoding, nonstring='passthru')
-        server_challenge = b_data[24:32]
-        reserved = b_data[32:40]
-        target_info = _unpack_payload(b_data, 40, lambda d: TargetInfo.unpack(d))
-
-        version = None
-        if flags & NegotiateFlags.version:
-            version = Version.unpack(b_data[48:56])
-
-        challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info,
-                              version=version)
-        challenge.reserved = reserved
-
-        return challenge
+        return Challenge(encoding=encoding, _b_data=b_data)
 
 
 class Authenticate:
@@ -396,111 +477,171 @@ class Authenticate:
         encrypted_session_key: The `EncryptedRandomSessionKey` for the set up context.
         version: The `Version` of the client.
         mic: The `MIC` for the authentication exchange.
+        encoding: The OEM encoding to use for text fields if `NTLMSSP_NEGOTIATE_UNICODE` was not supported.
+        _b_data: The raw NTLM Authenticate bytes to unpack from.
 
     .. _AUTHENTICATION_MESSAGE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/033d32cc-88f9-4483-9bf2-b273055038ce
     """
 
-    def __init__(self, flags, lm_challenge_response, nt_challenge_response, domain_name=None, username=None,
-                 workstation=None, encrypted_session_key=None, version=None, mic=None):
-        # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes]) -> None # noqa
+    def __init__(self, flags=0, lm_challenge_response=None, nt_challenge_response=None, domain_name=None,
+                 username=None, workstation=None, encrypted_session_key=None, version=None, mic=None,
+                 encoding='windows-1252', _b_data=None):
+        # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes], str, Optional[bytes]) -> None  # noqa
 
-        self.flags = flags    # type: int
-        self.lm_challenge_response = lm_challenge_response  # type: Optional[bytes]
-        self.nt_challenge_response = nt_challenge_response  # type: Optional[bytes]
-        self.domain_name = domain_name  # type: Optional[text_type]
-        self.username = username  # type: Optional[text_type]
-        self.workstation = workstation  # type: Optional[text_type]
-        self.encrypted_random_session_key = encrypted_session_key  # type: bytes
-        self.version = version  # type: Optional[Version]
-        self.mic = None  # type: Optional[bytes]
-        if mic:
-            self.mic = mic
+        signature = b"NTLMSSP\x00\x03\x00\x00\x00"
 
-    def pack(self, encoding='windows-1252'):  # type: (str) -> bytes
+        if _b_data:
+            if len(_b_data) < 64:
+                raise ValueError("Invalid NTLM Authenticate raw byte length")
+
+            if not _b_data.startswith(signature):
+                raise ValueError("Invalid NTLM Authenticate signature")
+
+            self._data = memoryview(bytearray(_b_data))
+            self._encoding = encoding if self.flags & NegotiateFlags.oem else 'utf-16-le'
+
+        else:
+            self._encoding = encoding if flags & NegotiateFlags.oem else 'utf-16-le'
+
+            b_payload = bytearray()
+
+            payload_offset = 64
+
+            # While MS server accept a blank version field, other implementations aren't so kind. No need to be strict
+            # about it and only add the version bytes if it's present.
+            b_version = b""
+            if version:
+                flags |= NegotiateFlags.version
+                b_version = version.pack()
+            payload_offset = _pack_payload(b_version, b_payload, payload_offset)[1]
+
+            # TODO: Verify if a MIC can be null on older implementations, see version above.
+            mic = mic or b"\x00" * 16
+            if len(mic) != 16:
+                raise ValueError("NTLM Authenticate MIC must be 16 bytes long")
+            payload_offset = _pack_payload(mic, b_payload, payload_offset)[1]
+
+            b_lm_response_fields, payload_offset = _pack_payload(lm_challenge_response, b_payload, payload_offset)
+            b_nt_response_fields, payload_offset = _pack_payload(nt_challenge_response, b_payload, payload_offset)
+            b_domain_fields, payload_offset = _pack_payload(domain_name, b_payload, payload_offset,
+                                                            lambda d: to_bytes(d, encoding=self._encoding))
+            b_username_fields, payload_offset = _pack_payload(username, b_payload, payload_offset,
+                                                              lambda d: to_bytes(d, encoding=self._encoding))
+            b_workstation_fields, payload_offset = _pack_payload(workstation, b_payload, payload_offset,
+                                                                 lambda d: to_bytes(d, encoding=self._encoding))
+            if encrypted_session_key:
+                flags |= NegotiateFlags.key_exch
+            b_session_key_fields = _pack_payload(encrypted_session_key, b_payload, payload_offset)[0]
+
+            b_data = bytearray(signature)
+            b_data.extend(b_lm_response_fields)
+            b_data.extend(b_nt_response_fields)
+            b_data.extend(b_domain_fields)
+            b_data.extend(b_username_fields)
+            b_data.extend(b_workstation_fields)
+            b_data.extend(b_session_key_fields)
+            b_data.extend(struct.pack("<I", flags))
+            b_data.extend(b_payload)
+
+            self._data = memoryview(b_data)
+
+    @property
+    def lm_challenge_response(self):  # type: () -> Optional[bytes]
+        """ The LmChallengeResponse or None if not set. """
+        return _unpack_payload(self._data.tobytes(), 12)
+
+    @property
+    def nt_challenge_response(self):  # type: () -> Optional[bytes]
+        """ The NtChallengeResponse or None if not set. """
+        return _unpack_payload(self._data.tobytes(), 20)
+
+    @property
+    def domain_name(self):  # type: () -> Optional[text_type]
+        """ The domain or computer name hosting the user account. """
+        return to_text(_unpack_payload(self._data.tobytes(), 28), encoding=self._encoding, nonstring='passthru')
+
+    @property
+    def user_name(self):  # type: () -> Optional[text_type]
+        """ The name of the user to be authenticated. """
+        return to_text(_unpack_payload(self._data.tobytes(), 36), encoding=self._encoding, nonstring='passthru')
+
+    @property
+    def workstation(self):  # type: () -> Optional[text_type]
+        """ The name of the computer to which the user is logged on. """
+        return to_text(_unpack_payload(self._data.tobytes(), 44), encoding=self._encoding, nonstring='passthru')
+
+    @property
+    def encrypted_random_session_key(self):  # type: () -> Optional[bytes]
+        """ The client's encrypted random session key. """
+        return _unpack_payload(self._data.tobytes(), 52)
+
+    @property
+    def flags(self):  # type: () -> int
+        """ The negotiate flags supported by the client and server. """
+        return struct.unpack("<I", self._data[60:64].tobytes())[0]
+
+    @flags.setter
+    def flags(self, value):  # type: (int) -> None
+        self._data[60:64] = struct.pack("<I", value)
+
+    @property
+    def version(self):  # type: () -> Optional[Version]
+        """ The client NTLM version. """
+        payload_offset = self._payload_offset
+
+        # If the payload offset is at 64 (no MIC or Version) or 80 (only MIC) then no version is present.
+        if payload_offset not in [64, 80] and payload_offset > 72:
+            return Version.unpack(self._data[64:72].tobytes())
+
+    @property
+    def mic(self):  # type: () -> Optional[bytes]
+        """ The MIC for the Authenticate message. """
+        mic_offset = self._get_mic_offset()
+        if mic_offset:
+            return self._data.tobytes()[mic_offset:mic_offset + 16]
+
+    @mic.setter
+    def mic(self, value):  # type: (bytes) -> None
+        if len(value) != 16:
+            raise ValueError("NTLM Authenticate MIC must be 16 bytes long")
+
+        mic_offset = self._get_mic_offset()
+        if mic_offset:
+            self._data[mic_offset:mic_offset + 16] = value
+        else:
+            raise ValueError("Cannot set MIC on an Authenticate message without an empty MIC present")
+
+    @property
+    def _payload_offset(self):  # type: () -> int
+        """ Gets the offset of the first payload value. """
+        return _get_payload_offset(self._data, [12, 20, 28, 36, 44, 52])
+
+    def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
-        b_data = io.BytesIO()
-        b_payload = io.BytesIO()
-        flags = int(self.flags)
+        return self._data.tobytes()
 
-        if flags & NegotiateFlags.unicode:
-            encoding = 'utf-16-le'
+    def _get_mic_offset(self):  # type: () -> int
+        """ Gets the offset of the MIC structure if present. """
+        payload_offset = self._payload_offset
 
-        # While MS server accept a blank version field, other implementations aren't so kind. No need to be strict
-        # about it and only add the version bytes if it's present.
-        b_version = b""
-        if self.version:
-            flags |= NegotiateFlags.version
-            b_version = self.version.pack()
+        # If the payload offset is 88 or more then we must have the Version (8 bytes) and the MIC (16 bytes) plus
+        # any random data after that.
+        if payload_offset >= 88:
+            return 72
 
-        payload_offset = 64 + len(b_version) + len(self.mic or b"")
+        # If the payload offset is between 80 and 88, then we should have just the MIC and no Version.
+        elif payload_offset >= 80:
+            return 64
 
-        b_lm_response_fields, payload_offset = _pack_payload(self.lm_challenge_response, b_payload, payload_offset)
-        b_nt_response_fields, payload_offset = _pack_payload(self.nt_challenge_response, b_payload, payload_offset)
-        b_domain_fields, payload_offset = _pack_payload(self.domain_name, b_payload, payload_offset,
-                                                        lambda d: to_bytes(d, encoding=encoding))
-        b_username_fields, payload_offset = _pack_payload(self.username, b_payload, payload_offset,
-                                                          lambda d: to_bytes(d, encoding=encoding))
-        b_workstation_fields, payload_offset = _pack_payload(self.workstation, b_payload, payload_offset,
-                                                             lambda d: to_bytes(d, encoding=encoding))
-
-        if self.encrypted_random_session_key:
-            flags |= NegotiateFlags.key_exch
-        b_session_key_fields, payload_offset = _pack_payload(self.encrypted_random_session_key, b_payload,
-                                                             payload_offset)
-
-        b_data.write(b"NTLMSSP\x00\x03\x00\x00\x00")
-        b_data.write(b_lm_response_fields)
-        b_data.write(b_nt_response_fields)
-        b_data.write(b_domain_fields)
-        b_data.write(b_username_fields)
-        b_data.write(b_workstation_fields)
-        b_data.write(b_session_key_fields)
-        b_data.write(struct.pack("<I", flags))
-        b_data.write(b_version)
-        if self.mic:
-            b_data.write(self.mic)
-
-        return b_data.getvalue() + b_payload.getvalue()
+        # Not enough room for a MIC between the minimum size and the payload offset.
+        else:
+            return 0
 
     @staticmethod
     def unpack(b_data, encoding='windows-1252'):  # type: (bytes, str) -> Authenticate
         """ Unpacks the structure from bytes. """
-        signature = b_data[:8]
-        if signature != b"NTLMSSP\x00":
-            raise ValueError("Invalid NTLM Authenticate signature")
-
-        message_type = struct.unpack("<I", b_data[8:12])[0]
-        if message_type != 3:
-            raise ValueError("Invalid NTLM Authenticate message type %d, expecting 3" % message_type)
-
-        flags = struct.unpack("<I", b_data[60:64])[0]
-        if flags & NegotiateFlags.unicode:
-            encoding = 'utf-16-le'
-
-        lm_response = _unpack_payload(b_data, 12)
-        nt_response = _unpack_payload(b_data, 20)
-        domain = to_text(_unpack_payload(b_data, 28), encoding=encoding, nonstring='passthru')
-        user = to_text(_unpack_payload(b_data, 36), encoding=encoding, nonstring='passthru')
-        workstation = to_text(_unpack_payload(b_data, 44), encoding=encoding, nonstring='passthru')
-        enc_key = _unpack_payload(b_data, 52)
-
-        mic_offset = 64
-        version = None
-        if flags & NegotiateFlags.version:
-            version = Version.unpack(b_data[64:72])
-            mic_offset += 8
-
-        # To detect whether a MIC was actually present we need to scan the NTLMv2 proof string for MsvAvFlags in the
-        # AV_PAIRS of the token
-        mic = None
-        if nt_response and len(nt_response) > 24:
-            target_info = TargetInfo.unpack(nt_response[44:-4])
-            if target_info.get(AvId.flags, 0) & AvFlags.mic:
-                mic = b_data[mic_offset:mic_offset + 16]
-
-        return Authenticate(flags, lm_response, nt_response, domain_name=domain, username=user,
-                            workstation=workstation, encrypted_session_key=enc_key, version=version, mic=mic)
+        return Authenticate(encoding=encoding, _b_data=b_data)
 
 
 class FileTime(datetime.datetime):

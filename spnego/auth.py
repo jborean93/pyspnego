@@ -36,15 +36,15 @@ def _new_context(username, password, hostname, service, channel_bindings, contex
     use_specified = options & use_flags != 0
 
     if options & NegotiateOptions.use_sspi or (not use_specified and
-                                               proto in SSPIProxy.available_protocols(context_req=context_req)):
+                                               proto in SSPIProxy.available_protocols(options=options)):
         proxy = SSPIProxy
 
     elif options & NegotiateOptions.use_gssapi or (not use_specified and (proto == 'kerberos' or
-                                                   proto in GSSAPIProxy.available_protocols(context_req=context_req))):
+                                                   proto in GSSAPIProxy.available_protocols(options=options))):
         proxy = GSSAPIProxy
 
     elif options & NegotiateOptions.use_negotiate or (not use_specified and proto == 'negotiate'):
-        # If GSSAPI does not offer negotiate support, use our own wrapper.
+        # If GSSAPI does not offer full negotiate support, use our own wrapper.
         proxy = NegotiateProxy
 
     elif options & NegotiateOptions.use_ntlm or (not use_specified and proto == 'ntlm'):
