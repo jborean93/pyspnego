@@ -77,6 +77,115 @@ def test_filetime_with_timezone():
     assert actual == b"\x00\x80\x3E\xD5\xDE\xB1\x9D\x01"
 
 
+def test_nt_challenge_pack():
+    challenge = messages.NTClientChallengeV2()
+    assert challenge.resp_type == 1
+    assert challenge.hi_resp_type == 1
+    assert isinstance(challenge.time_stamp, messages.FileTime)
+    assert challenge.challenge_from_client == b"\x00" * 8
+    assert len(challenge.av_pairs) == 1
+
+    challenge.time_stamp = messages.FileTime.unpack(b"\x00\x00\x00\x00\x00\x00\x00\x00")
+
+    actual = challenge.pack()
+
+    print(base64.b16encode(actual).decode('ascii'))
+
+    assert actual == b"\x01" \
+                     b"\x01" \
+                     b"\x00\x00" \
+                     b"\x00\x00\x00\x00" \
+                     b"\x00\x00\x00\x00\x00\x00\x00\x00" \
+                     b"\x00\x00\x00\x00\x00\x00\x00\x00" \
+                     b"\x00\x00\x00\x00" \
+                     b"\x00\x00\x00\x00"
+
+
+def test_nt_challenge_create():
+    ft = messages.FileTime.unpack(b"\x11" * 8)
+    av = messages.TargetInfo()
+    av[messages.AvId.dns_domain_name] = u"test"
+
+    actual = messages.NTClientChallengeV2(time_stamp=ft, client_challenge=b"\x11" * 8, av_pairs=av)
+
+    assert actual.resp_type == 1
+    assert actual.hi_resp_type == 1
+    assert actual.time_stamp.pack() == b"\x11" * 8
+    assert actual.challenge_from_client == b"\x11" * 8
+    assert len(actual.av_pairs) == 2
+    assert actual.av_pairs[messages.AvId.dns_domain_name] == u"test"
+
+    assert actual.pack() == b"\x01" \
+                            b"\x01" \
+                            b"\x00\x00" \
+                            b"\x00\x00\x00\x00" \
+                            b"\x11\x11\x11\x11\x11\x11\x11\x11" \
+                            b"\x11\x11\x11\x11\x11\x11\x11\x11" \
+                            b"\x00\x00\x00\x00" \
+                            b"\x04\x00\x08\x00" \
+                            b"\x74\x00\x65\x00\x73\x00\x74\x00" \
+                            b"\x00\x00\x00\x00"
+
+
+def test_nt_challenge_unpack():
+    challenge = messages.NTClientChallengeV2.unpack(b"\x01"
+                                                    b"\x01"
+                                                    b"\x00\x00"
+                                                    b"\x00\x00\x00\x00"
+                                                    b"\x00\x00\x00\x00\x00\x00\x00\x00"
+                                                    b"\x00\x00\x00\x00\x00\x00\x00\x00"
+                                                    b"\x00\x00\x00\x00"
+                                                    b"\x00\x00\x00\x00")
+
+    assert challenge.resp_type == 1
+    assert challenge.hi_resp_type == 1
+    assert isinstance(challenge.time_stamp, messages.FileTime)
+    assert challenge.time_stamp.pack() == b"\x00\x00\x00\x00\x00\x00\x00\x00"
+    assert challenge.challenge_from_client == b"\x00\x00\x00\x00\x00\x00\x00\x00"
+    assert isinstance(challenge.av_pairs, messages.TargetInfo)
+    assert challenge.av_pairs.pack() == b"\x00\x00\x00\x00"
+
+
+def test_nt_challenge_unpack_invalid_size():
+    with pytest.raises(ValueError, match="Invalid NTClientChallengeV2 raw byte length"):
+        messages.NTClientChallengeV2.unpack(b"\x00")
+
+
+def test_nt_challenge_resp_type():
+    challenge = messages.NTClientChallengeV2()
+    assert challenge.resp_type == 1
+    challenge.resp_type = 2
+    assert challenge.resp_type == 2
+    assert challenge.pack()[:1] == b"\x02"
+
+
+def test_nt_challenge_hi_resp_type():
+    challenge = messages.NTClientChallengeV2()
+    assert challenge.hi_resp_type == 1
+    challenge.hi_resp_type = 2
+    assert challenge.hi_resp_type == 2
+    assert challenge.pack()[1:2] == b"\x02"
+
+
+def test_nt_challenge_client_challenge():
+    challenge = messages.NTClientChallengeV2()
+    assert challenge.challenge_from_client == b"\x00\x00\x00\x00\x00\x00\x00\x00"
+    challenge.challenge_from_client = b"\xFF" * 8
+    assert challenge.challenge_from_client == b"\xFF" * 8
+    assert challenge.pack()[16:24] == b"\xFF" * 8
+
+
+def test_nt_challenge_client_challenge_bad_length():
+    expected = "NTClientChallengeV2 ChallengeFromClient must be 8 bytes long"
+
+    with pytest.raises(ValueError, match=expected):
+        messages.NTClientChallengeV2(client_challenge=b"\x00")
+
+    challenge = messages.NTClientChallengeV2()
+    with pytest.raises(ValueError, match=expected):
+        challenge.challenge_from_client = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+
 def test_target_info_pack():
     target_info = messages.TargetInfo()
     target_info[messages.AvId.timestamp] = b"\x00\x00\x00\x00\x00\x00\x00\x00"

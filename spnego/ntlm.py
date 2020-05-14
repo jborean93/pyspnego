@@ -28,6 +28,7 @@ from spnego._ntlm_raw.crypto import (
     compute_response_v2,
     hmac_md5,
     lmowfv1,
+    md5,
     ntowfv1,
     ntowfv2,
     rc4init,
@@ -49,6 +50,7 @@ from spnego._ntlm_raw.messages import (
     FileTime,
     Negotiate,
     NegotiateFlags,
+    NTClientChallengeV2,
     TargetInfo,
     Version,
 )
@@ -56,7 +58,6 @@ from spnego._ntlm_raw.messages import (
 from spnego._text import (
     text_type,
     to_bytes,
-    to_native,
     to_text,
 )
 
@@ -368,38 +369,63 @@ class NTLMProxy(ContextProxy):
 
             else:
                 credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
+                server_challenge = self._challenge_msg.server_challenge
+                expected_mic = None
 
                 if len(auth.nt_challenge_response) > 24:
-                    client_challenge = auth.nt_challenge_response[32:40]
-                elif auth.flags & NegotiateFlags.extended_session_security:
-                    client_challenge = auth.lm_challenge_response[:8]
+                    # NTLMv2 message.
+                    nt_hash = ntowfv2(credential.username, credential.nt_hash, credential.domain)
+
+                    challenge = NTClientChallengeV2.unpack(auth.nt_challenge_response[16:])
+                    time = challenge.time_stamp
+                    client_challenge = challenge.challenge_from_client
+                    target_info = challenge.av_pairs
+
+                    expected_nt, expected_lm, key_exchange_key = compute_response_v2(
+                        nt_hash, server_challenge, client_challenge, time, target_info)
+
+                    if self._channel_bindings:
+                        if AvId.channel_bindings not in target_info:
+                            raise Exception("Invalid channel bindings")
+
+                        expected_bindings = target_info[AvId.channel_bindings]
+                        actual_bindings = md5(self._channel_bindings)
+                        if actual_bindings != expected_bindings:
+                            raise Exception("Invalid channel bindings")
+
+                    if target_info.get(AvId.flags, 0) & AvFlags.mic:
+                        expected_mic = auth.mic
+
                 else:
                     client_challenge = None
+                    if auth.flags & NegotiateFlags.extended_session_security:
+                        client_challenge = auth.lm_challenge_response[:8]
 
-                ntow = ntowfv2(credential.username, credential.nt_hash, credential.domain)
+                    expected_nt, expected_lm, key_exchange_key = compute_response_v1(
+                        auth.flags, credential.nt_hash, credential.lm_hash, server_challenge, client_challenge,
+                        no_lm_response=self._no_lm)
 
-                b_challenge = auth.nt_challenge_response[16:]
-                time = FileTime.unpack(b_challenge[8:16])
-                target_info = TargetInfo.unpack(b_challenge[28:-4])
+                auth_success = False
 
-                expected_nt, expected_lm, key_exchange_key = compute_response_v2(
-                    ntow, self._challenge_msg.server_challenge, client_challenge, time, target_info)
+                if auth.nt_challenge_response:
+                    auth_success = auth.nt_challenge_response == expected_nt
 
-                if expected_nt != auth.nt_challenge_response:
+                elif auth.lm_challenge_response:
+                    if self._no_lm:
+                        raise Exception("Only LM hash received but LM_COMPAT_LEVEL is set to not validate LM hashes")
+
+                    auth_success = auth.lm_challenge_response == expected_lm
+
+                if not auth_success:
                     raise Exception("Invalid credential")
-
-                if AvId.timestamp not in target_info and expected_lm != auth.lm_challenge_response:
-                    raise Exception("Invalid lm hash")
 
                 if auth.flags & NegotiateFlags.key_exch:
                     self._session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
                 else:
                     self._session_key = key_exchange_key
 
-                if target_info.get(AvId.flags, 0) & AvFlags.mic:
-                    expected_mic = auth.mic
+                if expected_mic:
                     auth.mic = b"\x00" * 16
-
                     actual_mic = hmac_md5(self._session_key,
                                           self._negotiate_msg.pack() + self._challenge_msg.pack() + auth.pack())
 

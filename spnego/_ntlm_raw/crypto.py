@@ -42,6 +42,7 @@ from spnego._ntlm_raw.des import (
 from spnego._ntlm_raw.messages import (
     FileTime,
     NegotiateFlags,
+    NTClientChallengeV2,
     TargetInfo,
 )
 
@@ -198,11 +199,11 @@ def compute_response_v2(nt_hash, server_challenge, client_challenge, time, av_pa
     .. _NTLM v2 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/5e550938-91d4-459f-b67d-75d70009e3f3
     """
-    temp = b"\x01\x01\x00\x00\x00\x00\x00\x00" + time.pack() + client_challenge + b"\x00\x00\x00\x00" + \
-           av_pairs.pack() + b"\x00\x00\x00\x00"
-    nt_proof_str = hmac_md5(nt_hash, server_challenge + temp)
+    temp = NTClientChallengeV2(time_stamp=time, client_challenge=client_challenge, av_pairs=av_pairs)
+    b_temp = temp.pack() + b"\x00\x00\x00\x00"
+    nt_proof_str = hmac_md5(nt_hash, server_challenge + b_temp)
 
-    nt_response = nt_proof_str + temp
+    nt_response = nt_proof_str + b_temp
     lm_response = hmac_md5(nt_hash, server_challenge + client_challenge) + client_challenge
     session_base_key = hmac_md5(nt_hash, nt_proof_str)
 

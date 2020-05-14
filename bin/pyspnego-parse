@@ -17,7 +17,6 @@ __metaclass__ = type
 import argparse
 import base64
 import hashlib
-import hmac
 import json
 import os.path
 import re
@@ -25,8 +24,6 @@ import struct
 import sys
 
 from datetime import datetime
-
-from ntlm_auth.des import DES
 
 from spnego._ntlm_raw.crypto import (
     hmac_md5,
@@ -44,6 +41,7 @@ from spnego._ntlm_raw.messages import (
     FileTime,
     Negotiate,
     NegotiateFlags,
+    NTClientChallengeV2,
     TargetInfo,
 )
 
@@ -881,19 +879,20 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
             nt_response['ResponseType'] = 'NTLMv2'
             nt_response['NTProofStr'] = to_text(base64.b16encode(nt_proof_str))
 
+            challenge = NTClientChallengeV2.unpack(nt_response_data[16:])
             b_challenge = nt_response_data[16:]
-            client_challenge = {
-                'RespType': struct.unpack("<B", b_challenge[:1])[0],
-                'HiRespType': struct.unpack("<B", b_challenge[1:2])[0],
+
+            nt_response['ClientChallenge'] = {
+                'RespType': challenge.resp_type,
+                'HiRespType': challenge.hi_resp_type,
                 'Reserved1': struct.unpack("<H", b_challenge[2:4])[0],
                 'Reserved2': struct.unpack("<I", b_challenge[4:8])[0],
-                'TimeStamp': str(FileTime.unpack(b_challenge[8:16])),
-                'ChallengeFromClient': to_text(base64.b16encode(b_challenge[16:24])),
+                'TimeStamp': str(challenge.time_stamp),
+                'ChallengeFromClient': to_text(base64.b16encode(challenge.challenge_from_client)),
                 'Reserved3': struct.unpack("<I", b_challenge[24:28])[0],
-                'AvPairs': _parse_ntlm_target_info(TargetInfo.unpack(b_challenge[28:-4])),
+                'AvPairs': _parse_ntlm_target_info(challenge.av_pairs),
                 'Reserved4': struct.unpack("<I", b_challenge[-4:])[0],
             }
-            nt_response['ClientChallenge'] = client_challenge
 
             if password:
                 response_key_nt = ntowfv2(msg['UserName'], password, msg['DomainName'])

@@ -88,7 +88,7 @@ def auth_local(server, username, password):
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
 
-        c = spnego.client(username, password, server, protocol='ntlm', options=spnego.NegotiateOptions.use_gssapi)
+        c = spnego.client(username, password, server, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         s = spnego.server(None, None, server, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         out_token = c.step()
         _ = c._requires_mech_list_mic  # Test out when a MIC is set
