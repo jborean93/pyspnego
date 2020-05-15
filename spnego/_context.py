@@ -4,14 +4,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-from abc import (
-    ABCMeta,
-    abstractmethod,
-)
-
-from collections import (
-    namedtuple,
-)
+import abc
+import collections
 
 from spnego._compat import (
     List,
@@ -65,7 +59,7 @@ def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], O
     return to_text(domain, nonstring='passthru'), to_text(username, nonstring='passthru')
 
 
-WrapResult = namedtuple('WrapResult', ['data', 'encrypted'])
+WrapResult = collections.namedtuple('WrapResult', ['data', 'encrypted'])
 """Result of the `wrap()` function.
 
 Attributes:
@@ -73,7 +67,7 @@ Attributes:
     encrypted (bool): Whether the data was encrypted (True) or not (False).
 """
 
-IOVWrapResult = namedtuple('IOVWrapResult', ['buffers', 'encrypted'])
+IOVWrapResult = collections.namedtuple('IOVWrapResult', ['buffers', 'encrypted'])
 """Result of the `wrap_iov()` function.
 
 Attributes:
@@ -81,7 +75,7 @@ Attributes:
     encrypted (bool): Whether the buffer data was encrypted (True) or not (False).
 """
 
-UnwrapResult = namedtuple('UnwrapResult', ['data', 'encrypted', 'qop'])
+UnwrapResult = collections.namedtuple('UnwrapResult', ['data', 'encrypted', 'qop'])
 """Result of the `unwrap()` function.
 
 Attributes:
@@ -90,7 +84,7 @@ Attributes:
     qop (int): The Quality of Protection used for the encrypted data.
 """
 
-IOVUnwrapResult = namedtuple('IOVUnwrapResult', ['buffers', 'encrypted', 'qop'])
+IOVUnwrapResult = collections.namedtuple('IOVUnwrapResult', ['buffers', 'encrypted', 'qop'])
 """Result of the `unwrap_iov()` function.
 
 Attributes:
@@ -249,7 +243,7 @@ class GSSMech(Enum):
             raise ValueError("'%s' is not a valid GSSMech OID" % oid)
 
 
-@add_metaclass(ABCMeta)
+@add_metaclass(abc.ABCMeta)
 class ContextProxy:
     """Base class for a authentication context.
 
@@ -302,11 +296,8 @@ class ContextProxy:
         self.username = username
         self.password = password
         self.spn = self._create_spn(service, hostname)
+        self.channel_bindings = channel_bindings
         self.options = NegotiateOptions(options)
-
-        self._channel_bindings = None
-        if self._channel_bindings:
-            self._channel_bindings = self._convert_channel_bindings(channel_bindings)
 
         self.context_req = context_req  # Generic context requirements.
         self._context_req = 0  # Provider specific context requirements.
@@ -357,7 +348,7 @@ class ContextProxy:
         return True
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def complete(self):  # type: () -> bool
         """Whether the context has completed the authentication process.
 
@@ -386,7 +377,7 @@ class ContextProxy:
         return ContextReq(attr)
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def negotiated_protocol(self):  # type: () -> text_type
         """The name of the negotiated protocol.
 
@@ -401,7 +392,7 @@ class ContextProxy:
         pass
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def session_key(self):  # type: () -> bytes
         """The derived session key.
 
@@ -414,7 +405,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def step(self, in_token=None):  # type: (Optional[bytes]) -> Optional[bytes]
         """Performs a negotiation step.
 
@@ -449,7 +440,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def wrap(self, data, encrypt=True, qop=None):  # type: (bytes, bool, Optional[int]) -> WrapResult
         """Wrap a message, optionally with encryption.
 
@@ -481,7 +472,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def wrap_iov(self, iov, encrypt=True, qop=None):
         # type: (List[IOVBuffer, ...], bool, Optional[int]) -> IOVWrapResult
         """Wrap/Encrypt an IOV buffer.
@@ -509,7 +500,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def unwrap(self, data):  # type: (bytes) -> UnwrapResult
         """Unwrap a message.
 
@@ -538,7 +529,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def unwrap_iov(self, iov):  # type: (List[IOVBuffer, ...]) -> IOVUnwrapResult
         """Unwrap/Decrypt an IOV buffer.
 
@@ -562,7 +553,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def sign(self, data, qop=None):  # type: (bytes, Optional[int]) -> bytes
         """Generates a signature/MIC for a message.
 
@@ -586,7 +577,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def verify(self, data, mic):  # type: (bytes, bytes) -> int
         """Verify the signature/MIC for a message.
 
@@ -613,7 +604,7 @@ class ContextProxy:
     # Internal properties/functions not for public use.
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def _context_attr_map(self):  # type: () -> List[Tuple[ContextReq, int], ...]
         """Map the generic ContextReq into the provider specific flags.
 
@@ -684,7 +675,7 @@ class ContextProxy:
 
         return provider_iov
 
-    @abstractmethod
+    @abc.abstractmethod
     def _create_spn(self, service, principal):
         # type: (Optional[text_type], Optional[text_type]) -> Optional[text_type]
         """Creates the SPN.
@@ -701,7 +692,7 @@ class ContextProxy:
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> any
         """Convert a IOVBuffer object to a provider specific IOVBuffer value.
 
@@ -714,20 +705,6 @@ class ContextProxy:
             any: The provider specific buffer value
         """
         pass
-
-    def _convert_channel_bindings(self, bindings):  # type: (Optional[GssChannelBindings]) -> any
-        """Convert a GssChannelBindings object to a provider specific value.
-
-        Converts the common GssChannelBindings object to the provider specific value that it can use when stepping
-        through the authentication token.
-
-        Args:
-            bindings: The GssChannelBindings object to convert.
-
-        Returns:
-            Optional[any]: The provider specific value or None if no bindings where specified.
-        """
-        return bindings.pack()
 
     def _reset_ntlm_crypto_state(self, outgoing=True):  # type: (bool) -> None
         """Reset the NTLM crypto handles after signing/verifying the SPNEGO mechListMIC.

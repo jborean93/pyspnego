@@ -4,9 +4,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-from collections import (
-    namedtuple,
-)
+import collections
 
 from spnego._compat import (
     IntFlag,
@@ -30,7 +28,7 @@ class BufferType(IntFlag):
     mic_token = 12  # SECBUFFER_MECHLIST_SIGNATURE | GSS_IOV_BUFFER_TYPE_MIC_TOKEN
 
 
-IOVBuffer = namedtuple('IOVBuffer', ['type', 'data'])
+IOVBuffer = collections.namedtuple('IOVBuffer', ['type', 'data'])
 """A buffer to pass as a list to :meth:`wrap_iov()`.
 
 Defines the buffer inside a list that is passed to :meth:`wrap_iov()`. A list of these buffers are also returned in the

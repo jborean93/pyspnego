@@ -29,14 +29,14 @@ def _obj_str(obj, default):
         return default
 
 
-def to_bytes(obj, encoding='utf-8', nonstring='str'):
+def to_bytes(obj, encoding='utf-8', errors='strict', nonstring='str'):
     if isinstance(obj, binary_type):
         return obj
     elif isinstance(obj, text_type):
-        return obj.encode(encoding)
+        return obj.encode(encoding, errors)
 
     if nonstring == 'str':
-        return to_bytes(_obj_str(obj, b""), encoding=encoding)
+        return to_bytes(_obj_str(obj, b""), encoding=encoding, errors=errors)
     elif nonstring == 'passthru':
         return obj
     elif nonstring == 'empty':
@@ -45,11 +45,11 @@ def to_bytes(obj, encoding='utf-8', nonstring='str'):
         raise ValueError("Invalid nonstring value '%s', expecting str, passthru, or empty" % nonstring)
 
 
-def to_text(obj, encoding='utf-8', nonstring='str'):
+def to_text(obj, encoding='utf-8', errors='strict', nonstring='str'):
     if isinstance(obj, text_type):
         return obj
     elif isinstance(obj, binary_type):
-        return obj.decode(encoding)
+        return obj.decode(encoding, errors)
 
     if nonstring == 'str':
         try:
@@ -57,7 +57,7 @@ def to_text(obj, encoding='utf-8', nonstring='str'):
         except (AttributeError, UnicodeError):
             obj = _obj_str(obj, u"")
 
-        return to_text(obj, encoding=encoding)
+        return to_text(obj, errors=errors, encoding=encoding)
     elif nonstring == 'passthru':
         return obj
     elif nonstring == 'empty':

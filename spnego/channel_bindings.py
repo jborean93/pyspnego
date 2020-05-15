@@ -5,7 +5,6 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import struct
-import sys
 
 from spnego._compat import (
     Optional,
@@ -13,10 +12,6 @@ from spnego._compat import (
     Union,
 
     IntEnum,
-)
-
-from spnego._text import (
-    to_native,
 )
 
 

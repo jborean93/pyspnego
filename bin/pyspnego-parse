@@ -254,10 +254,10 @@ def _get_flag_ids2(value, enum_type=None):
 
     labels = enum_type.native_labels() if enum_type else value.native_labels()
 
-    for k, v in labels.items():
+    for v, name in labels.items():
         if value & v == v:
             value &= ~v
-            flags.append("%s (%d)" % (k, v))
+            flags.append("%s (%d)" % (name, v))
 
     if value != 0:
         flags.append('UNKNOWN (%d)' % value)
@@ -285,9 +285,9 @@ def _get_enum_id(value, enum_class):
 def _get_enum_id2(value, scalar=False):
     enum_name = 'UNKNOWN'
 
-    for k, v in value.native_labels().items():
+    for v, name in value.native_labels().items():
         if value == v:
-            enum_name = k
+            enum_name = name
             break
 
     if scalar:

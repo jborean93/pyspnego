@@ -265,9 +265,6 @@ class NegotiateProxy(ContextProxy):
     def _requires_mech_list_mic(self):
         return self._context._requires_mech_list_mic
 
-    def _convert_channel_bindings(self, bindings):
-        return bindings  # SPNEGO layer uses the generic version, the underlying context has it's own specific way.
-
     def _convert_iov_buffer(self, iov):
         pass  # Handled in the underlying context.
 
@@ -277,7 +274,7 @@ class NegotiateProxy(ContextProxy):
     def _rebuild_context_list(self, mech_list=None, in_token=None):
         # type: (Optional[List[str]], Optional[bytes]) -> List[str]
 
-        gssapi_protocols = [p for p in GSSAPIProxy.available_protocols(context_req=self.context_req)
+        gssapi_protocols = [p for p in GSSAPIProxy.available_protocols(options=self.options)
                             if p != 'negotiate']
         available_mechs = [getattr(GSSMech, p) for p in gssapi_protocols]
         available_mechs.append(GSSMech.ntlm)  # We can always offer NTLM.
@@ -306,7 +303,7 @@ class NegotiateProxy(ContextProxy):
             if mech.name in gssapi_protocols:
                 try:
                     context = GSSAPIProxy(self.username, self.password, self._hostname, self._service,
-                                          self._channel_bindings, self.context_req, self.usage, protocol=mech.name,
+                                          self.channel_bindings, self.context_req, self.usage, protocol=mech.name,
                                           is_wrapped=True)
                     first_token = context.step(in_token=in_token)
                 except Exception as e:
@@ -315,7 +312,7 @@ class NegotiateProxy(ContextProxy):
 
             else:
                 context = NTLMProxy(self.username, self.password, self._hostname, self._service,
-                                    self._channel_bindings, self.context_req, self.usage, is_wrapped=True)
+                                    self.channel_bindings, self.context_req, self.usage, is_wrapped=True)
                 first_token = context.step(in_token=in_token)
 
             # We were able to build the context, add it to the list.

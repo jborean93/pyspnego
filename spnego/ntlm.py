@@ -5,7 +5,6 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
-import hashlib
 import logging
 import os
 import socket
@@ -384,13 +383,13 @@ class NTLMProxy(ContextProxy):
                     expected_nt, expected_lm, key_exchange_key = compute_response_v2(
                         nt_hash, server_challenge, client_challenge, time, target_info)
 
-                    if self._channel_bindings:
+                    if self.channel_bindings:
                         if AvId.channel_bindings not in target_info:
                             raise Exception("Invalid channel bindings")
 
                         expected_bindings = target_info[AvId.channel_bindings]
-                        actual_bindings = md5(self._channel_bindings)
-                        if actual_bindings != expected_bindings:
+                        actual_bindings = self._get_native_channel_bindings()
+                        if expected_bindings not in [actual_bindings, b"\x00" * 16]:
                             raise Exception("Invalid channel bindings")
 
                     if target_info.get(AvId.flags, 0) & AvFlags.mic:
@@ -536,7 +535,7 @@ class NTLMProxy(ContextProxy):
             #        AvId.dns_computer_name not in target_info and AvId.dns_domain_name not in target_info:
             #    raise Exception("STATUS_LOGON_FAILURE")
 
-            cbt = hashlib.md5(self._channel_bindings).digest() if self._channel_bindings else b"\x00" * 16
+            cbt = self._get_native_channel_bindings() if self.channel_bindings else b"\x00" * 16
             target_info[AvId.channel_bindings] = cbt
 
             # TODO: Find a way to pass in untrusted SPN.
@@ -566,6 +565,19 @@ class NTLMProxy(ContextProxy):
 
     def _convert_iov_buffer(self, iov):
         pass  # IOV is not used in this NTLM provider like gss-ntlmssp.
+
+    def _get_native_channel_bindings(self):
+        try:
+            return self._get_native_channel_bindings.result
+        except AttributeError:
+            pass
+
+        native_bindings = None
+        if self.channel_bindings:
+            native_bindings = md5(self.channel_bindings.pack())
+
+        self._get_native_channel_bindings.result = native_bindings
+        return native_bindings
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
         self._handle_out.reset() if outgoing else self._handle_in.reset()

@@ -254,8 +254,16 @@ class GSSAPIProxy(ContextProxy):
             context_kwargs['mech'] = mech
             context_kwargs['flags'] = self._context_req
 
-        self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, channel_bindings=self._channel_bindings,
-                                               **context_kwargs)
+            if self.channel_bindings:
+                context_kwargs['channel_bindings'] = ChannelBindings(
+                    initiator_address_type=self.channel_bindings.initiator_addrtype,
+                    initiator_address=self.channel_bindings.initiator_address,
+                    acceptor_address_type=self.channel_bindings.acceptor_addrtype,
+                    acceptor_address=self.channel_bindings.acceptor_address,
+                    application_data=self.channel_bindings.application_data
+                )
+
+        self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, **context_kwargs)
 
     @classmethod
     def available_protocols(cls, options=None):
@@ -363,13 +371,6 @@ class GSSAPIProxy(ContextProxy):
             return False
         else:
             return b"\x01" in res
-
-    def _convert_channel_bindings(self, bindings):
-        return ChannelBindings(initiator_address_type=bindings.initiator_addrtype,
-                               initiator_address=bindings.initiator_address,
-                               acceptor_address_type=bindings.acceptor_addrtype,
-                               acceptor_address=bindings.acceptor_address,
-                               application_data=bindings.application_data)
 
     def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> Tuple[int, bool, Optional[bytes]]
         buffer_data = None

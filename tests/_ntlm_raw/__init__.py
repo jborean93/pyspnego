@@ -28,3 +28,9 @@ TEST_NTLMV1_FLAGS = NegotiateFlags.key_exch | NegotiateFlags.key_56 | NegotiateF
 TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS = NegotiateFlags.key_56 | NegotiateFlags.version | \
     NegotiateFlags.extended_session_security | NegotiateFlags.target_type_server | NegotiateFlags.always_sign | \
     NegotiateFlags.ntlm | NegotiateFlags.seal | NegotiateFlags.sign | NegotiateFlags.oem | NegotiateFlags.unicode
+
+# https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/125f7a94-933e-4023-a146-a449e49bf774
+TEST_NTLMV2_FLAGS = NegotiateFlags.key_exch | NegotiateFlags.key_56 | NegotiateFlags.key_128 | \
+                    NegotiateFlags.version | NegotiateFlags.target_info | NegotiateFlags.extended_session_security | \
+                    NegotiateFlags.target_type_server | NegotiateFlags.always_sign | NegotiateFlags.ntlm | \
+                    NegotiateFlags.seal | NegotiateFlags.sign | NegotiateFlags.oem | NegotiateFlags.unicode

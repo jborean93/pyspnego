@@ -4,11 +4,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import collections
 import struct
-
-from collections import (
-    namedtuple,
-)
 
 from spnego._asn1 import (
     pack_asn1,
@@ -30,9 +27,11 @@ from spnego._context import (
 )
 
 
-NegTokenInit = namedtuple('NegTokenInit', ['mech_types', 'req_flags', 'mech_token', 'mech_list_mic'])
-NegTokenInit2 = namedtuple('NegTokenInit2', ['mech_types', 'req_flags', 'mech_token', 'neg_hints', 'mech_list_mic'])
-NegTokenResp = namedtuple('NegTokenResp', ['neg_state', 'supported_mech', 'response_token', 'mech_list_mic'])
+NegTokenInit = collections.namedtuple('NegTokenInit', ['mech_types', 'req_flags', 'mech_token', 'mech_list_mic'])
+NegTokenInit2 = collections.namedtuple('NegTokenInit2', ['mech_types', 'req_flags', 'mech_token', 'neg_hints',
+                                                         'mech_list_mic'])
+NegTokenResp = collections.namedtuple('NegTokenResp', ['neg_state', 'supported_mech', 'response_token',
+                                                       'mech_list_mic'])
 
 
 class NegState:

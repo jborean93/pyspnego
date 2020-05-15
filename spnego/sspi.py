@@ -123,8 +123,8 @@ class SSPIProxy(ContextProxy):
         if in_token:
             sec_tokens.append(SecBuffer(SecBufferType.token, in_token))
 
-        if self._channel_bindings:
-            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self._channel_bindings))
+        if self.channel_bindings:
+            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self._get_native_channel_bindings()))
 
         in_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
         out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
@@ -286,3 +286,16 @@ class SSPIProxy(ContextProxy):
             return
 
         return u"%s\\%s" % (service.upper() if service else u"HOST", principal or u"unspecified")
+
+    def _get_native_channel_bindings(self):
+        try:
+            return self._get_native_channel_bindings.result
+        except AttributeError:
+            pass
+
+        native_bindings = None
+        if self.channel_bindings:
+            native_bindings = self.channel_bindings.pack()
+
+        self._get_native_channel_bindings.result = native_bindings
+        return native_bindings
