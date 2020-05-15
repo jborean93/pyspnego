@@ -293,8 +293,8 @@ class ContextProxy:
         if self.protocol not in self.available_protocols():
             raise ValueError("Protocol %s is not available" % self.protocol)
 
-        self.username = username
-        self.password = password
+        self.username = to_text(username, nonstring='passthru')
+        self.password = to_text(password, nonstring='passthru')
         self.spn = self._create_spn(service, hostname)
         self.channel_bindings = channel_bindings
         self.options = NegotiateOptions(options)

@@ -158,6 +158,7 @@ class AvFlags(IntFlag):
     .. _AV_PAIR:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/83f5e789-660d-4781-8491-5f8c6641f75e
     """
+    none = 0x00000000
     constrained = 0x00000001
     mic = 0x00000002
     untrusted_spn = 0x00000004
@@ -165,6 +166,7 @@ class AvFlags(IntFlag):
     @classmethod
     def native_labels(cls):  # type: () -> Dict[int, str]
         return {
+            AvFlags.none: 'NONE',
             AvFlags.constrained: 'AUTHENTICATION_CONSTRAINED',
             AvFlags.mic: 'MIC_PROVIDED',
             AvFlags.untrusted_spn: 'UNTRUSTED_SPN_SOURCE',

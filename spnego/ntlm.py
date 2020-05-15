@@ -63,7 +63,7 @@ from spnego._text import (
 log = logging.getLogger(__name__)
 
 
-def _get_credential_file():  # type: () -> Optional[bytes]
+def _get_credential_file():  # type: () -> Optional[text_type]
     """Get the path to the NTLM credential store.
 
     Returns the path to the NTLM credential store specified by the environment variable `NTLM_USER_FILE`.
@@ -75,13 +75,13 @@ def _get_credential_file():  # type: () -> Optional[bytes]
     if not user_file_path:
         return
 
-    b_user_file_path = to_bytes(user_file_path, encoding='utf-8')
-    if os.path.exists(b_user_file_path):
-        return b_user_file_path
+    user_file_path = to_text(user_file_path, encoding='utf-8')
+    if os.path.isfile(user_file_path):
+        return user_file_path
 
 
 def _get_credential(store, username=None, domain=None):
-    # type: (bytes, Optional[text_type], Optional[text_type]) -> Tuple[bytes, bytes]
+    # type: (text_type, Optional[text_type], Optional[text_type]) -> Tuple[bytes, bytes]
     """Look up NTLM credentials from the common flat file.
 
     Retrieves the LM and NT hash for use with authentication or validating a credential from an initiator.
@@ -127,7 +127,7 @@ def _get_credential(store, username=None, domain=None):
     domain = domain or u""
 
     def process_line(line):
-        line_split = line.split(':')
+        line_split = to_text(line).split(':')
 
         if len(line_split) == 3:
             return line_split[0], line_split[1], line_split[2], None, None
@@ -139,7 +139,7 @@ def _get_credential(store, username=None, domain=None):
 
             return line_domain or u"", line_user, None, lm_hash, nt_hash
 
-    with open(store, mode='r', encoding='utf-8') as fd:
+    with open(store, mode='rb') as fd:
         for line in fd:
             line_details = process_line(line)
             if not line_details:
@@ -184,7 +184,8 @@ class NTLMProxy(ContextProxy):
                                         protocol, options, is_wrapped)
 
         self._complete = False
-        self._credential = _NTLMCredential(username=self.username, password=self.password)
+        domain, user = split_username(self.username)
+        self._credential = _NTLMCredential(username=user, domain=domain, password=self.password)
 
         # gss-ntlmssp uses the env var 'LM_COMPAT_LEVEL' to control the NTLM compatibility level. To try and make our
         # NTLM implementation similar in functionality we will also use that behaviour.
