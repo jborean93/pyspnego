@@ -37,6 +37,14 @@ stages:
         versionSpec: $(python.version)
 
     - script: |
+        sudo apt-get install -y \
+          gcc \
+          gss-ntlmssp \
+          libkrb5-dev \
+          python-dev
+      displayName: Install system requirements
+
+    - script: |
         echo "Installing baseline pip packages"
         python -m pip install --upgrade pip setuptools wheel coverage -c tests/constraints.txt
 

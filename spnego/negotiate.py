@@ -307,7 +307,7 @@ class NegotiateProxy(ContextProxy):
                                           is_wrapped=True)
                     first_token = context.step(in_token=in_token)
                 except Exception as e:
-                    log.debug("Failed to create gssapi context for SPNEGO protocol %s: %s", mech.name, str(e))
+                    log.debug("Failed to create gssapi context for SPNEGO protocol %s: %s", mech.name, to_text(e))
                     continue
 
             else:

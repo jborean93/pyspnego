@@ -22,6 +22,10 @@ from spnego._text import (
     to_text,
 )
 
+from spnego.gssapi import (
+    GSSAPIProxy,
+)
+
 
 @contextlib.contextmanager
 def temp_os_environ(key, value):
@@ -201,6 +205,57 @@ def test_ntlm_auth(tmpdir):
         assert auth_response is None
         assert c.session_key
         assert s.session_key
+        assert c.complete
+        assert s.complete
+
+        assert c.negotiated_protocol == 'ntlm'
+        assert s.negotiated_protocol == 'ntlm'
+
+        # Client wrap
+        _message_test(c, s)
+
+
+@pytest.mark.skipif('ntlm' not in GSSAPIProxy.available_protocols(),
+                    reason='Test requires NTLM to be available through GSSAPI')
+@pytest.mark.parametrize('client_opt, server_opt', [
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi),
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm),
+])
+def test_gssapi_ntlm_auth(client_opt, server_opt, tmpdir):
+    with ntlm_cred(tmpdir) as (username, password):
+        # Build the initial context and assert the defaults.
+        c = spnego.client(username, password, protocol='ntlm', options=client_opt)
+        s = spnego.server(None, None, protocol='ntlm', options=server_opt)
+
+        assert not c.complete
+        assert not s.complete
+
+        # Build negotiate msg
+        negotiate = c.step()
+
+        assert isinstance(negotiate, bytes)
+        assert not c.complete
+        assert not s.complete
+
+        # Process negotiate msg
+        challenge = s.step(negotiate)
+
+        assert isinstance(challenge, bytes)
+        assert not c.complete
+        assert not s.complete
+
+        # Process challenge and build authenticate
+        authenticate = c.step(challenge)
+
+        assert isinstance(authenticate, bytes)
+        assert c.complete
+        assert not s.complete
+
+        # Process authenticate
+        auth_response = s.step(authenticate)
+
+        assert auth_response is None
         assert c.complete
         assert s.complete
 
