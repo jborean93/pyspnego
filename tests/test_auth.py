@@ -105,12 +105,12 @@ def test_invalid_protocol():
 @pytest.mark.parametrize('use_gssapi', [True, False])
 def test_negotiate_through_python_ntlm(use_gssapi, tmpdir, monkeypatch):
     if use_gssapi:
-        # Skip the tests if gss-ntlmssp is not available.
+        # Skip this test if gss-ntlmssp is not available.
         if 'ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     else:
-        # Ensure we present that gss-ntlmssp is not available to force the usage of NTLMProxy.
+        # Make sure we pretend that gss-ntlmssp is not available to force the use of our NTLMProxy.
         def ntlm_avail(*args, **kwargs):
             return False
         monkeypatch.setattr(spnego.gssapi, '_gss_ntlmssp_available', ntlm_avail)
@@ -120,48 +120,36 @@ def test_negotiate_through_python_ntlm(use_gssapi, tmpdir, monkeypatch):
         c = spnego.client(username, password, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
         s = spnego.server(None, None, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
 
-        assert not c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
         negotiate = c.step()
 
         assert isinstance(negotiate, bytes)
-        assert not c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
         challenge = s.step(negotiate)
 
         assert isinstance(challenge, bytes)
-        assert not c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
         authenticate = c.step(challenge)
 
         assert isinstance(authenticate, bytes)
-        assert c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
         mech_list_mic = s.step(authenticate)
 
         assert isinstance(mech_list_mic, bytes)
-        assert c.session_key
-        assert s.session_key
         assert not c.complete
         assert s.complete
 
         mech_list_resp = c.step(mech_list_mic)
 
         assert mech_list_resp is None
-        assert c.session_key
-        assert s.session_key
         assert c.complete
         assert s.complete
         assert c.negotiated_protocol == 'ntlm'
@@ -176,6 +164,8 @@ def test_ntlm_auth(tmpdir):
         c = spnego.client(username, password, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
+        assert not c.session_key
+        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
@@ -183,6 +173,8 @@ def test_ntlm_auth(tmpdir):
         negotiate = c.step()
 
         assert isinstance(negotiate, bytes)
+        assert not c.session_key
+        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
@@ -190,6 +182,8 @@ def test_ntlm_auth(tmpdir):
         challenge = s.step(negotiate)
 
         assert isinstance(challenge, bytes)
+        assert not c.session_key
+        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
@@ -197,6 +191,8 @@ def test_ntlm_auth(tmpdir):
         authenticate = c.step(challenge)
 
         assert isinstance(authenticate, bytes)
+        assert c.session_key
+        assert not s.session_key
         assert c.complete
         assert not s.complete
 
@@ -204,6 +200,8 @@ def test_ntlm_auth(tmpdir):
         auth_response = s.step(authenticate)
 
         assert auth_response is None
+        assert c.session_key
+        assert s.session_key
         assert c.complete
         assert s.complete
 
