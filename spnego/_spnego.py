@@ -271,7 +271,7 @@ def pack_neg_token_resp(neg_state=None, supported_mech=None, response_token=None
     """
     elements = []
 
-    if neg_state:
+    if neg_state is not None:
         elements.append(pack_asn1(TagClass.context_specific, True, 0, pack_asn1_enumerated(neg_state)))
 
     if supported_mech:

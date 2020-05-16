@@ -105,7 +105,7 @@ class NegotiateProxy(ContextProxy):
 
     @property
     def session_key(self):
-        return self._context.session_key
+        return self._context.session_key if self._context else False
 
     def step(self, in_token=None):
         log.debug("SPNEGO step input: %s", to_text(base64.b64encode(in_token or b"")))
@@ -218,7 +218,7 @@ class NegotiateProxy(ContextProxy):
             # https://tools.ietf.org/html/rfc4178#section-4.2.2
             supported_mech = None
             if not self._mech_sent:
-                supported_mech = self._mech
+                supported_mech = self._context_list[0][0].value
                 self._mech_sent = True
 
             state = NegState.accept_incomplete

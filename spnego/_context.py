@@ -151,6 +151,8 @@ class NegotiateOptions(IntFlag):
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
     """
+    none = 0x00000000
+
     # Force a specific provider
     use_sspi = 0x00000001
     use_gssapi = 0x00000002

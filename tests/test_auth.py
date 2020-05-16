@@ -7,17 +7,13 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import contextlib
 import os
+import pytest
+
 import spnego
 
 from spnego._context import (
     WrapResult,
     UnwrapResult,
-)
-
-from spnego._ntlm_raw.messages import (
-    Authenticate,
-    Challenge,
-    Negotiate,
 )
 
 from spnego._text import (
@@ -34,7 +30,8 @@ def temp_os_environ(key, value):
     del os.environ[key]
 
 
-def test_ntlm_auth(tmpdir):
+@contextlib.contextmanager
+def ntlm_cred(tmpdir):
     username = u'Dȫm̈Ąiᴞ\\ÜseӜ'
     password = u'Pӓ$sw0r̈d'
 
@@ -43,6 +40,125 @@ def test_ntlm_auth(tmpdir):
         fd.write(to_bytes(u'%s:%s:%s' % (username.split('\\')[0], username.split('\\')[1], password)))
 
     with temp_os_environ('NTLM_USER_FILE', tmp_creds):
+        yield username, password
+
+
+def _message_test(client, server):
+    # Client wrap
+    plaintext = os.urandom(32)
+
+    c_wrap_result = client.wrap(plaintext)
+
+    assert isinstance(c_wrap_result, WrapResult)
+    assert c_wrap_result.encrypted
+    assert c_wrap_result.data != plaintext
+
+    # Server unwrap
+    s_unwrap_result = server.unwrap(c_wrap_result.data)
+
+    assert isinstance(s_unwrap_result, UnwrapResult)
+    assert s_unwrap_result.data == plaintext
+    assert s_unwrap_result.encrypted
+    assert s_unwrap_result.qop == 0
+
+    # Server wrap
+    plaintext = os.urandom(17)
+
+    s_wrap_result = server.wrap(plaintext)
+
+    assert isinstance(s_wrap_result, WrapResult)
+    assert s_wrap_result.encrypted
+    assert s_wrap_result.data != plaintext
+
+    # Client unwrap
+    c_unwrap_result = client.unwrap(s_wrap_result.data)
+
+    assert isinstance(c_unwrap_result, UnwrapResult)
+    assert c_unwrap_result.data == plaintext
+    assert c_unwrap_result.encrypted
+    assert c_unwrap_result.qop == 0
+
+    # Client sign, server verify
+    plaintext = os.urandom(3)
+
+    c_sig = client.sign(plaintext)
+    server.verify(plaintext, c_sig)
+
+    # Server sign, client verify
+    plaintext = os.urandom(9)
+
+    s_sig = server.sign(plaintext)
+    client.verify(plaintext, s_sig)
+
+
+def test_invalid_protocol():
+    expected = "Invalid protocol specified 'fake', must be kerberos, negotiate, or ntlm"
+
+    with pytest.raises(ValueError, match=expected):
+        spnego.client(None, None, protocol='fake')
+
+    with pytest.raises(ValueError, match=expected):
+        spnego.server(None, None, protocol='fake')
+
+
+def test_negotiate_through_python_ntlm(tmpdir):
+    with ntlm_cred(tmpdir) as (username, password):
+        # Build the initial context and assert the defaults.
+        c = spnego.client(username, password, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
+        s = spnego.server(None, None, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
+
+        assert not c.session_key
+        assert not s.session_key
+        assert not c.complete
+        assert not s.complete
+
+        negotiate = c.step()
+
+        assert isinstance(negotiate, bytes)
+        assert not c.session_key
+        assert not s.session_key
+        assert not c.complete
+        assert not s.complete
+
+        challenge = s.step(negotiate)
+
+        assert isinstance(challenge, bytes)
+        assert not c.session_key
+        assert not s.session_key
+        assert not c.complete
+        assert not s.complete
+
+        authenticate = c.step(challenge)
+
+        assert isinstance(authenticate, bytes)
+        assert c.session_key
+        assert not s.session_key
+        assert not c.complete
+        assert not s.complete
+
+        mech_list_mic = s.step(authenticate)
+
+        assert isinstance(mech_list_mic, bytes)
+        assert c.session_key
+        assert s.session_key
+        assert not c.complete
+        assert s.complete
+
+        mech_list_resp = c.step(mech_list_mic)
+
+        assert mech_list_resp is None
+        assert c.session_key
+        assert s.session_key
+        assert c.complete
+        assert s.complete
+        assert c.negotiated_protocol == 'ntlm'
+        assert s.negotiated_protocol == 'ntlm'
+
+        _message_test(c, s)
+
+
+def test_ntlm_auth(tmpdir):
+    with ntlm_cred(tmpdir) as (username, password):
         # Build the initial context and assert the defaults.
         c = spnego.client(username, password, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
@@ -55,6 +171,7 @@ def test_ntlm_auth(tmpdir):
         # Build negotiate msg
         negotiate = c.step()
 
+        assert isinstance(negotiate, bytes)
         assert not c.session_key
         assert not s.session_key
         assert not c.complete
@@ -63,6 +180,7 @@ def test_ntlm_auth(tmpdir):
         # Process negotiate msg
         challenge = s.step(negotiate)
 
+        assert isinstance(challenge, bytes)
         assert not c.session_key
         assert not s.session_key
         assert not c.complete
@@ -71,6 +189,7 @@ def test_ntlm_auth(tmpdir):
         # Process challenge and build authenticate
         authenticate = c.step(challenge)
 
+        assert isinstance(authenticate, bytes)
         assert c.session_key
         assert not s.session_key
         assert c.complete
@@ -80,51 +199,13 @@ def test_ntlm_auth(tmpdir):
         auth_response = s.step(authenticate)
 
         assert auth_response is None
+        assert c.session_key
         assert s.session_key
+        assert c.complete
         assert s.complete
 
+        assert c.negotiated_protocol == 'ntlm'
+        assert s.negotiated_protocol == 'ntlm'
+
         # Client wrap
-        plaintext = os.urandom(32)
-
-        c_wrap_result = c.wrap(plaintext)
-
-        assert isinstance(c_wrap_result, WrapResult)
-        assert c_wrap_result.encrypted
-        assert c_wrap_result.data != plaintext
-
-        # Server unwrap
-        s_unwrap_result = s.unwrap(c_wrap_result.data)
-
-        assert isinstance(s_unwrap_result, UnwrapResult)
-        assert s_unwrap_result.data == plaintext
-        assert s_unwrap_result.encrypted
-        assert s_unwrap_result.qop == 0
-
-        # Server wrap
-        plaintext = os.urandom(17)
-
-        s_wrap_result = s.wrap(plaintext)
-
-        assert isinstance(s_wrap_result, WrapResult)
-        assert s_wrap_result.encrypted
-        assert s_wrap_result.data != plaintext
-
-        # Client unwrap
-        c_unwrap_result = c.unwrap(s_wrap_result.data)
-
-        assert isinstance(c_unwrap_result, UnwrapResult)
-        assert c_unwrap_result.data == plaintext
-        assert c_unwrap_result.encrypted
-        assert c_unwrap_result.qop == 0
-
-        # Client sign, server verify
-        plaintext = os.urandom(3)
-
-        c_sig = c.sign(plaintext)
-        s.verify(plaintext, c_sig)
-
-        # Server sign, client verify
-        plaintext = os.urandom(9)
-
-        s_sig = s.sign(plaintext)
-        c.verify(plaintext, s_sig)
+        _message_test(c, s)

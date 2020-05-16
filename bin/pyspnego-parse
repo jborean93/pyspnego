@@ -1003,8 +1003,8 @@ def _parse_spnego_resp(raw_data, secret=None, encoding=None):
             }
 
     msg = {
-        'negState': _get_enum_id(raw_data[0], NegotiateState),
-        'negstate_raw': raw_data[0],
+        'negState': _get_enum_id(raw_data[0], NegotiateState) if 0 in raw_data else None,
+        'negstate_raw': raw_data[0] if 0 in raw_data else None,
         'supportedMech': _get_enum_id(raw_data[1], MechTypes) if 1 in raw_data else None,
         'responseToken': response_token,
         'mechListMIC': to_text(base64.b16encode(raw_data[3])) if 3 in raw_data else None,
