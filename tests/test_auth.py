@@ -10,6 +10,7 @@ import os
 import pytest
 
 import spnego
+import spnego.gssapi
 
 from spnego._context import (
     WrapResult,
@@ -20,10 +21,6 @@ from spnego._text import (
     to_bytes,
     to_native,
     to_text,
-)
-
-from spnego.gssapi import (
-    GSSAPIProxy,
 )
 
 
@@ -105,7 +102,19 @@ def test_invalid_protocol():
         spnego.server(None, None, protocol='fake')
 
 
-def test_negotiate_through_python_ntlm(tmpdir):
+@pytest.mark.parametrize('use_gssapi', [True, False])
+def test_negotiate_through_python_ntlm(use_gssapi, tmpdir, monkeypatch):
+    if use_gssapi:
+        # Skip the tests if gss-ntlmssp is not available.
+        if 'ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through GSSAPI')
+
+    else:
+        # Ensure we present that gss-ntlmssp is not available to force the usage of NTLMProxy.
+        def ntlm_avail(*args, **kwargs):
+            return False
+        monkeypatch.setattr(spnego.gssapi, '_gss_ntlmssp_available', ntlm_avail)
+
     with ntlm_cred(tmpdir) as (username, password):
         # Build the initial context and assert the defaults.
         c = spnego.client(username, password, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
@@ -167,8 +176,6 @@ def test_ntlm_auth(tmpdir):
         c = spnego.client(username, password, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
-        assert not c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
@@ -176,8 +183,6 @@ def test_ntlm_auth(tmpdir):
         negotiate = c.step()
 
         assert isinstance(negotiate, bytes)
-        assert not c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
@@ -185,8 +190,6 @@ def test_ntlm_auth(tmpdir):
         challenge = s.step(negotiate)
 
         assert isinstance(challenge, bytes)
-        assert not c.session_key
-        assert not s.session_key
         assert not c.complete
         assert not s.complete
 
@@ -194,8 +197,6 @@ def test_ntlm_auth(tmpdir):
         authenticate = c.step(challenge)
 
         assert isinstance(authenticate, bytes)
-        assert c.session_key
-        assert not s.session_key
         assert c.complete
         assert not s.complete
 
@@ -203,8 +204,6 @@ def test_ntlm_auth(tmpdir):
         auth_response = s.step(authenticate)
 
         assert auth_response is None
-        assert c.session_key
-        assert s.session_key
         assert c.complete
         assert s.complete
 
@@ -215,7 +214,7 @@ def test_ntlm_auth(tmpdir):
         _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in GSSAPIProxy.available_protocols(),
+@pytest.mark.skipif('ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through GSSAPI')
 @pytest.mark.parametrize('client_opt, server_opt', [
     (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi),

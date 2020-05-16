@@ -276,7 +276,7 @@ class NegotiateProxy(ContextProxy):
 
         gssapi_protocols = [p for p in GSSAPIProxy.available_protocols(options=self.options)
                             if p != 'negotiate']
-        available_mechs = [getattr(GSSMech, p) for p in gssapi_protocols]
+        available_mechs = [getattr(GSSMech, p) for p in gssapi_protocols if p != 'ntlm']
         available_mechs.append(GSSMech.ntlm)  # We can always offer NTLM.
 
         chosen_mechs = []

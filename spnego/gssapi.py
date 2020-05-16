@@ -307,7 +307,8 @@ class GSSAPIProxy(ContextProxy):
     def session_key(self):
         try:
             return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
-        except gssapi.raw.exceptions.ContextReadError:
+        except (gssapi.raw.exceptions.ContextReadError, gssapi.raw.exceptions.OperationUnavailableError) as e:
+            log.debug("Failed to get GSSAPI session key, ignoring: %s" % to_text(e))
             # Context is not fully established, return None
             return
 
