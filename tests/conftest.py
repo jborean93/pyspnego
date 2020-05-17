@@ -22,7 +22,7 @@ def ntlm_cred(tmpdir, monkeypatch):
     cleanup = None
     try:
         # Use unicode credentials to test out edge cases when dealing with non-ascii chars.
-        username = 'ÜseӜ'
+        username = u'ÜseӜ'
         password = u'Pӓ$sw0r̈d'
 
         if os.name == 'nt':
