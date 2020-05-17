@@ -5,7 +5,6 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-import contextlib
 import os
 import pytest
 
@@ -16,32 +15,6 @@ from spnego._context import (
     WrapResult,
     UnwrapResult,
 )
-
-from spnego._text import (
-    to_bytes,
-    to_native,
-    to_text,
-)
-
-
-@contextlib.contextmanager
-def temp_os_environ(key, value):
-    os.environ[key] = to_native(value)
-    yield
-    del os.environ[key]
-
-
-@contextlib.contextmanager
-def ntlm_cred(tmpdir):
-    username = u'Dȫm̈Ąiᴞ\\ÜseӜ'
-    password = u'Pӓ$sw0r̈d'
-
-    tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
-    with open(tmp_creds, mode='wb') as fd:
-        fd.write(to_bytes(u'%s:%s:%s' % (username.split('\\')[0], username.split('\\')[1], password)))
-
-    with temp_os_environ('NTLM_USER_FILE', tmp_creds):
-        yield username, password
 
 
 def _message_test(client, server):
@@ -103,7 +76,7 @@ def test_invalid_protocol():
 
 
 @pytest.mark.parametrize('use_gssapi', [True, False])
-def test_negotiate_through_python_ntlm(use_gssapi, tmpdir, monkeypatch):
+def test_negotiate_through_python_ntlm(use_gssapi, ntlm_cred, monkeypatch):
     if use_gssapi:
         # Skip this test if gss-ntlmssp is not available.
         if 'ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols():
@@ -115,101 +88,99 @@ def test_negotiate_through_python_ntlm(use_gssapi, tmpdir, monkeypatch):
             return False
         monkeypatch.setattr(spnego.gssapi, '_gss_ntlmssp_available', ntlm_avail)
 
-    with ntlm_cred(tmpdir) as (username, password):
-        # Build the initial context and assert the defaults.
-        c = spnego.client(username, password, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
-        s = spnego.server(None, None, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
+    # Build the initial context and assert the defaults.
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
+    s = spnego.server(None, None, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
 
-        assert not c.complete
-        assert not s.complete
+    assert not c.complete
+    assert not s.complete
 
-        negotiate = c.step()
+    negotiate = c.step()
 
-        assert isinstance(negotiate, bytes)
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(negotiate, bytes)
+    assert not c.complete
+    assert not s.complete
 
-        challenge = s.step(negotiate)
+    challenge = s.step(negotiate)
 
-        assert isinstance(challenge, bytes)
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(challenge, bytes)
+    assert not c.complete
+    assert not s.complete
 
-        authenticate = c.step(challenge)
+    authenticate = c.step(challenge)
 
-        assert isinstance(authenticate, bytes)
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(authenticate, bytes)
+    assert not c.complete
+    assert not s.complete
 
-        mech_list_mic = s.step(authenticate)
+    mech_list_mic = s.step(authenticate)
 
-        assert isinstance(mech_list_mic, bytes)
-        assert not c.complete
-        assert s.complete
+    assert isinstance(mech_list_mic, bytes)
+    assert not c.complete
+    assert s.complete
 
-        mech_list_resp = c.step(mech_list_mic)
+    mech_list_resp = c.step(mech_list_mic)
 
-        assert mech_list_resp is None
-        assert c.complete
-        assert s.complete
-        assert c.negotiated_protocol == 'ntlm'
-        assert s.negotiated_protocol == 'ntlm'
+    assert mech_list_resp is None
+    assert c.complete
+    assert s.complete
+    assert c.negotiated_protocol == 'ntlm'
+    assert s.negotiated_protocol == 'ntlm'
 
-        _message_test(c, s)
+    _message_test(c, s)
 
 
-def test_ntlm_auth(tmpdir):
-    with ntlm_cred(tmpdir) as (username, password):
-        # Build the initial context and assert the defaults.
-        c = spnego.client(username, password, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
-        s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
+def test_ntlm_auth(ntlm_cred):
+    # Build the initial context and assert the defaults.
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
+    s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
-        assert not c.session_key
-        assert not s.session_key
-        assert not c.complete
-        assert not s.complete
+    assert not c.session_key
+    assert not s.session_key
+    assert not c.complete
+    assert not s.complete
 
-        # Build negotiate msg
-        negotiate = c.step()
+    # Build negotiate msg
+    negotiate = c.step()
 
-        assert isinstance(negotiate, bytes)
-        assert not c.session_key
-        assert not s.session_key
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(negotiate, bytes)
+    assert not c.session_key
+    assert not s.session_key
+    assert not c.complete
+    assert not s.complete
 
-        # Process negotiate msg
-        challenge = s.step(negotiate)
+    # Process negotiate msg
+    challenge = s.step(negotiate)
 
-        assert isinstance(challenge, bytes)
-        assert not c.session_key
-        assert not s.session_key
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(challenge, bytes)
+    assert not c.session_key
+    assert not s.session_key
+    assert not c.complete
+    assert not s.complete
 
-        # Process challenge and build authenticate
-        authenticate = c.step(challenge)
+    # Process challenge and build authenticate
+    authenticate = c.step(challenge)
 
-        assert isinstance(authenticate, bytes)
-        assert c.session_key
-        assert not s.session_key
-        assert c.complete
-        assert not s.complete
+    assert isinstance(authenticate, bytes)
+    assert c.session_key
+    assert not s.session_key
+    assert c.complete
+    assert not s.complete
 
-        # Process authenticate
-        auth_response = s.step(authenticate)
+    # Process authenticate
+    auth_response = s.step(authenticate)
 
-        assert auth_response is None
-        assert c.session_key
-        assert s.session_key
-        assert c.complete
-        assert s.complete
+    assert auth_response is None
+    assert c.session_key
+    assert s.session_key
+    assert c.complete
+    assert s.complete
 
-        assert c.negotiated_protocol == 'ntlm'
-        assert s.negotiated_protocol == 'ntlm'
+    assert c.negotiated_protocol == 'ntlm'
+    assert s.negotiated_protocol == 'ntlm'
 
-        # Client wrap
-        _message_test(c, s)
+    # Client wrap
+    _message_test(c, s)
 
 
 @pytest.mark.skipif('ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols(),
@@ -219,45 +190,44 @@ def test_ntlm_auth(tmpdir):
     (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi),
     (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm),
 ])
-def test_gssapi_ntlm_auth(client_opt, server_opt, tmpdir):
-    with ntlm_cred(tmpdir) as (username, password):
-        # Build the initial context and assert the defaults.
-        c = spnego.client(username, password, protocol='ntlm', options=client_opt)
-        s = spnego.server(None, None, protocol='ntlm', options=server_opt)
+def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred):
+    # Build the initial context and assert the defaults.
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=client_opt)
+    s = spnego.server(None, None, protocol='ntlm', options=server_opt)
 
-        assert not c.complete
-        assert not s.complete
+    assert not c.complete
+    assert not s.complete
 
-        # Build negotiate msg
-        negotiate = c.step()
+    # Build negotiate msg
+    negotiate = c.step()
 
-        assert isinstance(negotiate, bytes)
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(negotiate, bytes)
+    assert not c.complete
+    assert not s.complete
 
-        # Process negotiate msg
-        challenge = s.step(negotiate)
+    # Process negotiate msg
+    challenge = s.step(negotiate)
 
-        assert isinstance(challenge, bytes)
-        assert not c.complete
-        assert not s.complete
+    assert isinstance(challenge, bytes)
+    assert not c.complete
+    assert not s.complete
 
-        # Process challenge and build authenticate
-        authenticate = c.step(challenge)
+    # Process challenge and build authenticate
+    authenticate = c.step(challenge)
 
-        assert isinstance(authenticate, bytes)
-        assert c.complete
-        assert not s.complete
+    assert isinstance(authenticate, bytes)
+    assert c.complete
+    assert not s.complete
 
-        # Process authenticate
-        auth_response = s.step(authenticate)
+    # Process authenticate
+    auth_response = s.step(authenticate)
 
-        assert auth_response is None
-        assert c.complete
-        assert s.complete
+    assert auth_response is None
+    assert c.complete
+    assert s.complete
 
-        assert c.negotiated_protocol == 'ntlm'
-        assert s.negotiated_protocol == 'ntlm'
+    assert c.negotiated_protocol == 'ntlm'
+    assert s.negotiated_protocol == 'ntlm'
 
-        # Client wrap
-        _message_test(c, s)
+    # Client wrap
+    _message_test(c, s)
