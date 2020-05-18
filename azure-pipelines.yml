@@ -60,7 +60,7 @@ stages:
       displayName: Lint
 
     - script: |
-        pytest -v --junitxml=junit/test-results.xml --cov=. --cov-report=xml
+        pytest -v --junitxml junit/test-results.xml --cov spnego --cov-report xml --cov-report term-missing
       displayName: Test
 
     - task: PublishTestResults@2
@@ -74,7 +74,6 @@ stages:
       inputs:
         codeCoverageTool: Cobertura
         summaryFileLocation: $(System.DefaultWorkingDirectory)/**/coverage.xml
-        #reportDirectory: $(System.DefaultWorkingDirectory)/**/htmlcov
 
     - script: |
         bash <(curl -s https://codecov.io/bash)
@@ -93,12 +92,21 @@ stages:
         Python27-x64:
           python.version: 2.7
           python.arch: x64
+        Python35-x86:
+          python.version: 3.5
+          python.arch: x86
         Python35-x64:
           python.version: 3.5
           python.arch: x64
+        Python36-x86:
+          python.version: 3.6
+          python.arch: x86
         Python36-x64:
           python.version: 3.6
           python.arch: x64
+        Python37-x86:
+          python.version: 3.7
+          python.arch: x86
         Python37-x64:
           python.version: 3.7
           python.arch: x64
@@ -128,7 +136,7 @@ stages:
         python -m pip install -r requirements-test.txt -c tests/constraints.txt
 
         echo "Installing package"
-        python setup.py build_ext --inplace
+        python setup.py clean --all build_ext --force --inplace --define CYTHON_TRACE_NOGIL --cython-linetrace
         python -m pip install . -c tests/constraints.txt
       displayName: Install
 
@@ -137,7 +145,7 @@ stages:
       displayName: Lint
 
     - script: |
-        pytest -v --junitxml=junit/test-results.xml --cov=. --cov-report=xml
+        pytest -v --junitxml junit/test-results.xml --cov spnego --cov-report xml --cov-report term-missing
       displayName: Test
 
     - task: PublishTestResults@2
@@ -151,11 +159,10 @@ stages:
       inputs:
         codeCoverageTool: Cobertura
         summaryFileLocation: $(System.DefaultWorkingDirectory)/**/coverage.xml
-        #reportDirectory: $(System.DefaultWorkingDirectory)/**/htmlcov
 
     - script: |
         choco.exe install codecov --yes --no-progress
-        codecov.exe -f .coverage
+        codecov.exe -f coverage.xml
       displayName: Upload to codecov.io
       continueOnError: true
       timeoutInMinutes: 3

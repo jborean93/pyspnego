@@ -4,6 +4,7 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import os
+import sys
 
 from setuptools import Extension, setup
 
@@ -33,6 +34,12 @@ extensions = None
 if os.name == 'nt':
     from Cython.Build import cythonize
 
+    try:
+        sys.argv.remove('--cython-linetrace')
+        cython_linetrace = True
+    except ValueError:
+        cython_linetrace = False
+
     def build_sspi_extension(name, libraries):
         rel_path = os.path.join('spnego', '_sspi_raw', name)
 
@@ -49,7 +56,7 @@ if os.name == 'nt':
     extensions = cythonize([
         build_sspi_extension('sspi', 'Secur32'),
         build_sspi_extension('text', 'Kernel32'),
-    ], language_level=3)
+    ], language_level=3, compiler_directives={'linetrace': cython_linetrace})
 
 
 setup(
