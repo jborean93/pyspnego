@@ -8,6 +8,8 @@ import abc
 import collections
 
 from spnego._compat import (
+    integer_types,
+
     List,
     Optional,
     Tuple,
@@ -376,7 +378,7 @@ class ContextProxy:
             if self._context_attr & provider:
                 attr |= generic
 
-        return ContextReq(attr)
+        return attr
 
     @property
     @abc.abstractmethod
@@ -652,16 +654,16 @@ class ContextProxy:
                 if len(entry) != 2:
                     raise ValueError("IOV entry tuple must contain 2 values, the type and data, see IOVBuffer.")
 
-                if not isinstance(entry[0], int):
+                if not isinstance(entry[0], integer_types):
                     raise ValueError("IOV entry[0] must specify the BufferType as an int")
                 buffer_type = entry[0]
 
-                if not isinstance(entry[1], (bytes, int, bool)):
+                if not isinstance(entry[1], (bytes, integer_types, bool)):
                     raise ValueError("IOV entry[1] must specify the buffer bytes, length of the buffer, or whether "
                                      "it is auto allocated.")
                 data = entry[1]
 
-            elif isinstance(entry, int):
+            elif isinstance(entry, integer_types):
                 buffer_type = entry
                 data = None
 

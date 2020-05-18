@@ -632,7 +632,7 @@ def acquire_credentials_handle(unicode principal, unicode package not None,
 
 
 def decrypt_message(SecurityContext context not None, SecBufferDesc message not None, unsigned long seq_no=0):
-    cdef unsigned long qop;
+    cdef unsigned long qop = 0;
 
     res = DecryptMessage(&context.handle, message.__c_value__(), seq_no, &qop)
     if res != _SEC_E_OK:
@@ -738,7 +738,7 @@ def _query_context_sizes(SecurityContext context not None):
 
 
 def verify_signature(SecurityContext context not None, SecBufferDesc message not None, unsigned long seq_no=0):
-    cdef unsigned long qop
+    cdef unsigned long qop = 0
 
     res = VerifySignature(&context.handle, message.__c_value__(), seq_no, &qop)
     if res != _SEC_E_OK:

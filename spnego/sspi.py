@@ -8,6 +8,8 @@ import base64
 import logging
 
 from spnego._compat import (
+    List,
+    Optional,
     Tuple,
 )
 
@@ -16,6 +18,7 @@ from spnego._context import (
     ContextReq,
     IOVWrapResult,
     IOVUnwrapResult,
+    NegotiateOptions,
     split_username,
     UnwrapResult,
     WrapResult,
@@ -27,6 +30,7 @@ from spnego.iov import (
 )
 
 from spnego._text import (
+    text_type,
     to_text,
 )
 
@@ -58,6 +62,14 @@ except ImportError:
 
 
 log = logging.getLogger(__name__)
+
+
+def _available_protocols(options=None):  # type: (Optional[NegotiateOptions]) -> List[text_type, ...]
+    """ Return a list of protocols that SSPIProxy can offer. """
+    if HAS_SSPI:
+        return [u'kerberos', u'negotiate', u'ntlm']
+    else:
+        return []
 
 
 class SSPIProxy(ContextProxy):
@@ -98,10 +110,7 @@ class SSPIProxy(ContextProxy):
 
     @classmethod
     def available_protocols(cls, options=None):
-        if HAS_SSPI:
-            return [u'kerberos', u'negotiate', u'ntlm']
-        else:
-            return []
+        return _available_protocols(options=options)
 
     @property
     def complete(self):
@@ -114,7 +123,15 @@ class SSPIProxy(ContextProxy):
 
     @property
     def session_key(self):
-        return query_context_attributes(self._context, SecPkgAttr.session_key)
+        try:
+            return query_context_attributes(self._context, SecPkgAttr.session_key)
+        except WindowsError as err:
+            # We only care about errors that weren't an invalid handle to replicate the same behaviour as the other
+            # proxy handlers.
+            if err.winerror != -2146893055:  # SEC_E_INVALID_HANDLE
+                raise
+
+            return
 
     def step(self, in_token=None):
         log.debug("SSPI step input: %s", to_text(base64.b64encode(in_token or b"")))

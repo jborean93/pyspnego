@@ -10,6 +10,7 @@ import pytest
 
 import spnego
 import spnego.gssapi
+import spnego.sspi
 
 from spnego._context import (
     WrapResult,
@@ -75,22 +76,34 @@ def test_invalid_protocol():
         spnego.server(None, None, protocol='fake')
 
 
-@pytest.mark.parametrize('use_gssapi', [True, False])
-def test_negotiate_through_python_ntlm(use_gssapi, ntlm_cred, monkeypatch):
-    if use_gssapi:
-        # Skip this test if gss-ntlmssp is not available.
+@pytest.mark.parametrize('client_opt, server_opt', [
+    (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_negotiate),
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_negotiate),
+    (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_gssapi),
+    # Cannot seem to force SSPI to wrap NTLM solely in SPNEGO, skip this test for now.
+    # (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_negotiate),
+    (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_sspi),
+])
+def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkeypatch):
+    if client_opt & spnego.NegotiateOptions.use_negotiate and server_opt & spnego.NegotiateOptions.use_negotiate:
+        # Make sure we pretend that the system libraries aren't available
+        def available_protocols(*args, **kwargs):
+            return []
+
+        monkeypatch.setattr(spnego.gssapi, '_available_protocols', available_protocols)
+        monkeypatch.setattr(spnego.sspi, '_available_protocols', available_protocols)
+
+    elif client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
         if 'ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
-    else:
-        # Make sure we pretend that gss-ntlmssp is not available to force the use of our NTLMProxy.
-        def ntlm_avail(*args, **kwargs):
-            return False
-        monkeypatch.setattr(spnego.gssapi, '_gss_ntlmssp_available', ntlm_avail)
+    elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
+        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through SSPI')
 
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
-    s = spnego.server(None, None, protocol='negotiate', options=spnego.NegotiateOptions.use_negotiate)
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=client_opt)
+    s = spnego.server(None, None, protocol='negotiate', options=server_opt)
 
     assert not c.complete
     assert not s.complete
@@ -223,6 +236,66 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred):
     auth_response = s.step(authenticate)
 
     assert auth_response is None
+    assert c.complete
+    assert s.complete
+
+    assert c.negotiated_protocol == 'ntlm'
+    assert s.negotiated_protocol == 'ntlm'
+
+    # Client wrap
+    _message_test(c, s)
+
+
+@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),
+                    reason='Test requires NTLM to be available through SSPI')
+@pytest.mark.parametrize('client_opt, server_opt', [
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi),
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm),
+])
+def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
+    # Build the initial context and assert the defaults.
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=client_opt)
+    s = spnego.server(None, None, protocol='ntlm', options=server_opt)
+
+    assert not c.session_key
+    assert not s.session_key
+    assert not c.complete
+    assert not s.complete
+
+    # Build negotiate msg
+    negotiate = c.step()
+
+    assert isinstance(negotiate, bytes)
+    assert not c.session_key
+    assert not s.session_key
+    assert not c.complete
+    assert not s.complete
+
+    # Process negotiate msg
+    challenge = s.step(negotiate)
+
+    assert isinstance(challenge, bytes)
+    assert not c.session_key
+    assert not s.session_key
+    assert not c.complete
+    assert not s.complete
+
+    # Process challenge and build authenticate
+    authenticate = c.step(challenge)
+
+    assert isinstance(authenticate, bytes)
+    assert isinstance(c.session_key, bytes)
+    assert not s.session_key
+    assert c.complete
+    assert not s.complete
+
+    # Process authenticate
+    auth_response = s.step(authenticate)
+
+    assert auth_response is None
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
     assert c.complete
     assert s.complete
 

@@ -14,6 +14,11 @@ from spnego._sspi_raw.windows cimport (
     wchar_t
 )
 
+
+cdef extern from "ctype.h":
+  int wcslen(wchar_t*)
+
+
 cdef extern from "Python.h":
     PyUnicode_FromWideChar(const wchar_t *w, Py_ssize_t size)
 
@@ -55,5 +60,8 @@ cdef class WideChar:
 
 
 cdef unicode u16_to_text(LPWSTR s, size_t length):
+    # TODO: pass length straight in when Python 2.7 is dropped.
+    if length == -1:
+        length = wcslen(s)
+
     return PyUnicode_FromWideChar(s, length)
-    #return (<char*>s)[:length * sizeof(WCHAR)].decode('utf-16-le', 'strict')

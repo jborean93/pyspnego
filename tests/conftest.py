@@ -16,6 +16,13 @@ from spnego._text import (
     to_text,
 )
 
+HAS_SSPI = True
+try:
+    import win32net
+    import win32netcon
+except ImportError:
+    HAS_SSPI = False
+
 
 @pytest.fixture()
 def ntlm_cred(tmpdir, monkeypatch):
@@ -25,13 +32,24 @@ def ntlm_cred(tmpdir, monkeypatch):
         username = u'ÜseӜ'
         password = u'Pӓ$sw0r̈d'
 
-        if os.name == 'nt':
+        if HAS_SSPI:
             domain = to_text(socket.gethostname())
 
-            # TODO: create test user here on Windows.
-            def cleanup():
-                pass
+            buff = {
+                'name': username,
+                'password': password,
+                'priv': win32netcon.USER_PRIV_USER,
+                'comment': 'Test account for pypsnego tests',
+                'flags': win32netcon.UF_NORMAL_ACCOUNT,
+            }
+            try:
+                win32net.NetUserAdd(None, 1, buff)
+            except win32net.error as err:
+                if err.winerror != 2224:  # Account already exists
+                    raise
 
+            def cleanup():
+                win32net.NetUserDel(None, username)
         else:
             domain = u'Dȫm̈Ąiᴞ'
 

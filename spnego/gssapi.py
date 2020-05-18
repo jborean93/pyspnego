@@ -8,6 +8,7 @@ import base64
 import logging
 
 from spnego._compat import (
+    List,
     Optional,
     Tuple,
     Union,
@@ -72,6 +73,28 @@ _GSS_NTLMSSP_RESET_CRYPTO_OID = '1.3.6.1.4.1.7165.655.1.3'
 
 # https://github.com/krb5/krb5/blob/master/src/lib/gssapi/spnego/spnego_mech.c#L483
 _GSS_SPNEGO_REQUIRE_MIC_OID_STRING = '1.3.6.1.4.1.7165.655.1.2'
+
+
+def _available_protocols(options=None):  # type: (Optional[NegotiateOptions]) -> List[text_type, ...]
+    """ Return a list of protocols that GSSAPIProxy can offer. """
+    if not options:
+        options = NegotiateOptions(0)
+
+    protocols = []
+    if HAS_GSSAPI:
+        # We can't offer Kerberos if the caller requires WinRM wrapping and IOV isn't available.
+        if not (options & NegotiateOptions.wrapping_winrm and not HAS_IOV):
+            protocols = [u'kerberos']
+
+        # We can only offer NTLM if the mech is installed and can retrieve the functionality the caller desires.
+        if _gss_ntlmssp_available(session_key=bool(options & NegotiateOptions.session_key)):
+            protocols.append(u'ntlm')
+
+        # We can only offer Negotiate if we can offer both Kerberos and NTLM.
+        if len(protocols) == 2:
+            protocols.append(u'negotiate')
+
+    return protocols
 
 
 def _get_gssapi_credential(mech, usage, username=None, password=None):
@@ -267,24 +290,7 @@ class GSSAPIProxy(ContextProxy):
 
     @classmethod
     def available_protocols(cls, options=None):
-        if not options:
-            options = NegotiateOptions(0)
-
-        protocols = []
-        if HAS_GSSAPI:
-            # We can't offer Kerberos if the caller requires WinRM wrapping and IOV isn't available.
-            if not (options & NegotiateOptions.wrapping_winrm and not HAS_IOV):
-                protocols = [u'kerberos']
-
-            # We can only offer NTLM if the mech is installed and can retrieve the functionality the caller desires.
-            if _gss_ntlmssp_available(session_key=bool(options & NegotiateOptions.session_key)):
-                protocols.append(u'ntlm')
-
-            # We can only offer Negotiate if we can offer both Kerberos and NTLM.
-            if len(protocols) == 2:
-                protocols.append(u'negotiate')
-
-        return protocols
+        return _available_protocols(options=options)
 
     @classmethod
     def iov_available(cls):
