@@ -128,7 +128,8 @@ stages:
         python -m pip install -r requirements-test.txt -c tests/constraints.txt
 
         echo "Installing package"
-        python -m pip install .
+        python setup.py build_ext --inplace
+        python -m pip install . -c tests/constraints.txt
       displayName: Install
 
     - script: |
