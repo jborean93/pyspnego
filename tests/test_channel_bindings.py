@@ -23,6 +23,14 @@ def test_channel_bindings_pack():
     assert actual == TEST_B_DATA
 
 
+def test_channel_bindings_none_pack():
+    actual = cb.GssChannelBindings().pack()
+
+    assert actual == b"\x00\x00\x00\x00\x00\x00\x00\x00" \
+                     b"\x00\x00\x00\x00\x00\x00\x00\x00" \
+                     b"\x00\x00\x00\x00"
+
+
 def test_channel_bindings_unpack():
     actual = cb.GssChannelBindings.unpack(TEST_B_DATA)
 

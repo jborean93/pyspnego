@@ -871,8 +871,9 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
                 session_base_key = hashlib.new('md4', ntowfv1(password)).digest()
                 lmowf = lmowfv1(password)
 
-                # TODO: need to get a sane way to include the server challenege and the actual challenge flags.
-                key_exchange_key = kxkey(auth.flags, session_base_key, lmowf, lm_response_data, b"")
+                # TODO: need to get a sane way to include the server challenge for ESS KXKEY.
+                if auth.flags & NegotiateFlags.extended_session_security == 0:
+                    key_exchange_key = kxkey(auth.flags, session_base_key, lmowf, lm_response_data, b"")
 
         else:
             nt_proof_str = nt_response_data[:16]
@@ -895,7 +896,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
             }
 
             if password:
-                response_key_nt = ntowfv2(msg['UserName'], password, msg['DomainName'])
+                response_key_nt = ntowfv2(msg['Payload']['UserName'], ntowfv1(password), msg['Payload']['DomainName'])
                 key_exchange_key = hmac_md5(response_key_nt, nt_proof_str)
 
         msg['Payload']['NtChallengeResponse'] = nt_response

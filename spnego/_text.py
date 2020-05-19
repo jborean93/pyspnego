@@ -21,7 +21,7 @@ def _obj_str(obj, default):
     for func in [str, repr]:
         try:
             obj = func(obj)
-        except UnicodeError:
+        except (UnicodeError, TypeError):
             continue
         else:
             return obj

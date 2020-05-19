@@ -335,7 +335,7 @@ class ContextProxy:
         Returns:
             List[text_type, ...]: The list of protocols that the context can use.
         """
-        return [u'kerberos', u'negotiate', u'ntlm']
+        return [u'kerberos', u'negotiate', u'ntlm']  # pragma: no cover
 
     @classmethod
     def iov_available(cls):  # type: () -> bool
@@ -349,7 +349,7 @@ class ContextProxy:
         Returns:
             bool: Whether the context provider supports IOV wrapping and unwrapping (True) or not (False).
         """
-        return True
+        return True  # pragma: no cover
 
     @property
     @abc.abstractmethod
@@ -361,7 +361,7 @@ class ContextProxy:
         Returns:
             bool: The authentication process is complete (True) or not (False).
         """
-        pass
+        pass  # pragma: no cover
 
     @property
     def context_attr(self):  # type: () -> ContextReq
@@ -393,7 +393,7 @@ class ContextProxy:
             text_type: The protocol that was negotiated, can be `ntlm` or `kerberos`. This is a unicode string in
                 Python 2 and a str string in Python 3.
         """
-        pass
+        pass  # pragma: no cover
 
     @property
     @abc.abstractmethod
@@ -407,7 +407,7 @@ class ContextProxy:
         Returns:
             bytes: The derived session key from the authenticated context.
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def step(self, in_token=None):  # type: (Optional[bytes]) -> Optional[bytes]
@@ -442,7 +442,7 @@ class ContextProxy:
         .. _AcceptSecurityContext:
             https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def wrap(self, data, encrypt=True, qop=None):  # type: (bytes, bool, Optional[int]) -> WrapResult
@@ -474,7 +474,7 @@ class ContextProxy:
         .. _EncryptMessage:
             https://docs.microsoft.com/en-us/windows/win32/secauthn/encryptmessage--general
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def wrap_iov(self, iov, encrypt=True, qop=None):
@@ -502,7 +502,7 @@ class ContextProxy:
         .. _EncryptMessage:
             https://docs.microsoft.com/en-us/windows/win32/secauthn/encryptmessage--general
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def unwrap(self, data):  # type: (bytes) -> UnwrapResult
@@ -531,7 +531,7 @@ class ContextProxy:
         .. _DecryptMessage:
             https://docs.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def unwrap_iov(self, iov):  # type: (List[IOVBuffer, ...]) -> IOVUnwrapResult
@@ -555,7 +555,7 @@ class ContextProxy:
         .. _DecryptMessage:
             https://docs.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def sign(self, data, qop=None):  # type: (bytes, Optional[int]) -> bytes
@@ -579,7 +579,7 @@ class ContextProxy:
         .. _MakeSignature:
             https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def verify(self, data, mic):  # type: (bytes, bytes) -> int
@@ -603,7 +603,7 @@ class ContextProxy:
         .. _VerifySignature:
             https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-verifysignature
         """
-        pass
+        pass  # pragma: no cover
 
     # Internal properties/functions not for public use.
 
@@ -619,7 +619,7 @@ class ContextProxy:
             List[Tuple[ContextReq, int], ...]: A list of tuples where tuple[0] is the ContextReq flag and tuple[1] is
                 the relevant provider specific flag for our common one.
         """
-        pass
+        pass  # pragma: no cover
 
     @property
     def _requires_mech_list_mic(self):  # type: () -> bool
@@ -644,7 +644,7 @@ class ContextProxy:
         .. _mech_requires_mechlistMIC:
             https://github.com/krb5/krb5/blob/b2fe66fed560ae28917a4acae6f6c0f020156353/src/lib/gssapi/spnego/spnego_mech.c#L493
         """
-        return False
+        return False  # pragma: no cover
 
     def _build_iov_list(self, iov):  # type: (List[Union[Tuple, int, bytes], ...]) -> List
         provider_iov = []
@@ -694,7 +694,7 @@ class ContextProxy:
         Returns:
             Optional[text_type]: The SPN in the format required by the context provider.
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> any
@@ -708,7 +708,7 @@ class ContextProxy:
         Return:
             any: The provider specific buffer value
         """
-        pass
+        pass  # pragma: no cover
 
     def _reset_ntlm_crypto_state(self, outgoing=True):  # type: (bool) -> None
         """Reset the NTLM crypto handles after signing/verifying the SPNEGO mechListMIC.
@@ -723,4 +723,4 @@ class ContextProxy:
         .. _MS-SPNG:
             https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/b87587b3-9d72-4027-8131-b76b5368115f
         """
-        pass
+        pass  # pragma: no cover

@@ -76,6 +76,16 @@ def test_invalid_protocol():
         spnego.server(None, None, protocol='fake')
 
 
+def test_protocol_not_supported(monkeypatch):
+    def available_protocols(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(spnego.gssapi, '_available_protocols', available_protocols)
+
+    with pytest.raises(ValueError, match="Protocol kerberos is not available"):
+        spnego.client(None, None, protocol='kerberos', options=spnego.NegotiateOptions.use_gssapi)
+
+
 @pytest.mark.parametrize('client_opt, server_opt', [
     (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_negotiate),
     (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_negotiate),

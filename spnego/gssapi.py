@@ -333,9 +333,9 @@ class GSSAPIProxy(ContextProxy):
     def wrap(self, data, encrypt=True, qop=None):
         res = gssapi.raw.wrap(self._context, data, confidential=encrypt, qop=qop)
 
-        # gss-ntlmssp seems to hardcode the conf_state=0 which results in encrypted=False. Because it is sealed we
-        # treat it as true here and align with our NTLM provider.
-        # TODO: Verify with simo that this is done on purpose or a bug in gss-ntlmssp.
+        # gss-ntlmssp used to hardcode the conf_state=0 which results in encrpted=False. Because we know it is always
+        # sealed we just manually set to True.
+        # https://github.com/gssapi/gss-ntlmssp/pull/15
         encrypted = True if self.negotiated_protocol == 'ntlm' else res.encrypted
 
         return WrapResult(data=res.message, encrypted=encrypted)

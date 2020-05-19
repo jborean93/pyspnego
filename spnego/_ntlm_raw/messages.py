@@ -166,7 +166,6 @@ class AvFlags(IntFlag):
     @classmethod
     def native_labels(cls):  # type: () -> Dict[int, str]
         return {
-            AvFlags.none: 'NONE',
             AvFlags.constrained: 'AUTHENTICATION_CONSTRAINED',
             AvFlags.mic: 'MIC_PROVIDED',
             AvFlags.untrusted_spn: 'UNTRUSTED_SPN_SOURCE',
@@ -191,7 +190,7 @@ def _get_payload_offset(b_data, field_offsets):
         if not payload_offset or (offset and offset < payload_offset):
             payload_offset = offset
 
-    return payload_offset
+    return payload_offset or len(b_data)
 
 
 def _pack_payload(data, b_payload, payload_offset, pack_func=None):
