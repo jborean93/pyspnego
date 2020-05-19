@@ -10,6 +10,7 @@ import os
 import socket
 
 from spnego._compat import (
+    Dict,
     Optional,
     Tuple,
 )
@@ -30,6 +31,7 @@ from spnego._ntlm_raw.crypto import (
     md5,
     ntowfv1,
     ntowfv2,
+    RC4Handle,
     rc4init,
     rc4k,
     sealkey,
@@ -183,61 +185,69 @@ class NTLMProxy(ContextProxy):
         super(NTLMProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                         protocol, options, is_wrapped)
 
-        self._complete = False
-        domain, user = split_username(self.username)
-        self._credential = _NTLMCredential(username=user, domain=domain, password=self.password)
+        self._complete = False  # type: bool
+        self._credential = None  # type: Optional[_NTLMCredential]
+
+        # Set the default flags, these might change depending on the LM_COMPAT_LEVEL set.
+        self._context_req = self._context_req | \
+            NegotiateFlags.key_128 | \
+            NegotiateFlags.key_56 | \
+            NegotiateFlags.key_exch | \
+            NegotiateFlags.extended_session_security | \
+            NegotiateFlags.always_sign | \
+            NegotiateFlags.ntlm | \
+            NegotiateFlags.lm_key | \
+            NegotiateFlags.request_target | \
+            NegotiateFlags.oem | \
+            NegotiateFlags.unicode
 
         # gss-ntlmssp uses the env var 'LM_COMPAT_LEVEL' to control the NTLM compatibility level. To try and make our
         # NTLM implementation similar in functionality we will also use that behaviour.
         # https://github.com/gssapi/gss-ntlmssp/blob/e498737a96e8832a2cb9141ab1fe51e129185a48/src/gss_ntlmssp.c#L159-L170
         # See the below policy link for more details on what these mean, for now 3 is the sane behaviour.
         # https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level
-        self._lm_compat_level = int(os.environ.get('LM_COMPAT_LEVEL', 3))  # type: int
-        if self._lm_compat_level < 0 or self._lm_compat_level > 5:
+        lm_compat_level = int(os.environ.get('LM_COMPAT_LEVEL', 3))  # type: int
+        if lm_compat_level < 0 or lm_compat_level > 5:
             raise ValueError("The env var LM_COMPAT_LEVEL is set to %d but needs to be between 0 and 5"
-                             % self._lm_compat_level)
+                             % lm_compat_level)
 
-        self._context_req = self._context_req | \
-            NegotiateFlags.key_128 | \
-            NegotiateFlags.key_56 | \
-            NegotiateFlags.key_exch | \
-            NegotiateFlags.always_sign | \
-            NegotiateFlags.ntlm | \
-            NegotiateFlags.request_target | \
-            NegotiateFlags.oem | \
-            NegotiateFlags.unicode
+        if lm_compat_level == 0:
+            self._context_req &= ~NegotiateFlags.extended_session_security
 
-        self._ntlm_v2 = self._lm_compat_level > 2
+        if self.usage == 'initiate':
+            domain, user = split_username(self.username)
+            self._credential = _NTLMCredential(username=user, domain=domain, password=self.password)
 
-        if self._lm_compat_level != 0:
-            self._context_req |= NegotiateFlags.extended_session_security
+            self._lm = lm_compat_level < 2  # type: bool
+            self._nt_v1 = lm_compat_level < 3  # type: bool
+            self._nt_v2 = lm_compat_level > 2  # type: bool
 
-        if self._lm_compat_level < 2:
-            # This could affect the wrapping of data when negotiated against hosts that do not store the LM hash for a
-            # user. In reality the LM_COMPAT_LEVEL 0 or 1 should only be set for really old hosts where the LM hash is
-            # still stored and a proper session key can be derived.
-            # https://github.com/gssapi/gss-ntlmssp/issues/13
-            self._context_req |= NegotiateFlags.lm_key
-            self._no_lm = False
+            if lm_compat_level > 1:
+                self._context_req &= ~NegotiateFlags.lm_key
 
         else:
-            self._no_lm = True
-            self._credential.lm_hash = b"\x00" * 16
+            self._lm = lm_compat_level < 4  # type: bool
+            self._nt_v1 = lm_compat_level < 5  # type: bool
+            self._nt_v2 = True  # type: bool
 
-        # TODO: handle lm_compat_level for acceptor.
+            # Make sure that the credential file is set and exists
+            if not _get_credential_file():
+                raise ValueError("No NTLM credential file found")
 
-        self._negotiate_msg = None
-        self._challenge_msg = None
-        self._mic_required = False
+        self._temp_msg = {
+            'negotiate': None,
+            'challenge': None,
+        }  # type: Dict[str, Optional[bytes]]
+        self._mic_required = False  # type: bool
 
         # Crypto state for signing and sealing.
-        self._session_key = None
-        self._sign_key_out = None
-        self._sign_key_in = None
-        self._handle_out = None
-        self._handle_in = None
-        self.__seq_num_in = 0
-        self.__seq_num_out = 0
+        self._session_key = None  # type: Optional[bytes]
+        self._sign_key_out = None  # type: Optional[bytes]
+        self._sign_key_in = None  # type: Optional[bytes]
+        self._handle_out = None  # type: Optional[RC4Handle]
+        self._handle_in = None  # type: Optional[RC4Handle]
+        self.__seq_num_in = 0  # type: int
+        self.__seq_num_out = 0  # type: int
 
     @classmethod
     def available_protocols(cls, options=None):
@@ -269,6 +279,8 @@ class NTLMProxy(ContextProxy):
             log.debug("NTLM step output: %s", to_text(base64.b64encode(out_token or b"")))
 
         if self._complete:
+            self._temp_msg = None  # Clear out any temp data we still have stored.
+
             in_usage = 'accept' if self.usage == 'initiate' else 'initiate'
             self._sign_key_out = signkey(self._context_attr, self._session_key, self.usage)
             self._sign_key_in = signkey(self._context_attr, self._session_key, in_usage)
@@ -287,160 +299,163 @@ class NTLMProxy(ContextProxy):
         return out_token
 
     def _step_initiate(self, in_token=None):
-        # TODO: Find a better way for this
-        if not self._negotiate_msg:
-            self._negotiate_msg = Negotiate(self._context_req).pack()
-            return self._negotiate_msg
+        if not self._temp_msg['negotiate']:
+            negotiate_msg = Negotiate(self._context_req)
+            self._temp_msg['negotiate'] = negotiate_msg
+            return negotiate_msg.pack()
+
+        challenge = Challenge.unpack(in_token)
+
+        auth_kwargs = {
+            'domain_name': self._credential.domain,
+            'username': self._credential.username,
+        }
+
+        if challenge.flags & NegotiateFlags.version:
+            auth_kwargs['version'] = Version.get_current()
+            auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
+
+        nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._credential)
+        if challenge.flags & NegotiateFlags.key_exch:
+            self._session_key = os.urandom(16)
+            auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
 
         else:
-            challenge = Challenge.unpack(in_token)
+            self._session_key = key_exchange_key
 
-            # If ClientRequire128bitEncryption and not negotiated, fail 'SEC_E_UNSUPPORTED_FUNCTION'.
+        authenticate = Authenticate(challenge.flags, lm_challenge, nt_challenge, **auth_kwargs)
 
-            auth_kwargs = {
-                'domain_name': self._credential.domain,
-                'username': self._credential.username,
-            }
+        if self._mic_required:
+            authenticate.mic = self._calculate_mic(self._temp_msg['negotiate'].pack(), in_token, authenticate.pack())
 
-            if challenge.flags & NegotiateFlags.version:
-                auth_kwargs['version'] = Version.get_current()
-                auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
+        self._context_attr = authenticate.flags
+        self._complete = True
 
-            nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._credential)
-            if challenge.flags & NegotiateFlags.key_exch:
-                self._session_key = os.urandom(16)
-                auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
-
-            else:
-                self._session_key = key_exchange_key
-
-            authenticate = Authenticate(challenge.flags, lm_challenge, nt_challenge, **auth_kwargs)
-
-            if self._mic_required:
-                temp_auth = authenticate.pack()
-                authenticate.mic = hmac_md5(self._session_key, self._negotiate_msg + in_token + temp_auth)
-
-                self._negotiate_msg = None   # No longer need to keep the previous messages around.
-
-            self._context_attr = authenticate.flags
-            self._complete = True
-
-            return authenticate.pack()
+        return authenticate.pack()
 
     def _step_accept(self, in_token=None):
-        # TODO: Clean this up majorly
-        if not self._negotiate_msg:
-            self._negotiate_msg = Negotiate.unpack(in_token)
-
-            flags = self._negotiate_msg.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
-                NegotiateFlags.always_sign | NegotiateFlags.target_info | NegotiateFlags.target_type_server
-
-            # Make sure either UNICODE or OEM is set, not both.
-            if flags & NegotiateFlags.unicode:
-                flags &= ~NegotiateFlags.oem
-            elif flags & NegotiateFlags.oem == 0:
-                raise ValueError("No flags were set, check gss-ntlmssp for this behaviour")
-
-            # Make sure either ESS or LM_Key is set, not both.
-            if flags & NegotiateFlags.extended_session_security:
-                flags &= ~NegotiateFlags.lm_key
-
-            server_challenge = os.urandom(8)
-            target_name = to_text(socket.gethostname()).upper()
-
-            target_info = TargetInfo()
-            target_info[AvId.nb_computer_name] = target_name
-            target_info[AvId.nb_domain_name] = u"WORKSTATION"
-            target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
-            target_info[AvId.timestamp] = FileTime.now()
-
-            self._challenge_msg = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info)
-
-            return self._challenge_msg.pack()
+        if not self._temp_msg['negotiate']:
+            return self._step_accept_negotiate(in_token)
 
         else:
-            auth = Authenticate.unpack(in_token)
+            return self._step_accept_authenticate(in_token)
 
-            if not auth.user_name and not auth.nt_challenge_response and (not auth.lm_challenge_response or
-                                                                          auth.lm_challenge_response == b"\x00"):
+    def _step_accept_negotiate(self, token):  # type: (bytes) -> bytes
+        """ Process the Negotiate message from the initiator. """
+        negotiate = Negotiate.unpack(token)
 
-                # Anonymous user.
-                raise Exception("Anonymous user")
+        flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
+            NegotiateFlags.always_sign | NegotiateFlags.target_info | NegotiateFlags.target_type_server
 
-            else:
-                credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
-                server_challenge = self._challenge_msg.server_challenge
-                expected_mic = None
+        # Make sure either UNICODE or OEM is set, not both.
+        if flags & NegotiateFlags.unicode:
+            flags &= ~NegotiateFlags.oem
+        elif flags & NegotiateFlags.oem == 0:
+            raise ValueError("No flags were set, check gss-ntlmssp for this behaviour")
 
-                if len(auth.nt_challenge_response) > 24:
-                    # NTLMv2 message.
-                    nt_hash = ntowfv2(credential.username, credential.nt_hash, credential.domain)
+        if flags & NegotiateFlags.extended_session_security:
+            flags &= ~NegotiateFlags.lm_key
 
-                    challenge = NTClientChallengeV2.unpack(auth.nt_challenge_response[16:])
-                    time = challenge.time_stamp
-                    client_challenge = challenge.challenge_from_client
-                    target_info = challenge.av_pairs
+        server_challenge = os.urandom(8)
+        target_name = to_text(socket.gethostname()).upper()
 
-                    expected_nt, expected_lm, key_exchange_key = compute_response_v2(
-                        nt_hash, server_challenge, client_challenge, time, target_info)
+        target_info = TargetInfo()
+        target_info[AvId.nb_computer_name] = target_name
+        target_info[AvId.nb_domain_name] = u"WORKSTATION"
+        target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
+        target_info[AvId.timestamp] = FileTime.now()
 
-                    if self.channel_bindings:
-                        if AvId.channel_bindings not in target_info:
-                            raise Exception("Invalid channel bindings")
+        challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info)
 
-                        expected_bindings = target_info[AvId.channel_bindings]
-                        actual_bindings = self._get_native_channel_bindings()
-                        if expected_bindings not in [actual_bindings, b"\x00" * 16]:
-                            raise Exception("Invalid channel bindings")
+        self._temp_msg = {
+            'negotiate': negotiate,
+            'challenge': challenge,
+        }
 
-                    if target_info.get(AvId.flags, 0) & AvFlags.mic:
-                        expected_mic = auth.mic
+        return challenge.pack()
 
-                else:
-                    client_challenge = None
-                    if auth.flags & NegotiateFlags.extended_session_security:
-                        client_challenge = auth.lm_challenge_response[:8]
+    def _step_accept_authenticate(self, token):  # type: (bytes) -> None
+        """ Process the Authenticate message from the initiator. """
+        challenge = self._temp_msg['challenge']
+        server_challenge = challenge.server_challenge
+        auth = Authenticate.unpack(token)
 
-                    expected_nt, expected_lm, key_exchange_key = compute_response_v1(
-                        auth.flags, credential.nt_hash, credential.lm_hash, server_challenge, client_challenge,
-                        no_lm_response=self._no_lm)
+        # TODO: Validate anonynmous user.
+        if not auth.user_name or (not auth.nt_challenge_response and (not auth.lm_challenge_response or
+                                                                      auth.lm_challenge_response == b"\x00")):
+            raise NotImplementedError("Anonymous user")
 
-                auth_success = False
+        credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
+        expected_mic = None
 
-                if auth.nt_challenge_response:
-                    auth_success = auth.nt_challenge_response == expected_nt
+        if len(auth.nt_challenge_response) > 24:
+            nt_hash = ntowfv2(credential.username, credential.nt_hash, credential.domain)
 
-                elif auth.lm_challenge_response:
-                    if self._no_lm:
-                        raise Exception("Only LM hash received but LM_COMPAT_LEVEL is set to not validate LM hashes")
+            nt_challenge = NTClientChallengeV2.unpack(auth.nt_challenge_response[16:])
+            time = nt_challenge.time_stamp
+            client_challenge = nt_challenge.challenge_from_client
+            target_info = nt_challenge.av_pairs
 
-                    auth_success = auth.lm_challenge_response == expected_lm
+            expected_nt, expected_lm, key_exchange_key = compute_response_v2(
+                nt_hash, server_challenge, client_challenge, time, target_info)
 
-                if not auth_success:
-                    raise Exception("Invalid credential")
+            if self.channel_bindings:
+                if AvId.channel_bindings not in target_info:
+                    raise Exception("Invalid channel bindings")
 
-                if auth.flags & NegotiateFlags.key_exch:
-                    self._session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
-                else:
-                    self._session_key = key_exchange_key
+                expected_bindings = target_info[AvId.channel_bindings]
+                actual_bindings = self._get_native_channel_bindings()
+                if expected_bindings not in [actual_bindings, b"\x00" * 16]:
+                    raise Exception("Invalid channel bindings")
 
-                if expected_mic:
-                    auth.mic = b"\x00" * 16
-                    actual_mic = hmac_md5(self._session_key,
-                                          self._negotiate_msg.pack() + self._challenge_msg.pack() + auth.pack())
+            if target_info.get(AvId.flags, 0) & AvFlags.mic:
+                expected_mic = auth.mic
 
-                    if actual_mic != expected_mic:
-                        raise Exception("Invalid MIC")
+        else:
+            if not self._nt_v1:
+                raise Exception("Cannot authenticate with NTLMv1 response")
 
-                self._context_attr = auth.flags
+            elif not auth.nt_challenge_response and not self._lm:
+                raise Exception("Cannot authenticate with LM response")
 
-                self._complete = True
-                self._negotiate_msg = None
-                self._challenge_msg = None
+            client_challenge = None
+            if auth.flags & NegotiateFlags.extended_session_security:
+                client_challenge = auth.lm_challenge_response[:8]
+
+            expected_nt, expected_lm, key_exchange_key = compute_response_v1(
+                auth.flags, credential.nt_hash, credential.lm_hash, server_challenge, client_challenge,
+                no_lm_response=not self._lm)
+
+        auth_success = False
+
+        if auth.nt_challenge_response:
+            auth_success = auth.nt_challenge_response == expected_nt
+
+        elif auth.lm_challenge_response:
+            auth_success = auth.lm_challenge_response == expected_lm
+
+        if not auth_success:
+            raise Exception("Invalid credential")
+
+        if auth.flags & NegotiateFlags.key_exch:
+            self._session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
+        else:
+            self._session_key = key_exchange_key
+
+        if expected_mic:
+            auth.mic = b"\x00" * 16
+            actual_mic = self._calculate_mic(self._temp_msg['negotiate'].pack(), challenge.pack(), auth.pack())
+
+            if actual_mic != expected_mic:
+                raise Exception("Invalid MIC")
+
+        self._context_attr = auth.flags
+        self._complete = True
 
     def wrap(self, data, encrypt=True, qop=None):
-        # gss-ntlmssp and SSPI always seals the data even if integrity wasn't negotiated.
-        # TODO: verify if gss-ntlmssp fails for the above, SSPI doesn't due to NTLMSSP_NEGOTIATE_ALWAYS_SIGN
+        # GSSAPI segfaults when no confidentialtiy or integrity.
+        # SSPI will wrap when either confidentiality or integrity is negotiated. Fails with SEC_E_UNSUPPORTED_FUNCTION.
+        # Both actually seal/encrypt the data when either of those attributes are negotiated.
         msg, signature = seal(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out,
                               data)
 
@@ -513,6 +528,10 @@ class NTLMProxy(ContextProxy):
         self.__seq_num_out += 1
         return num
 
+    def _calculate_mic(self, negotiate, challenge, authenticate):  # type: (bytes, bytes, bytes) -> bytes
+        """ Calculates the MIC value for the negotiated context. """
+        return hmac_md5(self._session_key, negotiate + challenge + authenticate)
+
     def _compute_response(self, challenge, credential):
         # type: (Challenge, _NTLMCredential) -> Tuple[bytes, bytes, bytes]
         """ Compute the NT and LM responses and the key exchange key. """
@@ -521,7 +540,7 @@ class NTLMProxy(ContextProxy):
         if self._context_req & NegotiateFlags.anonymous:
             return b"", b"\x00", b""
 
-        elif self._ntlm_v2:
+        elif self._nt_v2:
             target_info = challenge.target_info.copy() if challenge.target_info else TargetInfo()
 
             if AvId.timestamp in target_info:
@@ -531,15 +550,8 @@ class NTLMProxy(ContextProxy):
             else:
                 time = FileTime.now()
 
-            # If Challenge does not contain both ComputerName and DomainName and integrity or confidentiality
-            # if (self.context_req & ContextReq.integrity or self.context_req & ContextReq.confidentiality) and \
-            #        AvId.dns_computer_name not in target_info and AvId.dns_domain_name not in target_info:
-            #    raise Exception("STATUS_LOGON_FAILURE")
-
             cbt = self._get_native_channel_bindings() if self.channel_bindings else b"\x00" * 16
             target_info[AvId.channel_bindings] = cbt
-
-            # TODO: Find a way to pass in untrusted SPN.
             target_info[AvId.target_name] = self.spn or u""
 
             if self._mic_required:

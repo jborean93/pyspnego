@@ -68,8 +68,8 @@ def sign(flags, handle, signing_key, seq_num, b_data):  # type: (int, RC4Handle,
         if flags & NegotiateFlags.always_sign == 0:
             raise Exception("No integrity")
 
-        # TODO: verify this
-        return b"\x01\x00\x00\x00" + (b"\x00" * 14)
+        # This is the behaviour seen with SSPI when signing data with NTLMSSP_NEGOTIATE_ALWAYS_SIGN.
+        return b"\x01" + b"\x00" * 15
 
     elif flags & NegotiateFlags.extended_session_security:
         return _mac_with_ess(flags, handle, signing_key, seq_num, b_data)
