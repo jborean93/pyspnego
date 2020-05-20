@@ -39,7 +39,6 @@ def test_spnego_error_unknown_error():
 
     assert isinstance(actual, exceptions.SpnegoError)
     assert actual.message == 'SpnegoError (1024): Unknown error code'
-    assert str(actual) == 'SpnegoError (1024): Unknown error code'
 
 
 def test_invalid_token_error():
@@ -49,7 +48,6 @@ def test_invalid_token_error():
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error is None
     assert actual.message == 'SpnegoError (9): A token was invalid'
-    assert str(actual) == 'SpnegoError (9): A token was invalid'
 
 
 def test_invalid_token_error_with_context():
@@ -58,8 +56,7 @@ def test_invalid_token_error_with_context():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (9): A token was invalid - Context'
-    assert str(actual) == 'SpnegoError (9): A token was invalid - Context'
+    assert actual.message == 'SpnegoError (9): A token was invalid, Context: Context'
 
 
 @pytest.mark.skipif(not GSSError, reason='Need a GSSError to test this out')
@@ -70,8 +67,7 @@ def test_invalid_token_from_gssapi():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message == 'SpnegoError (9): A token was invalid'
-    assert str(actual).startswith('SpnegoError (9): A token was invalid\nBase Error: Major (589824): ')
+    assert actual.message.startswith('SpnegoError (9): Major (589824)')
 
 
 # FIXME: implement these tests on Windows for validation.
@@ -87,7 +83,6 @@ def test_operation_not_available_error():
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error is None
     assert actual.message == 'SpnegoError (16): Operation not supported or available'
-    assert str(actual) == 'SpnegoError (16): Operation not supported or available'
 
 
 def test_operation_not_available_error_with_context():
@@ -96,8 +91,7 @@ def test_operation_not_available_error_with_context():
     assert isinstance(actual, exceptions.OperationNotAvailableError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (16): Operation not supported or available - Context'
-    assert str(actual) == 'SpnegoError (16): Operation not supported or available - Context'
+    assert actual.message == 'SpnegoError (16): Operation not supported or available, Context: Context'
 
 
 @pytest.mark.skipif(not GSSError, reason='Need a GSSError to test this out')
@@ -108,8 +102,7 @@ def test_operation_not_available_from_gssapi():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message == 'SpnegoError (9): A token was invalid'
-    assert str(actual).startswith('SpnegoError (9): A token was invalid\nBase Error: Major (589824): ')
+    assert actual.message.startswith('SpnegoError (9): Major (589824): ')
 
 
 # FIXME: implement these tests on Windows for validation.

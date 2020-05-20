@@ -29,27 +29,28 @@ except NameError:
 class ErrorCode(IntEnum):
     """Common error codes for SPNEGO operations.
 
-    Mostly a copy of the `GSS major error codes`_ with the names made more pythonic.
+    Mostly a copy of the `GSS major error codes`_ with the names made more pythonic. Not all codes have a corresponding
+    SpnegoError class as they are reserved for the codes that apply to both GSSAPI and SSPI.
 
     .. _GSS major error codes:
         https://docs.oracle.com/cd/E19683-01/816-1331/reference-4/index.html
     """
-    bad_mech = 1
-    bad_named = 2
+    bad_mech = 1  # BadMechanismError
+    bad_name = 2  # BadNameError
     bad_nametype = 3
-    bad_bindings = 4
+    bad_bindings = 4  # BadBindings
     bad_status = 5
-    bad_mic = 6
+    bad_mic = 6  # BadMICError
     no_cred = 7
     no_context = 8
-    invalid_token = 9
+    invalid_token = 9  # InvalidTokenError
     invalid_credential = 10
     credentials_expired = 11
-    context_expired = 12
-    failure = 13
-    bad_qop = 14
+    context_expired = 12  # ContextExpiredError
+    failure = 13  # This is a generic error with the error coming from the minor code, uses SpnegoError directly.
+    bad_qop = 14  # UnsupportedQop
     unauthorized = 15
-    unavailable = 16
+    unavailable = 16  # OperationNotAvailableError
     duplicate_element = 17
     name_not_mn = 18
 
@@ -88,9 +89,11 @@ class _SpnegoErrorRegistry(type):
             if not base_error:
                 raise ValueError("%s requires either an error_code or base_error" % cls.__name__)
 
+            # GSSError
             if hasattr(base_error, 'maj_code'):
                 error_code = cls.__gssapi_map.get(base_error.maj_code, None)
 
+            # WindowsError
             elif hasattr(base_error, 'winerror'):
                 error_code = cls.__sspi_map.get(base_error.winerror, None)
 
@@ -121,7 +124,7 @@ class SpnegoError(Exception):
     # Classes the subclass this type need to provide the following class attribute:
     #
     # ERROR_CODE = common ErrorCode value for the exception
-    # _BASE_MESSAGE = common string that explains the error code
+    # _BASE_MESSAGE = common string that explains the error code in the absence of the system error message.
     #
     # The following attributes are used to map specific system error codes to the common ErrorCode error.
     # _GSSAPI_CODE = The GSSAPI major_code from GSSError to map to the common error code
@@ -134,38 +137,90 @@ class SpnegoError(Exception):
 
         super(SpnegoError, self).__init__(self.message)
 
-    def __str__(self):
-        msg = self.message
-
-        # We want to preserve the base error message if possible in the exception output.
-        if self.base_error:
-            msg += "\nBase Error: %s" % str(self.base_error)
-
-        return to_native(msg)
-
     @property
     def message(self):
         error_code = self._error_code if self._error_code is not None else 0xFFFFFFFF
-        base_message = getattr(self, '_BASE_MESSAGE', 'Unknown error code')
+
+        if self.base_error:
+            base_message = str(self.base_error)
+
+        else:
+            base_message = getattr(self, '_BASE_MESSAGE', 'Unknown error code')
 
         msg = "SpnegoError (%d): %s" % (error_code, base_message)
         if self._context_message:
-            msg += " - %s" % self._context_message
+            msg += ", Context: %s" % self._context_message
 
         return msg
+
+
+class BadMechanismError(SpnegoError):
+    ERROR_CODE = ErrorCode.bad_mech
+
+    _BASE_MESSAGE = "An unsupported mechanism was requested"
+    _GSSAPI_CODE = 65536  # GSS_S_BAD_MECH
+    _SSPI_TOKEN = -2146893051  # SEC_E_SECPKG_NOT_FOUND
+
+
+class BadNameError(SpnegoError):
+    ERROR_CODE = ErrorCode.bad_name
+
+    _BASE_MESSAGE = "An invalid name was supplied"
+    _GSSAPI_CODE = 1310722  # GSS_S_BAD_NAME
+    _SSPI_TOKEN = -2146893053  # SEC_E_TARGET_UNKNOWN
+
+
+class BadBindings(SpnegoError):
+    ERROR_CODE = ErrorCode.bad_bindings
+
+    _BASE_MESSAGE = "Invalid channel bindings"
+    _GSSAPI_CODE = 262144  # GSS_BAD_BINDINGS
+    _SSPI_TOKEN = -2146892986  # SEC_E_BAD_BINDINGS
+
+
+class BadMICError(SpnegoError):
+    ERROR_CODE = ErrorCode.bad_mic
+
+    _BASE_MESSAGE = "A token had an invalid Message Integrity Check (MIC)"
+    _GSSAPI_CODE = 3932166  # GSS_BAD_MIC
+    _SSPI_TOKEN = -2146893041  # SEC_E_MESSAGE_ALTERED
+
+
+class NoCredentialError(SpnegoError):
+    ERROR_CODE = ErrorCode.no_cred
+
+    _BASE_MESSAGE = "No credentials were supplied, or the credentials were unavailable or inaccessible"
+    _GSSAPI_CODE = 458752  # GSS_NO_CRED
+    _SSPI_TOKEN = -2146893042  # SEC_E_NO_CREDENTIALS
 
 
 class InvalidTokenError(SpnegoError):
     ERROR_CODE = ErrorCode.invalid_token
 
     _BASE_MESSAGE = "A token was invalid"
-    _GSSAPI_CODE = 589824  # None | GSS_S_DEFECTIVE_TOKEN | None
+    _GSSAPI_CODE = 589824  # GSS_S_DEFECTIVE_TOKEN
     _SSPI_TOKEN = -2146893048  # SEC_E_INVALID_TOKEN
+
+
+class ContextExpiredError(SpnegoError):
+    ERROR_CODE = ErrorCode.context_expired
+
+    _BASE_MESSAGE = "Security context has expired"
+    _GSSAPI_CODE = 786432  # GSS_S_CONTEXT_EXPIRED
+    _SSPI_TOKEN = -2146893033  # SEC_E_CONTEXT_EXPIRED
+
+
+class UnsupportedQop(SpnegoError):
+    ERROR_CODE = ErrorCode.bad_qop
+
+    _BASE_MESSAGE = "The quality-of-protection requested could not be provided"
+    _GSSAPI_CODE = 917504  # GSS_S_BAD_QOP
+    _SSPI_TOKEN = -2146893046  # SEC_E_QOP_NOT_SUPPORTED
 
 
 class OperationNotAvailableError(SpnegoError):
     ERROR_CODE = ErrorCode.unavailable
 
     _BASE_MESSAGE = "Operation not supported or available"
-    _GSSAPI_CODE = 1048576  # None | GSS_S_UNAVAILABLE | None
+    _GSSAPI_CODE = 1048576  # GSS_S_UNAVAILABLE
     _SSPI_CODE = -2146893054  # SEC_E_UNSUPPORTED_FUNCTION

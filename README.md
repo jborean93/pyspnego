@@ -150,3 +150,212 @@ echo "nameserver 192.168.56.10" > /etc/resolv.conf
 * Test against `requests-credssp`
 * Test against `pypsrp`
 * See if `pywinrm` wants to use this
+
+
+## Exception details
+
+This is trying to keep track of the various exceptions that can be fired by each proxy
+
+Unmapped Windows errors:
+* SEC_E_INSUFFICIENT_MEMORY
+* SEC_E_INTERNAL_ERROR
+* SEC_E_NOT_OWNER
+* SEC_E_UNKNOWN_CREDENTIALS
+* SEC_E_INVALID_HANDLE
+* SEC_E_LOGON_DENIED - `RuntimeError: SSPI step failed: (-2146893044) SEC_E_LOGON_DENIED 0x8009030C - The logon attempt failed`
+* SEC_E_NO_AUTHENTICATING_AUTHORITY
+* SEC_E_WRONG_PRINCIPAL
+
+
+Unmapped GSSAPI errors:
+* GSS_S_BAD_NAMETYPE
+* GSS_S_BAD_STATUS
+* GSS_S_NO_CONTEXT
+* GSS_S_DEFECTIVE_CREDENTIAL 
+* GSS_S_CREDENTIALS_EXPIRED
+* GSS_S_UNAUTHORIZED
+* GSS_S_DUPLICATE_ELEMENT
+* GSS_S_NAME_NOT_MN
+
+
+```yaml
+__init__():
+  desired: |
+    FeatureMissingError() done in base
+    ValueError() done in base
+    SpnegoError() with the following system exceptions
+      BadMechanismError - When mech/protocol that isn't supported is specified.
+      BadNameError - Invalid SPN
+
+  base: |
+    ValueError() for some invalid parameters
+    FeatureMissingError() when NegotiateOptions specified cannot be guaranteed.
+  sspi: |
+    `AcquireCredentialsHandle()`:
+      * SEC_E_INSUFFICIENT_MEMORY
+      * SEC_E_INTERNAL_ERROR
+      * SEC_E_NO_CREDENTIALS
+      * SEC_E_NOT_OWNER
+      * SEC_E_UNKNOWN_CREDENTIALS
+    Can fail with memory allocation error but we probably don't need to worry about that.
+    Have tested this out, can only get a failure with an invalid protocol specified. Others can probably happen but
+    very edge case
+  gssapi: |
+    `gss_acquire_cred()` and `gss_acquire_cred_from_password()`:
+      * BadNameTypeError - I don't think there is an analogue to SSPI, might keep generic
+      * ExpiredCredentialsError
+      * MissingCredentialsError
+    
+    Also creates the gssapi security context but this does not look like it actually makes any syscalls.
+  negotiate: |
+    Doesn't initialise anything, no errors expected
+  ntlm: |
+    For initiate, will get the credentials, either explicit or from the cache
+    For accept, checks the cache is available
+
+available_protocols():
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+iov_available:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+complete:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+context_attr:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+negotiated_protocol:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+session_key:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+step:
+  desired:
+  base:
+  sspi:
+  gssapi: |
+    gss-ntlmssp specified invalid argument when the NT hash was not the same.
+  negotiate:
+  ntlm:
+
+wrap:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+wrap_iov:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+unwrap:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+unwrap_iov:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+sign:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+verify:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+_context_attr_map:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+_requires_mech_list_mic:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+_create_spn:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+_convert_iov_buffer:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+
+_reset_ntlm_crypto_state:
+  desired:
+  base:
+  sspi:
+  gssapi:
+  negotiate:
+  ntlm:
+```
+

@@ -302,7 +302,7 @@ class SSPIProxy(ContextProxy):
         if not service and not principal:
             return
 
-        return u"%s\\%s" % (service.upper() if service else u"HOST", principal or u"unspecified")
+        return u"%s/%s" % (service.upper() if service else u"HOST", principal or u"unspecified")
 
     def _get_native_channel_bindings(self):
         try:

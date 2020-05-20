@@ -383,9 +383,11 @@ class GSSAPIProxy(ContextProxy):
 
         return IOVUnwrapResult(buffers=self._create_iov_result(buffer), encrypted=res.encrypted, qop=res.qop)
 
+    @_wrap_error("Signing message")
     def sign(self, data, qop=None):
         return gssapi.raw.get_mic(self._context, data, qop=qop)
 
+    @_wrap_error("Verifying MIC")
     def verify(self, data, mic):
         return gssapi.raw.verify_mic(self._context, data, mic)
 
