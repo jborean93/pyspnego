@@ -31,6 +31,10 @@ from spnego._text import (
     to_text,
 )
 
+from spnego.exceptions import (
+    SpnegoError,
+)
+
 from spnego.iov import (
     BufferType,
     IOVBuffer,
@@ -246,6 +250,28 @@ def _gss_ntlmssp_reset_crypto(context, outgoing=True):  # type: (gssapi.Security
     set_sec_context_option(reset_crypto, context=context, value=value)
 
 
+def _wrap_error(context=None):  # type: (Optional[str]) -> any
+    """Wraps a GSSAPI function to catch any GSSErrors.
+
+    Wraps a function that can potentially raise a GSSError and converts it to the common SpnegoError that is exposed
+    by this library. This is to ensure the context proxy functions raise a common set of errors rather than a specific
+    error for the provider. The underlying error is preserved in the SpnegoError if the user wishes to inspect that.
+
+    Args:
+        context: An optional context message to add to the error if raised.
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+
+            except GSSError as gss_err:
+                raise SpnegoError(base_error=gss_err, context_msg=context)
+
+        return wrapper
+    return decorator
+
+
 class GSSAPIProxy(ContextProxy):
     """GSSAPI proxy class for GSSAPI on Linux.
 
@@ -310,14 +336,11 @@ class GSSAPIProxy(ContextProxy):
         }.get(self._context.mech.dotted_form, u'unknown: %s' % self._context.mech.dotted_form)
 
     @property
+    @_wrap_error("retrieving session key")
     def session_key(self):
-        try:
-            return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
-        except (gssapi.raw.exceptions.ContextReadError, gssapi.raw.exceptions.OperationUnavailableError) as e:
-            log.debug("Failed to get GSSAPI session key, ignoring: %s" % to_text(e))
-            # Context is not fully established, return None
-            return
+        return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
 
+    @_wrap_error("process security token")
     def step(self, in_token=None):
         if not self._is_wrapped:
             log.debug("GSSAPI step input: %s", to_text(base64.b64encode(in_token or b"")))

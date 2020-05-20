@@ -453,7 +453,9 @@ class NTLMProxy(ContextProxy):
         self._complete = True
 
     def wrap(self, data, encrypt=True, qop=None):
-        # GSSAPI segfaults when no confidentialtiy or integrity.
+        # GSSAPI segfaults when no confidentialtiy or integrity. After https://github.com/gssapi/gss-ntlmssp/pull/18
+        # gssapi.raw.misc.GSSError: Major (851968): Unspecified GSS failure.  Minor code may provide more information,
+        # Minor (95): Operation not supported
         # SSPI will wrap when either confidentiality or integrity is negotiated. Fails with SEC_E_UNSUPPORTED_FUNCTION.
         # Both actually seal/encrypt the data when either of those attributes are negotiated.
         msg, signature = seal(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out,
