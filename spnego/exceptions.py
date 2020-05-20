@@ -110,7 +110,10 @@ class SpnegoError(Exception):
     """Common error for SPNEGO exception.
 
     Creates an common error record for SPNEGO errors raised by pyspnego. This error record can wrap system level error
-    records raised by GSSAPI or SSPI and wrap them into a common error record across the various platforms.
+    records raised by GSSAPI or SSPI and wrap them into a common error record across the various platforms. While this
+    reflects the GSSAPI major codes that can be raised, it is up to the GSSAPI platform to conform to those error
+    codes. Some platforms like MIT krb5 always report `GSS_S_FAILURE` and use the minor code to report the actual
+    error message.
 
     Args:
         error_code: The ErrorCode for the error, this must be set if base_error is not set.
