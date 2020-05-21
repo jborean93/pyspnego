@@ -122,7 +122,7 @@ includedir /etc/krb5.conf.d/
 
 [domain_realm]
   .domain.local = DOMAIN.LOCAL
-  domain.local DOMAIN.LOCAL
+  domain.local = DOMAIN.LOCAL
 EOL
 
 pip3 install gssapi
