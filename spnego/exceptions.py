@@ -37,22 +37,22 @@ class ErrorCode(IntEnum):
     """
     bad_mech = 1  # BadMechanismError
     bad_name = 2  # BadNameError
-    bad_nametype = 3
+    # bad_nametype = 3  # No equivalent in SSPI, shouldn't happen in our code as well.
     bad_bindings = 4  # BadBindings
-    bad_status = 5
+    # bad_status = 5  # Only used in gss_display_status which we don't care about.
     bad_mic = 6  # BadMICError
-    no_cred = 7
-    no_context = 8
+    no_cred = 7  # NoCredentialError
+    # no_context = 8  # InvalidTokenError, SSPI does not differentiate between the 2
     invalid_token = 9  # InvalidTokenError
-    invalid_credential = 10
-    credentials_expired = 11
+    # invalid_credential = 10  # No real equivalent in SSPI, shouldn't happen in our code.
+    credentials_expired = 11  # CredentialsExpiredError
     context_expired = 12  # ContextExpiredError
     failure = 13  # This is a generic error with the error coming from the minor code, uses SpnegoError directly.
     bad_qop = 14  # UnsupportedQop
-    unauthorized = 15
+    # unauthorized = 15  # Shouldn't happen in our code, we don't do any authorization functions.
     unavailable = 16  # OperationNotAvailableError
-    duplicate_element = 17
-    name_not_mn = 18
+    # duplicate_element = 17  # Shouldn't happen in our code.
+    # name_not_mn = 18  # Shouldn't happen in our code.
 
 
 # Implementation is inspired by the python-gssapi project https://github.com/pythongssapi/python-gssapi.
@@ -162,7 +162,7 @@ class BadMechanismError(SpnegoError):
 
     _BASE_MESSAGE = "An unsupported mechanism was requested"
     _GSSAPI_CODE = 65536  # GSS_S_BAD_MECH
-    _SSPI_TOKEN = -2146893051  # SEC_E_SECPKG_NOT_FOUND
+    _SSPI_CODE = -2146893051  # SEC_E_SECPKG_NOT_FOUND
 
 
 class BadNameError(SpnegoError):
@@ -170,7 +170,7 @@ class BadNameError(SpnegoError):
 
     _BASE_MESSAGE = "An invalid name was supplied"
     _GSSAPI_CODE = 1310722  # GSS_S_BAD_NAME
-    _SSPI_TOKEN = -2146893053  # SEC_E_TARGET_UNKNOWN
+    _SSPI_CODE = -2146893053  # SEC_E_TARGET_UNKNOWN
 
 
 class BadBindings(SpnegoError):
@@ -178,7 +178,7 @@ class BadBindings(SpnegoError):
 
     _BASE_MESSAGE = "Invalid channel bindings"
     _GSSAPI_CODE = 262144  # GSS_BAD_BINDINGS
-    _SSPI_TOKEN = -2146892986  # SEC_E_BAD_BINDINGS
+    _SSPI_CODE = -2146892986  # SEC_E_BAD_BINDINGS
 
 
 class BadMICError(SpnegoError):
@@ -186,7 +186,7 @@ class BadMICError(SpnegoError):
 
     _BASE_MESSAGE = "A token had an invalid Message Integrity Check (MIC)"
     _GSSAPI_CODE = 3932166  # GSS_BAD_MIC
-    _SSPI_TOKEN = -2146893041  # SEC_E_MESSAGE_ALTERED
+    _SSPI_CODE = -2146893041  # SEC_E_MESSAGE_ALTERED
 
 
 class NoCredentialError(SpnegoError):
@@ -194,15 +194,23 @@ class NoCredentialError(SpnegoError):
 
     _BASE_MESSAGE = "No credentials were supplied, or the credentials were unavailable or inaccessible"
     _GSSAPI_CODE = 458752  # GSS_NO_CRED
-    _SSPI_TOKEN = -2146893042  # SEC_E_NO_CREDENTIALS
+    _SSPI_CODE = -2146893042  # SEC_E_NO_CREDENTIALS
 
 
 class InvalidTokenError(SpnegoError):
     ERROR_CODE = ErrorCode.invalid_token
 
-    _BASE_MESSAGE = "A token was invalid"
-    _GSSAPI_CODE = 589824  # GSS_S_DEFECTIVE_TOKEN
-    _SSPI_TOKEN = -2146893048  # SEC_E_INVALID_TOKEN
+    _BASE_MESSAGE = "A token was invalid, or the logon was denied"
+    _GSSAPI_CODE = [524288, 589824]  # GSS_S_NO_CONTEXT, GSS_S_DEFECTIVE_TOKEN
+    _SSPI_CODE = [-2146893044, -2146893048]  # SEC_E_LOGON_DENIED, SEC_E_INVALID_TOKEN
+
+
+class CredentialsExpiredError(SpnegoError):
+    ERROR_CODE = ErrorCode.credentials_expired
+
+    _BASE_MESSAGE = "The referenced credentials have expired"
+    _GSSAPI_CODE = 720896  # * GSS_S_CREDENTIALS_EXPIRED
+    _SSPI_CODE = -1073741711  # STATUS_PASSWORD_EXPIRED
 
 
 class ContextExpiredError(SpnegoError):
@@ -210,7 +218,7 @@ class ContextExpiredError(SpnegoError):
 
     _BASE_MESSAGE = "Security context has expired"
     _GSSAPI_CODE = 786432  # GSS_S_CONTEXT_EXPIRED
-    _SSPI_TOKEN = -2146893033  # SEC_E_CONTEXT_EXPIRED
+    _SSPI_CODE = -2146893033  # SEC_E_CONTEXT_EXPIRED
 
 
 class UnsupportedQop(SpnegoError):
@@ -218,7 +226,7 @@ class UnsupportedQop(SpnegoError):
 
     _BASE_MESSAGE = "The quality-of-protection requested could not be provided"
     _GSSAPI_CODE = 917504  # GSS_S_BAD_QOP
-    _SSPI_TOKEN = -2146893046  # SEC_E_QOP_NOT_SUPPORTED
+    _SSPI_CODE = -2146893046  # SEC_E_QOP_NOT_SUPPORTED
 
 
 class OperationNotAvailableError(SpnegoError):

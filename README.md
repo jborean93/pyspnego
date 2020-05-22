@@ -74,67 +74,137 @@ export GSSAPI_COMPILER_ARGS="-I/opt/krb5-1.18.1/usr/local/include -I/usr/local/i
 pip install gssapi --no-cache-dir
 ```
 
+## Setting up Linux KDC
 
-## Installing Heimdal on Centos 8
+Here are some commands to run to set up a KDC inside a docker container. This is mostly just a way to test out various
+scenarios against the different packages. The username created is `admin@DOMAIN.LOCAL` with the password `password`.
+
+### MIT KRB5
 
 ```bash
-# On the host
-docker run --rm -it centos:8 /bin/bash
+HOSTNAME=$(hostname)
+REALM=domain.local
+USERNAME=admin
+PASSWORD=password
 
-# In the container
+yum install -y epel-release
+yum install -y \
+  gcc \
+  gssntlmssp \
+  krb5-devel \
+  krb5-server \
+  krb5-workstation \
+  python3 \
+  python3-devel \
+  python3-pip \
+  vim
+
+echo -e "127.0.0.1\t$HOSTNAME.$REALM" >> /etc/hosts
+
+cat > /etc/krb5.conf <<EOL
+[libdefaults]
+  default_realm = ${REALM^^}
+  dns_lookup_realm = false
+  dns_lookup_kdc = false
+
+[realms]
+  ${REALM^^} = {
+    kdc = ${HOSTNAME,,}.${REALM,,}
+    admin_server = ${HOSTNAME,,}.${REALM,,}
+  }
+
+[domain_realm]
+  .${REALM,,} = ${REALM^^}
+  ${REALM,,} = ${REALM^^}
+EOL
+
+echo -e "*/*@${REALM^^}\t*" > /var/kerberos/krb5kdc/kadm5.acl
+
+# Create the new realm
+echo -e "$PASSWORD\n$PASSWORD" | /usr/sbin/kdb5_util create -r ${REALM^^}
+
+# Create the user principal
+kadmin.local -q "addprinc -pw $PASSWORD $USERNAME"
+
+# Create the SPNs and add it to the /etc/krb5.keytab
+kadmin.local -q "addprinc -randkey host/$HOSTNAME@${REALM^^}"
+kadmin.local -q "ktadd -k /etc/krb5.keytab host/$HOSTNAME@${REALM^^}"
+
+kadmin.local -q "addprinc -randkey host/${HOSTNAME^^}@${REALM^^}"
+kadmin.local -q "ktadd -k /etc/krb5.keytab host/${HOSTNAME^^}@${REALM^^}"
+
+# Start the KDC service
+/usr/sbin/krb5kdc
+
+pip3 install gssapi
+```
+
+### Heimdal
+
+```bash
+HOSTNAME=$(hostname)
+REALM=domain.local
+USERNAME=admin
+PASSWORD=password
+
 yum install -y epel-release
 yum install -y \
   gcc \
   heimdal-devel \
   heimdal-libs \
   heimdal-path \
+  heimdal-server \
   heimdal-workstation \
   python3 \
   python3-devel \
   python3-pip \
   vim
-source /etc/profile
+source /etc/profile  # Ensure the Heimdal binaries are in the PATH
+
+echo -e "127.0.0.1\t$HOSTNAME.$REALM" >> /etc/hosts
 
 cat > /etc/krb5.conf <<EOL
-includedir /etc/krb5.conf.d/
-
-[logging]
-    default = FILE:/var/log/krb5libs.log
-    kdc = FILE:/var/log/krb5kdc.log
-    admin_server = FILE:/var/log/kadmind.log
-
 [libdefaults]
-    dns_lookup_realm = false
-    ticket_lifetime = 24h
-    renew_lifetime = 7d
-    forwardable = true
-    rdns = false
-    pkinit_anchors = FILE:/etc/pki/tls/certs/ca-bundle.crt
-    spake_preauth_groups = edwards25519
-    default_realm = DOMAIN.LOCAL
-    default_ccache_name = KEYRING:persistent:%{uid}
+  default_realm = ${REALM^^}
+  dns_lookup_realm = false
+  dns_lookup_kdc = false
 
 [realms]
-  DOMAIN.LOCAL = {
-    kdc = dc01.domain.local
-    admin_server = dc01.domain.local
+  ${REALM^^} = {
+    kdc = ${HOSTNAME,,}.${REALM,,}
+    admin_server = ${HOSTNAME,,}.${REALM,,}
   }
 
 [domain_realm]
-  .domain.local = DOMAIN.LOCAL
-  domain.local = DOMAIN.LOCAL
+  .${REALM,,} = ${REALM^^}
+  ${REALM,,} = ${REALM^^}
 EOL
 
-pip3 install gssapi
+echo -e "*/*@${REALM^^}\t*" > /var/heimdal/kadmind.acl
 
-echo "nameserver 192.168.56.10" > /etc/resolv.conf
+# Create the new realm
+echo -e "\n\n" | kadmin -l init ${REALM^^}
+
+# Create the user principal
+kadmin -l add --use-defaults --password=$PASSWORD $USERNAME
+
+# Create the SPNs and add it to the /etc/krb5.keytab
+kadmin -l add --random-key --use-defaults host/$HOSTNAME@${REALM^^}
+kadmin -l ext --keytab=/etc/krb5.keytab host/$HOSTNAME@${REALM^^}
+
+kadmin -l add --random-key --use-defaults host/${HOSTNAME^^}@${REALM^^}
+kadmin -l ext --keytab=/etc/krb5.keytab host/${HOSTNAME^^}@${REALM^^}
+
+# Start the KDC service
+/usr/libexec/kdc --detach
+
+pip3 install gssapi
 ```
 
 
 # TODO List
 
 * Look at optimising some of the large byte handling code by using `memory` view instead
-* Tidy up `NTLMProxy`, especially around `usage='accept'`
 * Try and simplify `pyspnego-parse` a bit more
 * Test out channel bindings
 * Unify exception handling
@@ -157,25 +227,10 @@ echo "nameserver 192.168.56.10" > /etc/resolv.conf
 This is trying to keep track of the various exceptions that can be fired by each proxy
 
 Unmapped Windows errors:
-* SEC_E_INSUFFICIENT_MEMORY
-* SEC_E_INTERNAL_ERROR
-* SEC_E_NOT_OWNER
-* SEC_E_UNKNOWN_CREDENTIALS
-* SEC_E_INVALID_HANDLE
-* SEC_E_LOGON_DENIED - `RuntimeError: SSPI step failed: (-2146893044) SEC_E_LOGON_DENIED 0x8009030C - The logon attempt failed`
-* SEC_E_NO_AUTHENTICATING_AUTHORITY
-* SEC_E_WRONG_PRINCIPAL
 
-
-Unmapped GSSAPI errors:
-* GSS_S_BAD_NAMETYPE
-* GSS_S_BAD_STATUS
-* GSS_S_NO_CONTEXT
-* GSS_S_DEFECTIVE_CREDENTIAL 
-* GSS_S_CREDENTIALS_EXPIRED
-* GSS_S_UNAUTHORIZED
-* GSS_S_DUPLICATE_ELEMENT
-* GSS_S_NAME_NOT_MN
+* SEC_E_INVALID_HANDLE - Might be `GSS_S_DEFECTIVE_CREDENTIAL`
+    * THe function failed. The handle passed to the function is not valid
+* SEC_E_OUT_OF_SEQUENCE - See how NTLM does this, I think it just does `SEC_E_MESSAGE_ALTERED`
 
 
 ```yaml
