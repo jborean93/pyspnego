@@ -298,19 +298,20 @@ class GSSAPIProxy(ContextProxy):
         cred = _get_gssapi_credential(mech, self.usage, username=username, password=password)
 
         context_kwargs = {}
+
+        if self.channel_bindings:
+            context_kwargs['channel_bindings'] = ChannelBindings(
+                initiator_address_type=self.channel_bindings.initiator_addrtype,
+                initiator_address=self.channel_bindings.initiator_address,
+                acceptor_address_type=self.channel_bindings.acceptor_addrtype,
+                acceptor_address=self.channel_bindings.acceptor_address,
+                application_data=self.channel_bindings.application_data
+            )
+        
         if self.usage == 'initiate':
             context_kwargs['name'] = gssapi.Name(self.spn, name_type=gssapi.NameType.hostbased_service)
             context_kwargs['mech'] = mech
             context_kwargs['flags'] = self._context_req
-
-            if self.channel_bindings:
-                context_kwargs['channel_bindings'] = ChannelBindings(
-                    initiator_address_type=self.channel_bindings.initiator_addrtype,
-                    initiator_address=self.channel_bindings.initiator_address,
-                    acceptor_address_type=self.channel_bindings.acceptor_addrtype,
-                    acceptor_address=self.channel_bindings.acceptor_address,
-                    application_data=self.channel_bindings.application_data
-                )
 
         self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, **context_kwargs)
 
