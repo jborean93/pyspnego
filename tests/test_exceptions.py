@@ -72,24 +72,26 @@ def test_invalid_token_from_gssapi():
 
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_invalid_token_from_sspi():
-    base_error = WindowsError(0, "Error", 0, -2146893048)
+    base_error = WindowsError("Error")
+    base_error.winerror = -2146893048
 
     actual = exceptions.SpnegoError(base_error=base_error)
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message == 'SpnegoError (9): [WinError -2146893048] Error: 0'
+    assert actual.message.startswith('SpnegoError (9): ')
 
 
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_invalid_token_from_sspi_logon_denied():
-    base_error = WindowsError(0, "Error", 0, -2146893044)
+    base_error = WindowsError("Error")
+    base_error.winerror = -2146893044
 
     actual = exceptions.SpnegoError(base_error=base_error)
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message == 'SpnegoError (9): [WinError -2146893044] Error: 0'
+    assert actual.message.startswith('SpnegoError (9): ')
 
 
 def test_operation_not_available_error():
@@ -123,10 +125,11 @@ def test_operation_not_available_from_gssapi():
 
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_operation_not_available_from_sspi():
-    base_error = WindowsError(0, "Error", 0, -2146893054)
+    base_error = WindowsError("Error")
+    base_error.winerror = -2146893054
 
     actual = exceptions.SpnegoError(base_error=base_error)
     assert isinstance(actual, exceptions.OperationNotAvailableError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error == base_error
-    assert actual.message == 'SpnegoError (16): [WinError -2146893054] Error: 0'
+    assert actual.message.startswith('SpnegoError (16): ')
