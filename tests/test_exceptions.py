@@ -70,10 +70,26 @@ def test_invalid_token_from_gssapi():
     assert actual.message.startswith('SpnegoError (9): Major (589824)')
 
 
-# FIXME: implement these tests on Windows for validation.
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_invalid_token_from_sspi():
-    a = ''
+    base_error = WindowsError(0, "Error", 0, -2146893048)
+
+    actual = exceptions.SpnegoError(base_error=base_error)
+    assert isinstance(actual, exceptions.InvalidTokenError)
+    assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
+    assert actual.base_error == base_error
+    assert actual.message == 'SpnegoError (9): [WinError -2146893048] Error: 0'
+
+
+@pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
+def test_invalid_token_from_sspi_logon_denied():
+    base_error = WindowsError(0, "Error", 0, -2146893044)
+
+    actual = exceptions.SpnegoError(base_error=base_error)
+    assert isinstance(actual, exceptions.InvalidTokenError)
+    assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
+    assert actual.base_error == base_error
+    assert actual.message == 'SpnegoError (9): [WinError -2146893044] Error: 0'
 
 
 def test_operation_not_available_error():
@@ -96,16 +112,21 @@ def test_operation_not_available_error_with_context():
 
 @pytest.mark.skipif(not GSSError, reason='Need a GSSError to test this out')
 def test_operation_not_available_from_gssapi():
-    base_error = GSSError(589824, 0)
+    base_error = GSSError(1048576, 0)
 
     actual = exceptions.SpnegoError(base_error=base_error)
-    assert isinstance(actual, exceptions.InvalidTokenError)
-    assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
+    assert isinstance(actual, exceptions.OperationNotAvailableError)
+    assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error == base_error
-    assert actual.message.startswith('SpnegoError (9): Major (589824): ')
+    assert actual.message.startswith('SpnegoError (16): Major (1048576): ')
 
 
-# FIXME: implement these tests on Windows for validation.
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_operation_not_available_from_sspi():
-    a = ''
+    base_error = WindowsError(0, "Error", 0, -2146893054)
+
+    actual = exceptions.SpnegoError(base_error=base_error)
+    assert isinstance(actual, exceptions.OperationNotAvailableError)
+    assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
+    assert actual.base_error == base_error
+    assert actual.message == 'SpnegoError (16): [WinError -2146893054] Error: 0'

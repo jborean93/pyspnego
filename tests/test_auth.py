@@ -6,6 +6,8 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import os
+import socket
+
 import pytest
 
 import spnego
@@ -258,7 +260,7 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred):
 ])
 def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=client_opt)
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm', options=client_opt)
     s = spnego.server(None, None, protocol='ntlm', options=server_opt)
 
     assert not c.complete
