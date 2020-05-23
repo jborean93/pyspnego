@@ -158,8 +158,6 @@ def test_ntlm_auth(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
     s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
-    assert not c.session_key
-    assert not s.session_key
     assert not c.complete
     assert not s.complete
 
@@ -167,8 +165,6 @@ def test_ntlm_auth(ntlm_cred):
     negotiate = c.step()
 
     assert isinstance(negotiate, bytes)
-    assert not c.session_key
-    assert not s.session_key
     assert not c.complete
     assert not s.complete
 
@@ -176,8 +172,6 @@ def test_ntlm_auth(ntlm_cred):
     challenge = s.step(negotiate)
 
     assert isinstance(challenge, bytes)
-    assert not c.session_key
-    assert not s.session_key
     assert not c.complete
     assert not s.complete
 
@@ -185,8 +179,7 @@ def test_ntlm_auth(ntlm_cred):
     authenticate = c.step(challenge)
 
     assert isinstance(authenticate, bytes)
-    assert c.session_key
-    assert not s.session_key
+    assert isinstance(c.session_key, bytes)
     assert c.complete
     assert not s.complete
 
@@ -194,8 +187,8 @@ def test_ntlm_auth(ntlm_cred):
     auth_response = s.step(authenticate)
 
     assert auth_response is None
-    assert c.session_key
-    assert s.session_key
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
     assert c.complete
     assert s.complete
 
@@ -268,8 +261,6 @@ def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=client_opt)
     s = spnego.server(None, None, protocol='ntlm', options=server_opt)
 
-    assert not c.session_key
-    assert not s.session_key
     assert not c.complete
     assert not s.complete
 
@@ -277,8 +268,6 @@ def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
     negotiate = c.step()
 
     assert isinstance(negotiate, bytes)
-    assert not c.session_key
-    assert not s.session_key
     assert not c.complete
     assert not s.complete
 
@@ -286,8 +275,6 @@ def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
     challenge = s.step(negotiate)
 
     assert isinstance(challenge, bytes)
-    assert not c.session_key
-    assert not s.session_key
     assert not c.complete
     assert not s.complete
 
@@ -296,7 +283,6 @@ def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
 
     assert isinstance(authenticate, bytes)
     assert isinstance(c.session_key, bytes)
-    assert not s.session_key
     assert c.complete
     assert not s.complete
 
