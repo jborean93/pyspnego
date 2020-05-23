@@ -16,8 +16,8 @@ from spnego._text import (
 )
 
 try:
-    from gssapi.exceptions import GSSError
-except ImportError:
+    from gssapi.raw import GSSError
+except ImportError as e:
     GSSError = ()
 
 try:
@@ -42,7 +42,7 @@ class ErrorCode(IntEnum):
     # bad_status = 5  # Only used in gss_display_status which we don't care about.
     bad_mic = 6  # BadMICError
     no_cred = 7  # NoCredentialError
-    # no_context = 8  # InvalidTokenError, SSPI does not differentiate between the 2
+    no_context = 8  # NoContextError
     invalid_token = 9  # InvalidTokenError
     # invalid_credential = 10  # No real equivalent in SSPI, shouldn't happen in our code.
     credentials_expired = 11  # CredentialsExpiredError
@@ -195,6 +195,14 @@ class NoCredentialError(SpnegoError):
     _BASE_MESSAGE = "No credentials were supplied, or the credentials were unavailable or inaccessible"
     _GSSAPI_CODE = 458752  # GSS_NO_CRED
     _SSPI_CODE = -2146893042  # SEC_E_NO_CREDENTIALS
+
+
+class NoContextError(SpnegoError):
+    ERROR_CODE = ErrorCode.no_context
+
+    _BASE_MESSAGE = "No context has been established, or invalid handled passed in"
+    _GSSAPI_CODE = 524288  # GSS_S_NO_CONTEXT
+    _SSPI_CODE = -2146893055  # SEC_E_INVALID_HANDLE
 
 
 class InvalidTokenError(SpnegoError):

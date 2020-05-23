@@ -17,12 +17,18 @@ from spnego._compat import (
 
     add_metaclass,
 
+    reraise,
+
     Enum,
     IntFlag,
 )
 
 from spnego.channel_bindings import (
     GssChannelBindings,
+)
+
+from spnego.exceptions import (
+    SpnegoError,
 )
 
 from spnego.iov import (
@@ -59,6 +65,30 @@ def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], O
         domain = None
 
     return to_text(domain, nonstring='passthru'), to_text(username, nonstring='passthru')
+
+
+def wrap_system_error(error_type, context=None):  # type: (type, Optional[str]) -> any
+    """Wraps a function that makes a native GSSAPI/SSPI syscall and convert native exceptions to a SpnegoError.
+
+    Wraps a function that can potentially raise a WindowsError or GSSError and converts it to the common SpnegoError
+    that is exposed by this library. This is to ensure the context proxy functions raise a common set of errors rather
+    than a specific error for the provider. The underlying error is preserved in the SpnegoError if the user wishes to
+    inspect that.
+
+    Args:
+        error_type: The native error type that need to be wrapped.
+        context: An optional context message to add to the error if raised.
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+
+            except error_type as native_err:
+                reraise(SpnegoError(base_error=native_err, context_msg=context))
+
+        return wrapper
+    return decorator
 
 
 WrapResult = collections.namedtuple('WrapResult', ['data', 'encrypted'])
@@ -322,7 +352,7 @@ class ContextProxy:
             raise FeatureMissingError(ContextReq.wrapping_iov)
 
     @classmethod
-    def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[text_type, ...]
+    def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[str, ...]
         """A list of protocols that the provider can offer.
 
         Returns a list of protocols the underlying provider can implement. Currently only kerberos, negotiate, or ntlm
@@ -335,7 +365,7 @@ class ContextProxy:
         Returns:
             List[text_type, ...]: The list of protocols that the context can use.
         """
-        return [u'kerberos', u'negotiate', u'ntlm']  # pragma: no cover
+        return ['kerberos', 'negotiate', 'ntlm']  # pragma: no cover
 
     @classmethod
     def iov_available(cls):  # type: () -> bool
@@ -382,7 +412,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def negotiated_protocol(self):  # type: () -> text_type
+    def negotiated_protocol(self):  # type: () -> Optional[str]
         """The name of the negotiated protocol.
 
         Once the authentication process has compeleted this will return the name of the negotiated context that was
@@ -390,8 +420,9 @@ class ContextProxy:
         be either of those two.
 
         Returns:
-            text_type: The protocol that was negotiated, can be `ntlm` or `kerberos`. This is a unicode string in
-                Python 2 and a str string in Python 3.
+            Optional[str]: The protocol that was negotiated, can be `ntlm`, `kerberos`, or `negotiate. Will be `None`
+                for the acceptor until it receives the first token from the initiator. Once the context is establish
+                `negotiate` will change to either `ntlm` or `kerberos` to reflect the protocol that was used by SPNEGO.
         """
         pass  # pragma: no cover
 

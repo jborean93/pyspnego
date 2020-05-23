@@ -9,7 +9,7 @@ import os
 import pytest
 
 import spnego
-import spnego.gssapi
+import spnego.gss
 import spnego.sspi
 
 from spnego._context import (
@@ -80,7 +80,7 @@ def test_protocol_not_supported(monkeypatch):
     def available_protocols(*args, **kwargs):
         return []
 
-    monkeypatch.setattr(spnego.gssapi, '_available_protocols', available_protocols)
+    monkeypatch.setattr(spnego.gss, '_available_protocols', available_protocols)
 
     with pytest.raises(ValueError, match="Protocol kerberos is not available"):
         spnego.client(None, None, protocol='kerberos', options=spnego.NegotiateOptions.use_gssapi)
@@ -100,11 +100,11 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
         def available_protocols(*args, **kwargs):
             return []
 
-        monkeypatch.setattr(spnego.gssapi, '_available_protocols', available_protocols)
+        monkeypatch.setattr(spnego.gss, '_available_protocols', available_protocols)
         monkeypatch.setattr(spnego.sspi, '_available_protocols', available_protocols)
 
     elif client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols():
+        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
@@ -206,7 +206,7 @@ def test_ntlm_auth(ntlm_cred):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego.gssapi.GSSAPIProxy.available_protocols(),
+@pytest.mark.skipif('ntlm' not in spnego.gss.GSSAPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through GSSAPI')
 @pytest.mark.parametrize('client_opt, server_opt', [
     (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi),

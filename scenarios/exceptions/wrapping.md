@@ -62,8 +62,90 @@ No failure, just `b"\x00" * 16`. The `integrity` flag must be set for a valid si
 
 ## SSPI - Kerberos
 
+```python
+from spnego._sspi_raw import *
+
+import socket
+
+spn = "host/%s" % socket.getfqdn()
+context_req = ClientContextReq.mutual_auth
+protocol = 'Kerberos'
+
+auth_data = WinNTAuthIdentity(u'vagrant-domain@DOMAIN.LOCAL', None, u'VagrantPass1')
+
+c_cred = acquire_credentials_handle(None, protocol, auth_data=auth_data, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=token1)
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token, token1[0].buffer)])
+
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, token1, context_req=context_req, output_buffer=token2)
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token, token2[0].buffer)])
+
+final = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=token2,
+                            output_buffer=final)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+data = b"abc"
+sign = SecBufferDesc([
+    SecBuffer(SecBufferType.data, data),
+    SecBuffer(SecBufferType.token, length=sizes.max_signature),
+])
+make_signature(c_context, 0, sign, seq_no=0)
+```
+
+No failure
+
+
 ## SSPI - NTLM
 
+```python
+from spnego._sspi_raw import *
+
+spn = ""
+context_req = ClientContextReq.mutual_auth
+protocol = 'NTLM'
+
+c_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+nego = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=nego)
+nego = SecBufferDesc([SecBuffer(SecBufferType.token, nego[0].buffer)])
+
+challenge = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, nego, context_req=context_req, output_buffer=challenge)
+challenge = SecBufferDesc([SecBuffer(SecBufferType.token, challenge[0].buffer)])
+
+auth = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=challenge,
+                            output_buffer=auth)
+auth = SecBufferDesc([SecBuffer(SecBufferType.token, auth[0].buffer)])
+
+out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, auth, context_req=context_req, output_buffer=out_buffer)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+data = b"abc"
+sign = SecBufferDesc([
+    SecBuffer(SecBufferType.data, data),
+    SecBuffer(SecBufferType.token, length=sizes.max_signature),
+])
+make_signature(c_context, 0, sign, seq_no=0)
+```
+
+No failure
 
 
 # wrap - no confidentiality
@@ -118,7 +200,102 @@ If I add `integrity` then it works just fine, it seems like either the flags nee
 
 ## SSPI - Kerberos
 
+```python
+from spnego._sspi_raw import *
+
+import socket
+
+spn = "host/%s" % socket.getfqdn()
+context_req = ClientContextReq.mutual_auth
+protocol = 'Kerberos'
+
+auth_data = WinNTAuthIdentity(u'vagrant-domain@DOMAIN.LOCAL', None, u'VagrantPass1')
+
+c_cred = acquire_credentials_handle(None, protocol, auth_data=auth_data, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=token1)
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token, token1[0].buffer)])
+
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, token1, context_req=context_req, output_buffer=token2)
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token, token2[0].buffer)])
+
+final = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=token2,
+                            output_buffer=final)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+iov = SecBufferDesc([
+    SecBuffer(SecBufferType.token, length=sizes.security_trailer),
+    SecBuffer(SecBufferType.data, b"Hello world"),
+    SecBuffer(SecBufferType.padding, length=sizes.block_size),
+])
+encrypt_message(c_context, iov, seq_no=0, qop=51566)
+```
+
+Outputs
+
+```
+OSError: [WinError -2146893054] The function requested is not supported
+```
+
+_Note: Must have confidentiality, integrity is not enough._
+
+
 ## SSPI - NTLM
+
+```python
+from spnego._sspi_raw import *
+
+spn = ""
+context_req = ClientContextReq.mutual_auth
+protocol = 'NTLM'
+
+c_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+nego = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=nego)
+nego = SecBufferDesc([SecBuffer(SecBufferType.token, nego[0].buffer)])
+
+challenge = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, nego, context_req=context_req, output_buffer=challenge)
+challenge = SecBufferDesc([SecBuffer(SecBufferType.token, challenge[0].buffer)])
+
+auth = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=challenge,
+                            output_buffer=auth)
+auth = SecBufferDesc([SecBuffer(SecBufferType.token, auth[0].buffer)])
+
+out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, auth, context_req=context_req, output_buffer=out_buffer)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+iov = SecBufferDesc([
+    SecBuffer(SecBufferType.token, length=sizes.security_trailer),
+    SecBuffer(SecBufferType.data, b"Hello world"),
+    SecBuffer(SecBufferType.padding, length=sizes.block_size),
+])
+encrypt_message(c_context, iov, seq_no=0, qop=0)
+```
+
+Outputs
+
+```
+OSError: [WinError -2146893054] The function requested is not supported
+```
+
+_Note: if either integrity or confidentiality is set this works._
 
 
 # wrap - invalid qop
@@ -188,7 +365,90 @@ gssapi.raw.exceptions.BadQoPError: Major (917504): The quality-of-protection (QO
 
 ## SSPI - Kerberos
 
+```python
+from spnego._sspi_raw import *
+
+import socket
+
+spn = "host/%s" % socket.getfqdn()
+context_req = ClientContextReq.integrity | ClientContextReq.confidentiality | ClientContextReq.mutual_auth
+protocol = 'Kerberos'
+
+auth_data = WinNTAuthIdentity(u'vagrant-domain@DOMAIN.LOCAL', None, u'VagrantPass1')
+
+c_cred = acquire_credentials_handle(None, protocol, auth_data=auth_data, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=token1)
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token, token1[0].buffer)])
+
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, token1, context_req=context_req, output_buffer=token2)
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token, token2[0].buffer)])
+
+final = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=token2,
+                            output_buffer=final)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+iov = SecBufferDesc([
+    SecBuffer(SecBufferType.token, length=sizes.security_trailer),
+    SecBuffer(SecBufferType.data, b"Hello world"),
+    SecBuffer(SecBufferType.padding, length=sizes.block_size),
+])
+encrypt_message(c_context, iov, seq_no=0, qop=51566)
+```
+
+Doesn't fail.
+
+
 ## SSPI - NTLM
+
+```python
+from spnego._sspi_raw import *
+
+spn = ""
+context_req = ClientContextReq.mutual_auth | ClientContextReq.confidentiality | ClientContextReq.integrity
+protocol = 'NTLM'
+
+c_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+nego = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=nego)
+nego = SecBufferDesc([SecBuffer(SecBufferType.token, nego[0].buffer)])
+
+challenge = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, nego, context_req=context_req, output_buffer=challenge)
+challenge = SecBufferDesc([SecBuffer(SecBufferType.token, challenge[0].buffer)])
+
+auth = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=challenge,
+                            output_buffer=auth)
+auth = SecBufferDesc([SecBuffer(SecBufferType.token, auth[0].buffer)])
+
+out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, auth, context_req=context_req, output_buffer=out_buffer)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+iov = SecBufferDesc([
+    SecBuffer(SecBufferType.token, length=sizes.security_trailer),
+    SecBuffer(SecBufferType.data, b"Hello world"),
+    SecBuffer(SecBufferType.padding, length=sizes.block_size),
+])
+encrypt_message(c_context, iov, seq_no=0, qop=51566)
+```
+
+Doesn't fail
 
 
 # sign - invalid qop
@@ -256,10 +516,48 @@ Outputs
 gssapi.raw.exceptions.BadQoPError: Major (917504): The quality-of-protection (QOP) requested could not be provided, Minor (1314127877): Invalid value in argument
 ```
 
-## SSPI - Kerberos
+## SSPI - Kerberos and NTLM
 
-## SSPI - NTLM
+```python
+from spnego._sspi_raw import *
 
+import socket
+
+spn = "host/%s" % socket.getfqdn()
+context_req = ClientContextReq.integrity | ClientContextReq.confidentiality | ClientContextReq.mutual_auth
+protocol = 'Kerberos'
+
+auth_data = WinNTAuthIdentity(u'vagrant-domain@DOMAIN.LOCAL', None, u'VagrantPass1')
+
+c_cred = acquire_credentials_handle(None, protocol, auth_data=auth_data, credential_use=CredentialUse.outbound)
+s_cred = acquire_credentials_handle(None, protocol, credential_use=CredentialUse.inbound)
+
+c_context = SecurityContext()
+s_context = SecurityContext()
+
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, output_buffer=token1)
+token1 = SecBufferDesc([SecBuffer(SecBufferType.token, token1[0].buffer)])
+
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token)])
+accept_security_context(s_cred, s_context, token1, context_req=context_req, output_buffer=token2)
+token2 = SecBufferDesc([SecBuffer(SecBufferType.token, token2[0].buffer)])
+
+final = SecBufferDesc([SecBuffer(SecBufferType.token)])
+initialize_security_context(c_cred, c_context, spn, context_req=context_req, input_buffer=token2,
+                            output_buffer=final)
+
+sizes = query_context_attributes(c_context, SecPkgAttr.sizes)
+
+data = b"abc"
+sign = SecBufferDesc([
+    SecBuffer(SecBufferType.data, data),
+    SecBuffer(SecBufferType.token, length=sizes.max_signature),
+])
+make_signature(c_context, 10, sign, seq_no=0)
+```
+
+SSPI doesn't seem to care about the QoP.
 
 
 # NTLM - wrap_iov

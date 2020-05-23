@@ -224,14 +224,6 @@ pip3 install gssapi
 
 ## Exception details
 
-This is trying to keep track of the various exceptions that can be fired by each proxy
-
-Unmapped Windows errors:
-
-* SEC_E_INVALID_HANDLE - Might be `GSS_S_DEFECTIVE_CREDENTIAL`
-    * THe function failed. The handle passed to the function is not valid
-* SEC_E_OUT_OF_SEQUENCE - See how NTLM does this, I think it just does `SEC_E_MESSAGE_ALTERED`
-
 
 ```yaml
 __init__():

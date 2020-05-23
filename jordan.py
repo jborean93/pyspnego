@@ -73,15 +73,15 @@ def auth(server, username, password):
         dec_msg = c.unwrap(server_enc_msg2).data
         print(dec_msg.decode('utf-8'))
 
-        #enc_data = c.wrap(b"Jordan").data
+        enc_data = c.wrap(b"Jordan").data
 
-        #s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
+        s.sendall(struct.pack("<I", len(enc_data)) + enc_data)
 
-        #server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
-        #server_enc_msg = s.recv(server_enc_msg_len)
+        server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
+        server_enc_msg = s.recv(server_enc_msg_len)
 
-        #dec_msg = c.unwrap(server_enc_msg).data
-        #print(dec_msg.decode('utf-8'))
+        dec_msg = c.unwrap(server_enc_msg).data
+        print(dec_msg.decode('utf-8'))
 
         s.close()
 

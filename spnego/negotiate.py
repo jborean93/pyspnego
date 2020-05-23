@@ -35,7 +35,7 @@ from spnego._text import (
     to_text,
 )
 
-from spnego.gssapi import (
+from spnego.gss import (
     GSSAPIProxy,
 )
 

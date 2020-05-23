@@ -11,7 +11,7 @@ from spnego._compat import (
     List,
     Optional,
     Tuple,
-    Union,
+    reraise,
 )
 
 from spnego._context import (
@@ -23,6 +23,7 @@ from spnego._context import (
     NegotiateOptions,
     UnwrapResult,
     WrapResult,
+    wrap_system_error,
 )
 
 from spnego._text import (
@@ -32,6 +33,7 @@ from spnego._text import (
 )
 
 from spnego.exceptions import (
+    GSSError as NativeError,
     SpnegoError,
 )
 
@@ -79,7 +81,7 @@ _GSS_NTLMSSP_RESET_CRYPTO_OID = '1.3.6.1.4.1.7165.655.1.3'
 _GSS_SPNEGO_REQUIRE_MIC_OID_STRING = '1.3.6.1.4.1.7165.655.1.2'
 
 
-def _available_protocols(options=None):  # type: (Optional[NegotiateOptions]) -> List[text_type, ...]
+def _available_protocols(options=None):  # type: (Optional[NegotiateOptions]) -> List[str, ...]
     """ Return a list of protocols that GSSAPIProxy can offer. """
     if not options:
         options = NegotiateOptions(0)
@@ -88,21 +90,21 @@ def _available_protocols(options=None):  # type: (Optional[NegotiateOptions]) ->
     if HAS_GSSAPI:
         # We can't offer Kerberos if the caller requires WinRM wrapping and IOV isn't available.
         if not (options & NegotiateOptions.wrapping_winrm and not HAS_IOV):
-            protocols = [u'kerberos']
+            protocols = ['kerberos']
 
         # We can only offer NTLM if the mech is installed and can retrieve the functionality the caller desires.
         if _gss_ntlmssp_available(session_key=bool(options & NegotiateOptions.session_key)):
-            protocols.append(u'ntlm')
+            protocols.append('ntlm')
 
         # We can only offer Negotiate if we can offer both Kerberos and NTLM.
         if len(protocols) == 2:
-            protocols.append(u'negotiate')
+            protocols.append('negotiate')
 
     return protocols
 
 
 def _get_gssapi_credential(mech, usage, username=None, password=None):
-    # type: (gssapi.OID, str, Optional[text_type], Optional[Union[str, bytes]]) -> gssapi.creds.Credentials
+    # type: (gssapi.OID, str, Optional[text_type], Optional[text_type]) -> gssapi.creds.Credentials
     """Gets a set of credential(s).
 
     Will get a set of GSSAPI credential(s) for the mech specified. If the username and password is specified then a new
@@ -235,9 +237,9 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
             # https://github.com/gssapi/gss-ntlmssp/blob/9d7a275a4d6494606fb54713876e4f5cbf4d1362/src/gss_sec_ctx.c#L1277
             if o_err.min_code == 1314127894:  # ERR_NOTAVAIL
                 ntlm_features['session_key'] = True
+
             else:
-                pass
-                # log.debug("GSSAPI ntlmssp does not support session key interrogation: %s" % str(err))
+                log.debug("GSSAPI ntlmssp does not support session key interrogation: %s" % str(o_err))
 
     _gss_ntlmssp_available.result = ntlm_features
     return _gss_ntlmssp_available(session_key=session_key)
@@ -250,36 +252,12 @@ def _gss_ntlmssp_reset_crypto(context, outgoing=True):  # type: (gssapi.Security
     set_sec_context_option(reset_crypto, context=context, value=value)
 
 
-def _wrap_error(context=None):  # type: (Optional[str]) -> any
-    """Wraps a GSSAPI function to catch any GSSErrors.
-
-    Wraps a function that can potentially raise a GSSError and converts it to the common SpnegoError that is exposed
-    by this library. This is to ensure the context proxy functions raise a common set of errors rather than a specific
-    error for the provider. The underlying error is preserved in the SpnegoError if the user wishes to inspect that.
-
-    Args:
-        context: An optional context message to add to the error if raised.
-    """
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-
-            except GSSError as gss_err:
-                raise SpnegoError(base_error=gss_err, context_msg=context)
-
-        return wrapper
-    return decorator
-
-
 class GSSAPIProxy(ContextProxy):
     """GSSAPI proxy class for GSSAPI on Linux.
 
     This proxy class for GSSAPI exposes GSSAPI calls into a common interface for SPNEGO authentication. This context
     uses the Python gssapi library to interface with the gss_* calls to provider Kerberos, and potentially native
     ntlm/negotiate functionality.
-
-    Args:
     """
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
                  context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0, is_wrapped=False):
@@ -287,7 +265,7 @@ class GSSAPIProxy(ContextProxy):
                                           protocol, options, is_wrapped)
 
         if not HAS_GSSAPI:
-            raise Exception("Requires gssapi")
+            raise ImportError("GSSAPIProxy requires the Python gssapi library.")
 
         mech_str = {
             'kerberos': GSSMech.kerberos.value,
@@ -295,7 +273,11 @@ class GSSAPIProxy(ContextProxy):
             'ntlm': GSSMech.ntlm.value,
         }[self.protocol]
         mech = gssapi.OID.from_int_seq(mech_str)
-        cred = _get_gssapi_credential(mech, self.usage, username=username, password=password)
+
+        try:
+            cred = _get_gssapi_credential(mech, self.usage, username=username, password=password)
+        except GSSError as gss_err:
+            reraise(SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential"))
 
         context_kwargs = {}
 
@@ -307,7 +289,7 @@ class GSSAPIProxy(ContextProxy):
                 acceptor_address=self.channel_bindings.acceptor_address,
                 application_data=self.channel_bindings.application_data
             )
-        
+
         if self.usage == 'initiate':
             context_kwargs['name'] = gssapi.Name(self.spn, name_type=gssapi.NameType.hostbased_service)
             context_kwargs['mech'] = mech
@@ -331,17 +313,27 @@ class GSSAPIProxy(ContextProxy):
 
     @property
     def negotiated_protocol(self):
+        try:
+            # For an acceptor this can be blank until the first token is received
+            oid = self._context.mech.dotted_form
+        except AttributeError:
+            return
+
         return {
-            GSSMech.kerberos.value: u'kerberos',
-            GSSMech.ntlm.value: u'ntlm',
-        }.get(self._context.mech.dotted_form, u'unknown: %s' % self._context.mech.dotted_form)
+            GSSMech.kerberos.value: 'kerberos',
+            GSSMech.ntlm.value: 'ntlm',
+
+            # Only set until the negotiate process is complete, will change to one of the above once the context is
+            # set up.
+            GSSMech.spnego.value: 'negotiate',
+        }.get(oid, 'unknown: %s' % self._context.mech.dotted_form)
 
     @property
-    @_wrap_error("retrieving session key")
+    @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self):
         return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
 
-    @_wrap_error("process security token")
+    @wrap_system_error(NativeError, "Processing security token")
     def step(self, in_token=None):
         if not self._is_wrapped:
             log.debug("GSSAPI step input: %s", to_text(base64.b64encode(in_token or b"")))
@@ -354,6 +346,7 @@ class GSSAPIProxy(ContextProxy):
 
         return out_token
 
+    @wrap_system_error(NativeError, "Wrapping data")
     def wrap(self, data, encrypt=True, qop=None):
         res = gssapi.raw.wrap(self._context, data, confidential=encrypt, qop=qop)
 
@@ -364,12 +357,14 @@ class GSSAPIProxy(ContextProxy):
 
         return WrapResult(data=res.message, encrypted=encrypted)
 
+    @wrap_system_error(NativeError, "Wrapping IOV buffer")
     def wrap_iov(self, iov, encrypt=True, qop=None):
         buffer = IOV(*self._build_iov_list(iov), std_layout=False)
         encrypted = wrap_iov(self._context, buffer, confidential=encrypt, qop=qop)
 
         return IOVWrapResult(buffers=self._create_iov_result(buffer), encrypted=encrypted)
 
+    @wrap_system_error(NativeError, "Unwrapping data")
     def unwrap(self, data):
         res = gssapi.raw.unwrap(self._context, data)
 
@@ -378,17 +373,18 @@ class GSSAPIProxy(ContextProxy):
 
         return UnwrapResult(data=res.message, encrypted=encrypted, qop=res.qop)
 
+    @wrap_system_error(NativeError, "Unwrapping IOV buffer")
     def unwrap_iov(self, iov):
         buffer = IOV(*self._build_iov_list(iov), std_layout=False)
         res = unwrap_iov(self._context, buffer)
 
         return IOVUnwrapResult(buffers=self._create_iov_result(buffer), encrypted=res.encrypted, qop=res.qop)
 
-    @_wrap_error("Signing message")
+    @wrap_system_error(NativeError, "Signing message")
     def sign(self, data, qop=None):
         return gssapi.raw.get_mic(self._context, data, qop=qop)
 
-    @_wrap_error("Verifying MIC")
+    @wrap_system_error(NativeError, "Verifying message")
     def verify(self, data, mic):
         return gssapi.raw.verify_mic(self._context, data, mic)
 
@@ -446,6 +442,7 @@ class GSSAPIProxy(ContextProxy):
     def _create_spn(self, service, principal):
         return u"%s@%s" % (service.lower() if service else u'host', principal or u'unspecified')
 
+    @wrap_system_error(NativeError, "NTLM reset crypto state")
     def _reset_ntlm_crypto_state(self, outgoing=True):
         if self.negotiated_protocol == u'ntlm':
             _gss_ntlmssp_reset_crypto(self._context, outgoing=outgoing)

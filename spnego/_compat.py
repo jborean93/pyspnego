@@ -52,6 +52,25 @@ def add_metaclass(metaclass):
     return wrapper
 
 
+# TODO: Remove once Python 2.7 is dropped, use 'raise Blah() from err' instead.
+# Slightly modified from six.reraise to makle calling it simpler for pyspnego and more like raise Excp() from err.
+if sys.version_info[0] == 3:
+    def reraise(exc):
+        exc.__cause__ = sys.exc_info()[1]
+        raise exc
+
+else:
+    def _exec(_code_, _globs_=None, _locs_=None):
+        """Execute code in a namespace."""
+        frame = sys._getframe(1)
+        _globs_ = frame.f_globals
+        _locs_ = frame.f_locals
+        del frame
+
+        exec("""exec _code_ in _globs_, _locs_""")
+
+    _exec("def reraise(exc):\n    raise exc, None, sys.exc_info()[2]")
+
 # TODO: Remove once Python 2.7 and 3.5 is dropped, use enum.IntFlag instead.
 try:
     # IntFlag was added in Python 3.6.

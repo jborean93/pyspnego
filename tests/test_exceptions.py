@@ -47,7 +47,7 @@ def test_invalid_token_error():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (9): A token was invalid'
+    assert actual.message == 'SpnegoError (9): A token was invalid, or the logon was denied'
 
 
 def test_invalid_token_error_with_context():
@@ -56,7 +56,7 @@ def test_invalid_token_error_with_context():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (9): A token was invalid, Context: Context'
+    assert actual.message == 'SpnegoError (9): A token was invalid, or the logon was denied, Context: Context'
 
 
 @pytest.mark.skipif(not GSSError, reason='Need a GSSError to test this out')

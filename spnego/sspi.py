@@ -31,6 +31,7 @@ from spnego.iov import (
 
 from spnego._text import (
     text_type,
+    to_native,
     to_text,
 )
 
@@ -118,20 +119,14 @@ class SSPIProxy(ContextProxy):
 
     @property
     def negotiated_protocol(self):
+        # TODO: Try and replicate GSSAPI. Will return None for acceptor until the first token is returned. Negotiate
+        # for both iniator and acceptor until the context is established.
         package_info = query_context_attributes(self._context, SecPkgAttr.package_info)
-        return to_text(package_info.name).lower()
+        return to_native(package_info.name).lower()
 
     @property
     def session_key(self):
-        try:
-            return query_context_attributes(self._context, SecPkgAttr.session_key)
-        except WindowsError as err:
-            # We only care about errors that weren't an invalid handle to replicate the same behaviour as the other
-            # proxy handlers.
-            if err.winerror != -2146893055:  # SEC_E_INVALID_HANDLE
-                raise
-
-            return
+        return query_context_attributes(self._context, SecPkgAttr.session_key)
 
     def step(self, in_token=None):
         log.debug("SSPI step input: %s", to_text(base64.b64encode(in_token or b"")))
