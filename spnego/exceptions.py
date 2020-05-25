@@ -173,7 +173,7 @@ class BadNameError(SpnegoError):
     _SSPI_CODE = -2146893053  # SEC_E_TARGET_UNKNOWN
 
 
-class BadBindings(SpnegoError):
+class BadBindingsError(SpnegoError):
     ERROR_CODE = ErrorCode.bad_bindings
 
     _BASE_MESSAGE = "Invalid channel bindings"

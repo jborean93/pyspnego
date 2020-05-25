@@ -60,7 +60,7 @@ class NegotiateProxy(ContextProxy):
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
                  context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0):
         super(NegotiateProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req,
-                                             usage, protocol, False, options)
+                                             usage, protocol, options, False)
 
         self._hostname = hostname  # type: str
         self._service = service  # type: str
@@ -78,11 +78,11 @@ class NegotiateProxy(ContextProxy):
     def available_protocols(cls, options=None):
         # We always support Negotiate and NTLM as we have our builtin NTLM backend and only support kerberos if gssapi
         # is present.
-        protocols = [u'ntlm', u'negotiate']
+        protocols = ['ntlm', 'negotiate']
 
         # Make sure we add Kerberos first as the order is important.
-        if u'kerberos' in GSSAPIProxy.available_protocols(options=options):
-            protocols.insert(0, u'kerberos')
+        if 'kerberos' in GSSAPIProxy.available_protocols(options=options):
+            protocols.insert(0, 'kerberos')
 
         return protocols
 
@@ -268,9 +268,6 @@ class NegotiateProxy(ContextProxy):
     def _convert_iov_buffer(self, iov):
         pass  # Handled in the underlying context.
 
-    def _create_spn(self, service, principal):
-        return u"%s@%s" % (service.lower(), principal)
-
     def _rebuild_context_list(self, mech_list=None, in_token=None):
         # type: (Optional[List[str]], Optional[bytes]) -> List[str]
 
@@ -304,7 +301,7 @@ class NegotiateProxy(ContextProxy):
                 try:
                     context = GSSAPIProxy(self.username, self.password, self._hostname, self._service,
                                           self.channel_bindings, self.context_req, self.usage, protocol=mech.name,
-                                          is_wrapped=True)
+                                          _is_wrapped=True)
                     first_token = context.step(in_token=in_token)
                 except Exception as e:
                     log.debug("Failed to create gssapi context for SPNEGO protocol %s: %s", mech.name, to_text(e))
@@ -312,7 +309,7 @@ class NegotiateProxy(ContextProxy):
 
             else:
                 context = NTLMProxy(self.username, self.password, self._hostname, self._service,
-                                    self.channel_bindings, self.context_req, self.usage, is_wrapped=True)
+                                    self.channel_bindings, self.context_req, self.usage, _is_wrapped=True)
                 first_token = context.step(in_token=in_token)
 
             # We were able to build the context, add it to the list.

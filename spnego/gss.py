@@ -6,6 +6,7 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
 import logging
+import sys
 
 from spnego._compat import (
     List,
@@ -42,7 +43,11 @@ from spnego.iov import (
     IOVBuffer,
 )
 
+
+log = logging.getLogger(__name__)
+
 HAS_GSSAPI = True
+GSSAPI_IMP_ERR = None
 try:
     import gssapi
 
@@ -55,10 +60,13 @@ try:
         set_sec_context_option,
     )
 except ImportError:
+    GSSAPI_IMP_ERR = sys.exc_info()
     HAS_GSSAPI = False
+    log.debug("Python gssapi not available, cannot use any GSSAPIProxy protocols: %s" % str(GSSAPI_IMP_ERR[1]))
 
 
 HAS_IOV = True
+GSSAPI_IOV_IMP_ERR = None
 try:
     from gssapi.raw import (
         IOV,
@@ -67,10 +75,9 @@ try:
         wrap_iov,
     )
 except ImportError as err:
+    GSSAPI_IOV_IMP_ERR = sys.exc_info()
     HAS_IOV = False
-
-
-log = logging.getLogger(__name__)
+    log.debug("Python gssapi IOV extension not available: %s" % str(GSSAPI_IOV_IMP_ERR[1]))
 
 _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
@@ -101,6 +108,16 @@ def _available_protocols(options=None):  # type: (Optional[NegotiateOptions]) ->
             protocols.append('negotiate')
 
     return protocols
+
+
+def _create_iov_result(iov):  # type: (IOV) -> Tuple[IOVBuffer, ...]
+    """ Converts GSSAPI IOV buffer to generic IOVBuffer result. """
+    buffers = []
+    for i in iov:
+        buffer_entry = IOVBuffer(type=BufferType(i.type), data=i.value)
+        buffers.append(buffer_entry)
+
+    return tuple(buffers)
 
 
 def _get_gssapi_credential(mech, usage, username=None, password=None):
@@ -222,8 +239,8 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
         _gss_ntlmssp_reset_crypto(context)
 
         ntlm_features['available'] = True
-    except GSSError as err:
-        log.debug("GSSAPI does not support required the NTLM interfaces: %s" % str(err))
+    except GSSError as gss_err:
+        log.debug("GSSAPI does not support required the NTLM interfaces: %s" % str(gss_err))
     else:
         # gss-ntlmssp only recently added support for GSS_C_INQ_SSPI_SESSION_KEY in v0.9.0, we check if it is present
         # before declaring session_key support is there as it might control whether it is used or not.
@@ -235,7 +252,7 @@ def _gss_ntlmssp_available(session_key=False):  # type: (bool) -> bool
             # the context is not yet established. Any other errors would mean this isn't supported and we can't use
             # the current version installed if we need session_key interrogation.
             # https://github.com/gssapi/gss-ntlmssp/blob/9d7a275a4d6494606fb54713876e4f5cbf4d1362/src/gss_sec_ctx.c#L1277
-            if o_err.min_code == 1314127894:  # ERR_NOTAVAIL
+            if getattr(o_err, 'min_code', 0) == 1314127894:  # ERR_NOTAVAIL
                 ntlm_features['session_key'] = True
 
             else:
@@ -260,12 +277,13 @@ class GSSAPIProxy(ContextProxy):
     ntlm/negotiate functionality.
     """
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0, is_wrapped=False):
-        super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                          protocol, options, is_wrapped)
+                 context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0, _is_wrapped=False):
 
         if not HAS_GSSAPI:
-            raise ImportError("GSSAPIProxy requires the Python gssapi library.")
+            reraise(ImportError("GSSAPIProxy requires the Python gssapi library"), GSSAPI_IMP_ERR)
+
+        super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
+                                          protocol, options, _is_wrapped)
 
         mech_str = {
             'kerberos': GSSMech.kerberos.value,
@@ -274,6 +292,7 @@ class GSSAPIProxy(ContextProxy):
         }[self.protocol]
         mech = gssapi.OID.from_int_seq(mech_str)
 
+        cred = None
         try:
             cred = _get_gssapi_credential(mech, self.usage, username=username, password=password)
         except GSSError as gss_err:
@@ -291,7 +310,8 @@ class GSSAPIProxy(ContextProxy):
             )
 
         if self.usage == 'initiate':
-            context_kwargs['name'] = gssapi.Name(self.spn, name_type=gssapi.NameType.hostbased_service)
+            spn = to_text("%s@%s" % (service.lower() if service else 'host', hostname or 'unspecified'))
+            context_kwargs['name'] = gssapi.Name(spn, name_type=gssapi.NameType.hostbased_service)
             context_kwargs['mech'] = mech
             context_kwargs['flags'] = self._context_req
 
@@ -359,10 +379,10 @@ class GSSAPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Wrapping IOV buffer")
     def wrap_iov(self, iov, encrypt=True, qop=None):
-        buffer = IOV(*self._build_iov_list(iov), std_layout=False)
-        encrypted = wrap_iov(self._context, buffer, confidential=encrypt, qop=qop)
+        iov_buffer = IOV(*self._build_iov_list(iov), std_layout=False)
+        encrypted = wrap_iov(self._context, iov_buffer, confidential=encrypt, qop=qop)
 
-        return IOVWrapResult(buffers=self._create_iov_result(buffer), encrypted=encrypted)
+        return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted)
 
     @wrap_system_error(NativeError, "Unwrapping data")
     def unwrap(self, data):
@@ -375,10 +395,10 @@ class GSSAPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Unwrapping IOV buffer")
     def unwrap_iov(self, iov):
-        buffer = IOV(*self._build_iov_list(iov), std_layout=False)
-        res = unwrap_iov(self._context, buffer)
+        iov_buffer = IOV(*self._build_iov_list(iov), std_layout=False)
+        res = unwrap_iov(self._context, iov_buffer)
 
-        return IOVUnwrapResult(buffers=self._create_iov_result(buffer), encrypted=res.encrypted, qop=res.qop)
+        return IOVUnwrapResult(buffers=_create_iov_result(iov_buffer), encrypted=res.encrypted, qop=res.qop)
 
     @wrap_system_error(NativeError, "Signing message")
     def sign(self, data, qop=None):
@@ -413,36 +433,25 @@ class GSSAPIProxy(ContextProxy):
         else:
             return b"\x01" in res
 
-    def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> Tuple[int, bool, Optional[bytes]]
+    def _convert_iov_buffer(self, iov_buffer):  # type: (IOVBuffer) -> Tuple[int, bool, Optional[bytes]]
         buffer_data = None
         buffer_alloc = False
 
-        if isinstance(buffer.data, bytes):
-            buffer_data = buffer.data
-        elif isinstance(buffer.data, int):
+        if isinstance(iov_buffer.data, bytes):
+            buffer_data = iov_buffer.data
+        elif isinstance(iov_buffer.data, int):
             # This shouldn't really occur on GSSAPI but is here to mirror what SSPI does.
-            buffer_data = b"\x00" * buffer.data
+            buffer_data = b"\x00" * iov_buffer.data
         else:
             auto_alloc = [BufferType.header, BufferType.padding, BufferType.trailer]
 
-            buffer_alloc = buffer.data
+            buffer_alloc = iov_buffer.data
             if buffer_alloc is None:
-                buffer_alloc = buffer.type in auto_alloc
+                buffer_alloc = iov_buffer.type in auto_alloc
 
-        return buffer.type, buffer_alloc, buffer_data
-
-    def _create_iov_result(self, iov):  # type: (IOV) -> Tuple[IOVBuffer, ...]
-        buffers = []
-        for i in iov:
-            buffer_entry = IOVBuffer(type=BufferType(i.type), data=i.value)
-            buffers.append(buffer_entry)
-
-        return tuple(buffers)
-
-    def _create_spn(self, service, principal):
-        return u"%s@%s" % (service.lower() if service else u'host', principal or u'unspecified')
+        return iov_buffer.type, buffer_alloc, buffer_data
 
     @wrap_system_error(NativeError, "NTLM reset crypto state")
     def _reset_ntlm_crypto_state(self, outgoing=True):
-        if self.negotiated_protocol == u'ntlm':
+        if self.negotiated_protocol == 'ntlm':
             _gss_ntlmssp_reset_crypto(self._context, outgoing=outgoing)

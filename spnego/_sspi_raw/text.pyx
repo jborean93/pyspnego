@@ -31,7 +31,7 @@ cdef class WideChar:
         if length:
             self.buffer = <LPWSTR>malloc(length * sizeof(WCHAR))
             if not self.buffer:
-                raise MemoryError("Cannot malloc for WideChar")
+                raise MemoryError("Cannot malloc for WideChar")  # pragma: no cover
 
     def __len__(WideChar self):
         return self.length

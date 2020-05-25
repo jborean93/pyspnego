@@ -314,7 +314,7 @@ class ContextProxy:
     """
 
     def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol, options,
-                 is_wrapped):
+                 _is_wrapped):
         # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, NegotiateOptions, bool) -> None  # noqa
         self.usage = usage.lower()
         if self.usage not in ['initiate', 'accept']:
@@ -329,7 +329,11 @@ class ContextProxy:
 
         self.username = to_text(username, nonstring='passthru')
         self.password = to_text(password, nonstring='passthru')
-        self.spn = self._create_spn(service, hostname)
+
+        self.spn = None
+        if service or hostname:
+            self.spn = to_text("%s/%s" % (service.upper() if service else "HOST", hostname or "unspecified"))
+
         self.channel_bindings = channel_bindings
         self.options = NegotiateOptions(options)
 
@@ -342,7 +346,7 @@ class ContextProxy:
         self._context_attr = 0  # Provider specific context attributes, set by self.step().
 
         # Whether the context is wrapped inside another context.
-        self._is_wrapped = is_wrapped  # type: bool
+        self._is_wrapped = _is_wrapped  # type: bool
 
         if options & NegotiateOptions.negotiate_kerberos and (self.protocol == 'negotiate' and
                                                               'kerberos' not in self.available_protocols()):
@@ -709,23 +713,6 @@ class ContextProxy:
             provider_iov.append(self._convert_iov_buffer(iov_buffer))
 
         return provider_iov
-
-    @abc.abstractmethod
-    def _create_spn(self, service, principal):
-        # type: (Optional[text_type], Optional[text_type]) -> Optional[text_type]
-        """Creates the SPN.
-
-        Creates the SPN in the format required by the context. An SPN is required for Kerberos auth to work correctly.
-        Typically on SSPI the SPN must be in the form 'HTTP/fqdn' whereas GSSAPI expected 'http@fqdn'.
-
-        Args:
-            service: The service part of the SPN.
-            principal: The hostname or principal part of the SPN.
-
-        Returns:
-            Optional[text_type]: The SPN in the format required by the context provider.
-        """
-        pass  # pragma: no cover
 
     @abc.abstractmethod
     def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> any

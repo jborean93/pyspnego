@@ -1,5 +1,12 @@
 # sign - no integrity
 
+## Summary
+
+* Doesn't fail as `NTLMSSP_NEGOTIATE_ALWAYS_SIGN` is present in exchanges so a dummy signature is created
+* `gss-ntlmssp` does have a [bug](https://github.com/gssapi/gss-ntlmssp/issues/19) where the dummy signature doesn't match SSPI.
+
+TLDR: Don't check the flags, rely on the underlying mechanism to handle it.
+
 ## GSSAPI - Kerberos
 
 ```python
@@ -150,6 +157,11 @@ No failure
 
 # wrap - no confidentiality
 
+## Summary
+
+* The underlying context should handle it
+* For NTLMProxy we should fail when neither flags are set but continue if either `integrity` or `confidentiality` are set
+
 ## GSSAPI - Kerberos
 
 See `sign - no integrity`, no error occurs.
@@ -299,6 +311,12 @@ _Note: if either integrity or confidentiality is set this works._
 
 
 # wrap - invalid qop
+
+## Summary
+
+* The only provider that validates the QoP is MIT KRB5 and gss-ntlmssp.
+* The NTLMProxy should just be strict in case someone implicitly relies on a QoP that we don't know about.
+
 
 ## GSSAPI - Kerberos
 
@@ -453,6 +471,11 @@ Doesn't fail
 
 # sign - invalid qop
 
+## Summary
+
+* The only provider that validates the QoP is MIT KRB5 and gss-ntlmssp.
+* The NTLMProxy should just be strict in case someone implicitly relies on a QoP that we don't know about.
+
 ## GSSAPI - Kerberos
 
 ```python
@@ -600,6 +623,12 @@ This is expected as gssntlmssp does not offer IOV buffers for it's NTLM implemen
 
 
 # Out of sequence wrapping
+
+## Summary
+
+* Only Kerberos seems to check the sequence number
+* NTLM just verifies the signature but doesn't error when out of sequence.
+
 
 ## GSSAPI - Kerberos
 

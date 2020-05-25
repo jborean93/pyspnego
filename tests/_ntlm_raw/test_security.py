@@ -4,6 +4,10 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import re
+
+import pytest
+
 from spnego._ntlm_raw.crypto import (
     compute_response_v1,
     lmowfv1,
@@ -19,10 +23,15 @@ from spnego._ntlm_raw.messages import (
 
 from spnego._ntlm_raw.security import (
     seal,
+    sign,
 )
 
 from spnego._text import (
     to_bytes,
+)
+
+from spnego.exceptions import (
+    OperationNotAvailableError,
 )
 
 from .._ntlm_raw import (
@@ -99,3 +108,16 @@ def test_seal_ntlmv2_no_key_exch():
     assert actual_msg == b"\x54\xE5\x01\x65\xBF\x19\x36\xDC\x99\x60\x20\xC1\x81\x1B\x0F\x06" \
                          b"\xFB\x5F"
     assert actual_signature == b"\x01\x00\x00\x00\x70\x35\x28\x51\xF2\x56\x43\x09\x00\x00\x00\x00"
+
+
+def test_sign_with_always_sign():
+    actual = sign(NegotiateFlags.always_sign, None, b"", 0, b"data")
+
+    assert actual == b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+
+def test_sign_no_integrity():
+    expected = "SpnegoError (16): Operation not supported or available, Context: Signing without integrity."
+
+    with pytest.raises(OperationNotAvailableError, match=re.escape(expected)):
+        sign(0, None, b"", 0, b"data")

@@ -58,8 +58,17 @@ from spnego._ntlm_raw.messages import (
 
 from spnego._text import (
     text_type,
-    to_bytes,
     to_text,
+)
+
+from spnego.exceptions import (
+    BadBindingsError,
+    BadMICError,
+    ErrorCode,
+    InvalidTokenError,
+    OperationNotAvailableError,
+    SpnegoError,
+    UnsupportedQop,
 )
 
 log = logging.getLogger(__name__)
@@ -124,12 +133,12 @@ def _get_credential(store, username=None, domain=None):
         https://asecuritysite.com/encryption/lmhash
     """
     if not store:
-        raise Exception("Missing credential store")
+        raise OperationNotAvailableError(context_msg="Retrieving NTLM store without NTLM_USER_FILE set to a filepath")
 
     domain = domain or u""
 
-    def process_line(line):
-        line_split = to_text(line).split(':')
+    def process_line(b_line):
+        line_split = to_text(b_line).split(':')
 
         if len(line_split) == 3:
             return line_split[0], line_split[1], line_split[2], None, None
@@ -159,7 +168,8 @@ def _get_credential(store, username=None, domain=None):
                 return lm_hash, nt_hash
 
         else:
-            raise Exception("No matching credential")
+            raise SpnegoError(ErrorCode.failure, context_msg="Failed to find any matching credential in "
+                                                             "NTLM_USER_FILE credential store.")
 
 
 class _NTLMCredential:
@@ -181,9 +191,9 @@ class _NTLMCredential:
 class NTLMProxy(ContextProxy):
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='ntlm', options=0, is_wrapped=False):
+                 context_req=ContextReq.default, usage='initiate', protocol='ntlm', options=0, _is_wrapped=False):
         super(NTLMProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                        protocol, options, is_wrapped)
+                                        protocol, options, _is_wrapped)
 
         self._complete = False  # type: bool
         self._credential = None  # type: Optional[_NTLMCredential]
@@ -208,8 +218,8 @@ class NTLMProxy(ContextProxy):
         # https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level
         lm_compat_level = int(os.environ.get('LM_COMPAT_LEVEL', 3))  # type: int
         if lm_compat_level < 0 or lm_compat_level > 5:
-            raise ValueError("The env var LM_COMPAT_LEVEL is set to %d but needs to be between 0 and 5"
-                             % lm_compat_level)
+            raise SpnegoError(ErrorCode.failure, context_msg="Invalid LM_COMPAT_LEVEL %d, must be between 0 and 5"
+                                                             % lm_compat_level)
 
         if lm_compat_level == 0:
             self._context_req &= ~NegotiateFlags.extended_session_security
@@ -232,12 +242,13 @@ class NTLMProxy(ContextProxy):
 
             # Make sure that the credential file is set and exists
             if not _get_credential_file():
-                raise ValueError("No NTLM credential file found")
+                raise OperationNotAvailableError(context_msg="Retrieving NTLM store without NTLM_USER_FILE set to a "
+                                                             "filepath")
 
         self._temp_msg = {
             'negotiate': None,
             'challenge': None,
-        }  # type: Dict[str, Optional[bytes]]
+        }  # type: Dict[str, any]
         self._mic_required = False  # type: bool
 
         # Crypto state for signing and sealing.
@@ -251,7 +262,7 @@ class NTLMProxy(ContextProxy):
 
     @classmethod
     def available_protocols(cls, options=None):
-        return [u'ntlm']
+        return ['ntlm']
 
     @classmethod
     def iov_available(cls):
@@ -263,7 +274,7 @@ class NTLMProxy(ContextProxy):
 
     @property
     def negotiated_protocol(self):
-        return u'ntlm'
+        return 'ntlm'
 
     @property
     def session_key(self):
@@ -351,7 +362,8 @@ class NTLMProxy(ContextProxy):
         if flags & NegotiateFlags.unicode:
             flags &= ~NegotiateFlags.oem
         elif flags & NegotiateFlags.oem == 0:
-            raise ValueError("No flags were set, check gss-ntlmssp for this behaviour")
+            raise SpnegoError(ErrorCode.failure, context_msg="Neither NEGOTIATE_OEM or NEGOTIATE_UNICODE flags were "
+                                                             "set, cannot derive encoding for text fields")
 
         if flags & NegotiateFlags.extended_session_security:
             flags &= ~NegotiateFlags.lm_key
@@ -380,10 +392,10 @@ class NTLMProxy(ContextProxy):
         server_challenge = challenge.server_challenge
         auth = Authenticate.unpack(token)
 
-        # TODO: Validate anonynmous user.
+        # TODO: Add anonymous user support.
         if not auth.user_name or (not auth.nt_challenge_response and (not auth.lm_challenge_response or
                                                                       auth.lm_challenge_response == b"\x00")):
-            raise NotImplementedError("Anonymous user")
+            raise OperationNotAvailableError(context_msg="Anonymous user authentication")
 
         credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
         expected_mic = None
@@ -401,22 +413,23 @@ class NTLMProxy(ContextProxy):
 
             if self.channel_bindings:
                 if AvId.channel_bindings not in target_info:
-                    raise Exception("Invalid channel bindings")
+                    raise BadBindingsError(context_msg="Acceptor bindings specified but non present in initiator "
+                                                       "response")
 
                 expected_bindings = target_info[AvId.channel_bindings]
                 actual_bindings = self._get_native_channel_bindings()
                 if expected_bindings not in [actual_bindings, b"\x00" * 16]:
-                    raise Exception("Invalid channel bindings")
+                    raise BadBindingsError(context_msg="Acceptor bindings do not match initiator bindings")
 
             if target_info.get(AvId.flags, 0) & AvFlags.mic:
                 expected_mic = auth.mic
 
         else:
             if not self._nt_v1:
-                raise Exception("Cannot authenticate with NTLMv1 response")
+                raise InvalidTokenError(context_msg="Acceptor settings are set to reject NTv1 responses")
 
             elif not auth.nt_challenge_response and not self._lm:
-                raise Exception("Cannot authenticate with LM response")
+                raise InvalidTokenError(context_msg="Acceptor settings are set to reject LM responses")
 
             client_challenge = None
             if auth.flags & NegotiateFlags.extended_session_security:
@@ -435,7 +448,7 @@ class NTLMProxy(ContextProxy):
             auth_success = auth.lm_challenge_response == expected_lm
 
         if not auth_success:
-            raise Exception("Invalid credential")
+            raise InvalidTokenError(context_msg="Invalid NTLM response from initiator")
 
         if auth.flags & NegotiateFlags.key_exch:
             self._session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
@@ -447,17 +460,18 @@ class NTLMProxy(ContextProxy):
             actual_mic = self._calculate_mic(self._temp_msg['negotiate'].pack(), challenge.pack(), auth.pack())
 
             if actual_mic != expected_mic:
-                raise Exception("Invalid MIC")
+                raise InvalidTokenError(context_msg="Invalid MIC in NTLM authentication message")
 
         self._context_attr = auth.flags
         self._complete = True
 
     def wrap(self, data, encrypt=True, qop=None):
-        # GSSAPI segfaults when no confidentialtiy or integrity. After https://github.com/gssapi/gss-ntlmssp/pull/18
-        # gssapi.raw.misc.GSSError: Major (851968): Unspecified GSS failure.  Minor code may provide more information,
-        # Minor (95): Operation not supported
-        # SSPI will wrap when either confidentiality or integrity is negotiated. Fails with SEC_E_UNSUPPORTED_FUNCTION.
-        # Both actually seal/encrypt the data when either of those attributes are negotiated.
+        if qop:
+            raise UnsupportedQop(context_msg="Unsupported QoP value %s specified for NTLM" % qop)
+
+        if self.context_attr & ContextReq.integrity == 0 and self.context_attr & ContextReq.confidentiality == 0:
+            raise OperationNotAvailableError(context_msg="NTLM wrap without integrity or confidentiality")
+
         msg, signature = seal(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out,
                               data)
 
@@ -467,8 +481,7 @@ class NTLMProxy(ContextProxy):
         # While this technically works on SSPI by passing multiple data buffers we can achieve the same thing with
         # wrap. Because this context proxy is meant to replicate gss-ntlmssp which doesn't support IOV in NTLM we just
         # fail here.
-        # TODO: Figure out the NotImplementedError() equivalent in GSSAPI.
-        raise NotImplementedError("NtlmContext does not offer IOV wrapping")
+        raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
 
     def unwrap(self, data):
         signature = data[:16]
@@ -478,16 +491,19 @@ class NTLMProxy(ContextProxy):
         return UnwrapResult(data=msg, encrypted=True, qop=0)
 
     def unwrap_iov(self, iov):
-        raise NotImplementedError("NtlmContext does not offer IOV wrapping")
+        raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
 
     def sign(self, data, qop=None):
+        if qop:
+            raise UnsupportedQop(context_msg="Unsupported QoP value %s specified for NTLM" % qop)
+
         return sign(self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out, data)
 
     def verify(self, data, mic):
         expected_sig = sign(self._context_attr, self._handle_in, self._sign_key_in, self._seq_num_in, data)
 
         if expected_sig != mic:
-            raise Exception("Invalid signature detected")
+            raise BadMICError(context_msg="Invalid Message integrity Check (MIC) detected")
 
         return 0
 
@@ -571,12 +587,6 @@ class NTLMProxy(ContextProxy):
         else:
             return compute_response_v1(challenge.flags, credential.nt_hash, credential.lm_hash,
                                        challenge.server_challenge, client_challenge, no_lm_response=self._no_lm)
-
-    def _create_spn(self, service, principal):
-        if not service and not principal:
-            return
-
-        return u"%s/%s" % (service or u"host", principal or u"unspecified")
 
     def _convert_iov_buffer(self, iov):
         pass  # IOV is not used in this NTLM provider like gss-ntlmssp.

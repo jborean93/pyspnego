@@ -39,7 +39,7 @@ def auth(server, username, password):
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
         # os.environ['LM_COMPAT_LEVEL'] = '0'
-        c = spnego.client(username, password, server, protocol='kerberos', options=spnego.NegotiateOptions.use_gssapi)
+        c = spnego.client(username, password, server, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
         while not c.complete or in_token:
             out_token = c.step(in_token)
@@ -67,10 +67,7 @@ def auth(server, username, password):
         server_enc_msg_len = struct.unpack("<I", s.recv(4))[0]
         server_enc_msg = s.recv(server_enc_msg_len)
 
-        server_enc_msg_len2 = struct.unpack("<I", s.recv(4))[0]
-        server_enc_msg2 = s.recv(server_enc_msg_len2)
-
-        dec_msg = c.unwrap(server_enc_msg2).data
+        dec_msg = c.unwrap(server_enc_msg).data
         print(dec_msg.decode('utf-8'))
 
         enc_data = c.wrap(b"Jordan").data
@@ -93,7 +90,7 @@ def auth_local(server, username, password):
 
         os.environ['NTLM_USER_FILE'] = temp_fd.name
 
-        c = spnego.client(username, 'pass', server, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
+        c = spnego.client(username, password, server, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
         s = spnego.server(None, None, server, protocol='ntlm', options=spnego.NegotiateOptions.use_gssapi)
         out_token = c.step()
         _ = c._requires_mech_list_mic  # Test out when a MIC is set
@@ -101,6 +98,9 @@ def auth_local(server, username, password):
 
         while not c.complete:
             out_token = c.step(in_token)
+            if not out_token:
+                break
+
             in_token = s.step(out_token)
 
         c_enc_msg = c.wrap(b"Hello World")
@@ -119,5 +119,5 @@ def auth_local(server, username, password):
         print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
 
 
-auth(server, username, password)
-# auth_local(server, username, password)
+# auth(server, username, password)
+auth_local(server, username, password)

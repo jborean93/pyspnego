@@ -405,7 +405,7 @@ cdef class SecBufferDesc:
         if buffers:
             self._c_value.pBuffers = <PSecBuffer>malloc(sizeof(NativeSecBuffer) * len(buffers))
             if not self._c_value.pBuffers:
-                raise MemoryError("Cannot malloc SecBufferDesc buffer")
+                raise MemoryError("Cannot malloc SecBufferDesc buffer")  # pragma: no cover
 
             for idx, buffer in enumerate(buffers):
                 self[idx] = buffer
@@ -451,7 +451,7 @@ cdef class SecBuffer:
 
         self.c_value = <PSecBuffer>calloc(1, sizeof(NativeSecBuffer))
         if not self.c_value:
-            raise MemoryError("Cannot malloc SecBuffer buffer")
+            raise MemoryError("Cannot malloc SecBuffer buffer")  # pragma: no cover
 
         self.buffer_type = buffer_type
         if buffer:
@@ -504,7 +504,7 @@ cdef class SecBuffer:
         # We store our allocated memory pointer so we know when we free we are freeing what we allocated.
         self._p_buffer = malloc(length)
         if not self._p_buffer:
-            raise MemoryError("Cannot malloc SecBuffer buffer")
+            raise MemoryError("Cannot malloc SecBuffer buffer")  # pragma: no cover
 
         self.c_value.pvBuffer = self._p_buffer
         self.c_value.cbBuffer = length
@@ -711,7 +711,7 @@ def _query_context_package_info(SecurityContext context not None):
         return SecPkgInfo(info.fCapabilities, info.wVersion, info.wRPCID, info.cbMaxToken, u16_to_text(info.Name, -1),
             u16_to_text(info.Comment, -1))
     finally:
-        FreeContextBuffer(<void*>raw_info.PackageInfo)
+        FreeContextBuffer(<void*>raw_info.PackageInfo)  # pragma: no cover
 
 
 def _query_context_session_key(SecurityContext context not None):
@@ -724,7 +724,7 @@ def _query_context_session_key(SecurityContext context not None):
     try:
         return (<char *>info.SessionKey)[:info.SessionKeyLength]
     finally:
-        FreeContextBuffer(info.SessionKey)
+        FreeContextBuffer(info.SessionKey)  # pragma: no cover
 
 
 def _query_context_sizes(SecurityContext context not None):

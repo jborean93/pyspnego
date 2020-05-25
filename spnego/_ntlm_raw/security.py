@@ -21,6 +21,10 @@ from spnego._ntlm_raw.messages import (
     NegotiateFlags,
 )
 
+from spnego.exceptions import (
+    OperationNotAvailableError,
+)
+
 
 def seal(flags, handle, signing_key, seq_num, b_data):
     # type: (int, RC4Handle, bytes, int, bytes) -> Tuple[bytes, bytes]
@@ -66,7 +70,7 @@ def sign(flags, handle, signing_key, seq_num, b_data):  # type: (int, RC4Handle,
     """
     if flags & NegotiateFlags.sign == 0:
         if flags & NegotiateFlags.always_sign == 0:
-            raise Exception("No integrity")
+            raise OperationNotAvailableError(context_msg="Signing without integrity.")
 
         # This is the behaviour seen with SSPI when signing data with NTLMSSP_NEGOTIATE_ALWAYS_SIGN.
         return b"\x01" + b"\x00" * 15
