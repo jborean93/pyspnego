@@ -27,24 +27,29 @@ cdef class WideChar:
 
     def __cinit__(WideChar self, size_t length):
         self.length = length
+        self.buffer = NULL
 
         if length:
             self.buffer = <LPWSTR>malloc(length * sizeof(WCHAR))
             if not self.buffer:
-                raise MemoryError("Cannot malloc for WideChar")  # pragma: no cover
+                raise MemoryError("Cannot malloc for WideChar")
 
     def __len__(WideChar self):
         return self.length
 
     def __dealloc__(WideChar self):
-        if self.buffer:
+        if self.buffer != NULL:
             free(self.buffer)
 
-    cdef unicode to_text(WideChar self, size_t length=0):
-        return u16_to_text(self.buffer, length if length else self.length)
+    def to_text(WideChar self, size_t length=0):
+        if not length and self.length == 0:
+            return u""
+
+        # Subtract from self.length to remove the null char that LPWSTR points to.
+        return u16_to_text(self.buffer, length if length else self.length - 1)
 
     @staticmethod
-    cdef WideChar from_text(unicode text):
+    def from_text(unicode text):
         if not text:
             return WideChar(0)
 

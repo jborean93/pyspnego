@@ -35,6 +35,12 @@ def ntlm_cred(tmpdir, monkeypatch):
         if HAS_SSPI:
             domain = to_text(socket.gethostname())
 
+            # Can only test this out with Windows due to issue with gss-ntlmssp when dealing with surrogate pairs.
+            # https://github.com/gssapi/gss-ntlmssp/issues/20
+            clef = to_text(b"\xF0\x9D\x84\x9E")
+            username += clef
+            password += clef
+
             buff = {
                 'name': username,
                 'password': password,

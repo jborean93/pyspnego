@@ -5,6 +5,10 @@ from collections import (
     namedtuple,
 )
 
+from spnego._text import (
+    to_native,
+)
+
 from cpython.exc cimport (
     PyErr_SetFromWindowsErr,
 )
@@ -405,7 +409,7 @@ cdef class SecBufferDesc:
         if buffers:
             self._c_value.pBuffers = <PSecBuffer>malloc(sizeof(NativeSecBuffer) * len(buffers))
             if not self._c_value.pBuffers:
-                raise MemoryError("Cannot malloc SecBufferDesc buffer")  # pragma: no cover
+                raise MemoryError("Cannot malloc SecBufferDesc buffer")
 
             for idx, buffer in enumerate(buffers):
                 self[idx] = buffer
@@ -425,6 +429,14 @@ cdef class SecBufferDesc:
     def __iter__(SecBufferDesc self):
         for val in self._buffers:
             yield val
+
+    def __repr__(SecBufferDesc self):
+        return "<{0}.{1}(ulVersion={2}, cBuffers={3})>".format(type(self).__module__, type(self).__name__,
+            self._c_value.ulVersion, self._c_value.cBuffers)
+
+    def __str__(SecBufferDesc self):
+        return "{0}(ulVersion={1}, cBuffers={2})".format(type(self).__name__, self._c_value.ulVersion,
+            self._c_value.cBuffers)
 
     @property
     def version(SecBufferDesc self):
@@ -470,10 +482,16 @@ cdef class SecBuffer:
         self.c_value = ptr
 
     def __len__(SecBuffer self):
-        if self.c_value:
-            return self.c_value.cbBuffer
-        else:
-            return 0
+        return self.c_value.cbBuffer if self.c_value else 0
+
+    def __repr__(SecBuffer self):
+        return "<{0}.{1}(cbBuffer={2}, BufferType={3}, pvBuffer={4})>".format(
+            type(self).__module__, type(self).__name__, self.c_value.cbBuffer, self.c_value.BufferType,
+            repr(self.buffer))
+
+    def __str__(SecBuffer self):
+        return "{0}(cbBuffer={1}, BufferType={2}, pvBuffer={3!r})".format(type(self).__name__, self.c_value.cbBuffer,
+            self.c_value.BufferType, self.buffer)
 
     @property
     def buffer_type(SecBuffer self):
@@ -514,7 +532,9 @@ cdef class SecBuffer:
         # that.
         if self.c_value != NULL and self.c_value.pvBuffer != NULL and self.sys_alloc:
             FreeContextBuffer(self.c_value.pvBuffer)
-        self.c_value.pvBuffer = NULL
+
+        if self.c_value:
+            self.c_value.pvBuffer = NULL
 
         # Because the C struct pvBuffer may have a pointer set by Windows we track our allocated memory using an
         # internal attribute which we free().
@@ -544,6 +564,17 @@ cdef class WinNTAuthIdentity(_AuthIdentityBase):
         self.username = username
         self.domain = domain
         self.password = password
+
+    def __repr__(WinNTAuthIdentity self):
+        domain = u"%s\\" % self.domain if self.domain else u""
+
+        return to_native(u"<{0}.{1} {2}{3}>".format(type(self).__module__, type(self).__name__, domain,
+            self.username or u""))
+
+    def __str__(WinNTAuthIdentity self):
+        domain = u"%s\\" % self.domain if self.domain else u""
+
+        return to_native(u"{0}{1}".format(domain, self.username or u""))
 
     @property
     def username(WinNTAuthIdentity self):
@@ -711,7 +742,7 @@ def _query_context_package_info(SecurityContext context not None):
         return SecPkgInfo(info.fCapabilities, info.wVersion, info.wRPCID, info.cbMaxToken, u16_to_text(info.Name, -1),
             u16_to_text(info.Comment, -1))
     finally:
-        FreeContextBuffer(<void*>raw_info.PackageInfo)  # pragma: no cover
+        FreeContextBuffer(<void*>raw_info.PackageInfo)
 
 
 def _query_context_session_key(SecurityContext context not None):
@@ -724,7 +755,7 @@ def _query_context_session_key(SecurityContext context not None):
     try:
         return (<char *>info.SessionKey)[:info.SessionKeyLength]
     finally:
-        FreeContextBuffer(info.SessionKey)  # pragma: no cover
+        FreeContextBuffer(info.SessionKey)
 
 
 def _query_context_sizes(SecurityContext context not None):
