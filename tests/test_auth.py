@@ -11,6 +11,7 @@ import socket
 import pytest
 
 import spnego
+import spnego.channel_bindings
 import spnego.gss
 import spnego.sspi
 
@@ -198,15 +199,24 @@ def test_ntlm_auth(ntlm_cred):
 
 @pytest.mark.skipif('ntlm' not in spnego.gss.GSSAPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through GSSAPI')
-@pytest.mark.parametrize('client_opt, server_opt', [
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi),
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm),
+@pytest.mark.parametrize('client_opt, server_opt, cbt', [
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, False),
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, True),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, False),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, True),
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, False),
+    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, True),
 ])
-def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred):
+def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=client_opt)
-    s = spnego.server(None, None, protocol='ntlm', options=server_opt)
+    kwargs = {
+        'protocol': 'ntlm',
+    }
+    if cbt:
+        kwargs['channel_bindings'] = spnego.channel_bindings.GssChannelBindings(application_data=b'test_data:\x00\x01')
+
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=client_opt, **kwargs)
+    s = spnego.server(None, None, options=server_opt, **kwargs)
 
     assert not c.complete
     assert not s.complete
@@ -248,15 +258,23 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred):
 
 @pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through SSPI')
-@pytest.mark.parametrize('client_opt, server_opt', [
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi),
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm),
+@pytest.mark.parametrize('client_opt, server_opt, cbt', [
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, False),
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, True),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, False),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, True),
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, False),
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True),
 ])
-def test_sspi_ntlm_auth(client_opt, server_opt, ntlm_cred):
+def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm', options=client_opt)
-    s = spnego.server(None, None, protocol='ntlm', options=server_opt)
+    kwargs = {
+        'protocol': 'ntlm',
+    }
+    if cbt:
+        kwargs['channel_bindings'] = spnego.channel_bindings.GssChannelBindings(application_data=b'test_data:\x00\x01')
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, **kwargs)
+    s = spnego.server(None, None, options=server_opt, **kwargs)
 
     assert not c.complete
     assert not s.complete

@@ -426,7 +426,7 @@ class NTLMProxy(ContextProxy):
                                                        "response")
 
                 expected_bindings = target_info[AvId.channel_bindings]
-                actual_bindings = self._get_native_channel_bindings()
+                actual_bindings = md5(self.channel_bindings.pack())
                 if expected_bindings not in [actual_bindings, b"\x00" * 16]:
                     raise BadBindingsError(context_msg="Acceptor bindings do not match initiator bindings")
 
@@ -582,7 +582,7 @@ class NTLMProxy(ContextProxy):
             # The docs seem to indicate that a 0'd bindings hash means to ignore it but that does not seem to be the
             # case. Instead only add the bindings if they have been specified by the caller.
             if self.channel_bindings:
-                target_info[AvId.channel_bindings] = self._get_native_channel_bindings()
+                target_info[AvId.channel_bindings] = md5(self.channel_bindings.pack())
             target_info[AvId.target_name] = self.spn or u""
 
             if self._mic_required:
@@ -603,19 +603,6 @@ class NTLMProxy(ContextProxy):
 
     def _convert_iov_buffer(self, iov):
         pass  # IOV is not used in this NTLM provider like gss-ntlmssp.
-
-    def _get_native_channel_bindings(self):
-        try:
-            return self._get_native_channel_bindings.result
-        except AttributeError:
-            pass
-
-        native_bindings = None
-        if self.channel_bindings:
-            native_bindings = md5(self.channel_bindings.pack())
-
-        self._get_native_channel_bindings.result = native_bindings
-        return native_bindings
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
         self._handle_out.reset() if outgoing else self._handle_in.reset()

@@ -171,7 +171,7 @@ class SSPIProxy(ContextProxy):
             sec_tokens.append(SecBuffer(SecBufferType.token, in_token))
 
         if self.channel_bindings:
-            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self._get_native_channel_bindings()))
+            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self.channel_bindings.pack()))
 
         in_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
         out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
@@ -307,16 +307,3 @@ class SSPIProxy(ContextProxy):
                 kwargs['length'] = auto_alloc_size[iov_buffer.type]
 
         return SecBuffer(iov_buffer.type, **kwargs)
-
-    def _get_native_channel_bindings(self):
-        try:
-            return self._get_native_channel_bindings.result
-        except AttributeError:
-            pass
-
-        native_bindings = None
-        if self.channel_bindings:
-            native_bindings = self.channel_bindings.pack()
-
-        self._get_native_channel_bindings.result = native_bindings
-        return native_bindings
