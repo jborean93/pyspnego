@@ -5,7 +5,9 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
+import io
 import logging
+import struct
 import sys
 
 from spnego._compat import (
@@ -171,7 +173,7 @@ class SSPIProxy(ContextProxy):
             sec_tokens.append(SecBuffer(SecBufferType.token, in_token))
 
         if self.channel_bindings:
-            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self.channel_bindings.pack()))
+            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self._get_native_bindings()))
 
         in_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
         out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
@@ -307,3 +309,26 @@ class SSPIProxy(ContextProxy):
                 kwargs['length'] = auto_alloc_size[iov_buffer.type]
 
         return SecBuffer(iov_buffer.type, **kwargs)
+
+    def _get_native_bindings(self):
+        """ Gets the raw byte value of the SEC_CHANNEL_BINDINGS structure. """
+        b_bindings = io.BytesIO()
+        b_bindings_data = io.BytesIO()
+
+        def _pack_binding(name):
+            if name == 'application':
+                b_data = self.channel_bindings.application_data or b""
+
+            else:
+                b_bindings.write(struct.pack("<I", getattr(self.channel_bindings, '%s_addrtype' % name)))
+                b_data = getattr(self.channel_bindings, '%s_address' % name) or b""
+
+            b_bindings.write(struct.pack("<I", len(b_data)))
+            b_bindings.write(struct.pack("I", 32 + b_bindings_data.tell()))
+            b_bindings_data.write(b_data)
+
+        _pack_binding('initiator')
+        _pack_binding('acceptor')
+        _pack_binding('application')
+
+        return b_bindings.getvalue() + b_bindings_data.getvalue()
