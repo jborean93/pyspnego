@@ -332,7 +332,9 @@ def lmowfv1(password):  # type: (text_type) -> bytes
     if _is_ntlm_hash(password):
         return base64.b16decode(password.split(':')[0].upper())
 
-    # Fix the password to upper case and pad the length to exactly 14 bytes.
+    # Fix the password to upper case and pad the length to exactly 14 bytes. While it is true LM only authentication
+    # will fail if the password exceeds 14 bytes typically it is used in conjunction with the NTv1 hash which has no
+    # such restrictions.
     b_password = to_bytes(password.upper()).ljust(14, b"\x00")[:14]
 
     b_hash = io.BytesIO()

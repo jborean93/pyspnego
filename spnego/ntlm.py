@@ -327,9 +327,18 @@ class NTLMProxy(ContextProxy):
             auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
 
         nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._credential)
+
         if challenge.flags & NegotiateFlags.key_exch:
-            self._session_key = os.urandom(16)
-            auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
+            # This is only documented on the server side for MS-NLMP but is also valid for the client. The actual
+            # session key is the KeyExchangeKey like normal unless sign or seal is negotiated.
+
+            if challenge.flags & NegotiateFlags.sign or challenge.flags & NegotiateFlags.seal:
+                self._session_key = os.urandom(16)
+                auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
+
+            else:
+                self._session_key = key_exchange_key
+                auth_kwargs['encrypted_session_key'] = b"\x00"  # Must be set to some value but this can be anything.
 
         else:
             self._session_key = key_exchange_key
@@ -450,8 +459,10 @@ class NTLMProxy(ContextProxy):
         if not auth_success:
             raise InvalidTokenError(context_msg="Invalid NTLM response from initiator")
 
-        if auth.flags & NegotiateFlags.key_exch:
+        if auth.flags & NegotiateFlags.key_exch and \
+                (auth.flags & NegotiateFlags.sign or auth.flags & NegotiateFlags.seal):
             self._session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
+
         else:
             self._session_key = key_exchange_key
 
@@ -568,8 +579,10 @@ class NTLMProxy(ContextProxy):
             else:
                 time = FileTime.now()
 
-            cbt = self._get_native_channel_bindings() if self.channel_bindings else b"\x00" * 16
-            target_info[AvId.channel_bindings] = cbt
+            # The docs seem to indicate that a 0'd bindings hash means to ignore it but that does not seem to be the
+            # case. Instead only add the bindings if they have been specified by the caller.
+            if self.channel_bindings:
+                target_info[AvId.channel_bindings] = self._get_native_channel_bindings()
             target_info[AvId.target_name] = self.spn or u""
 
             if self._mic_required:
@@ -586,7 +599,7 @@ class NTLMProxy(ContextProxy):
 
         else:
             return compute_response_v1(challenge.flags, credential.nt_hash, credential.lm_hash,
-                                       challenge.server_challenge, client_challenge, no_lm_response=self._no_lm)
+                                       challenge.server_challenge, client_challenge, no_lm_response=not self._lm)
 
     def _convert_iov_buffer(self, iov):
         pass  # IOV is not used in this NTLM provider like gss-ntlmssp.

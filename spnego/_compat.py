@@ -56,7 +56,7 @@ def add_metaclass(metaclass):
 # Slightly modified from six.reraise to makle calling it simpler for pyspnego and more like raise Excp() from err.
 if sys.version_info[0] == 3:
     def reraise(exc, inner=None):
-        exc.__cause__ = inner[1] or sys.exc_info()[1]
+        exc.__cause__ = inner[1] if inner else sys.exc_info()[1]
         raise exc
 
 else:
@@ -69,7 +69,7 @@ else:
 
         exec("""exec _code_ in _globs_, _locs_""")
 
-    _exec("def reraise(exc, inner=None):\n    raise exc, None, inner[2] or sys.exc_info()[2]")
+    _exec("def reraise(exc, inner=None):\n    raise exc, None, inner[2] if inner else sys.exc_info()[2]")
 
 # TODO: Remove once Python 2.7 and 3.5 is dropped, use enum.IntFlag instead.
 try:

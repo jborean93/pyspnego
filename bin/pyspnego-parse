@@ -904,10 +904,11 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
     if auth.encrypted_random_session_key:
         msg['Payload']['EncryptedRandomSessionKey'] = to_text(base64.b16encode(auth.encrypted_random_session_key))
 
-    if auth.flags & NegotiateFlags.key_exch:
+    if auth.flags & NegotiateFlags.key_exch and (auth.flags & NegotiateFlags.sign or auth.flags & NegotiateFlags.seal):
         session_key = None
         if key_exchange_key:
             session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
+
     else:
         session_key = key_exchange_key
 

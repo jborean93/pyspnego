@@ -119,5 +119,5 @@ def auth_local(server, username, password):
         print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
 
 
-# auth(server, username, password)
-auth_local(server, username, password)
+auth(server, username, password)
+# auth_local(server, username, password)

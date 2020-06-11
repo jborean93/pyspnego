@@ -75,6 +75,12 @@ The authentication information fields provide detailed information about this sp
 * Will need to check a few things but IIRC the NTProofStr and MIC were actually calculated correctly
 * Even if the user was `vagrant-domain@DOMAIN` or `DOMAIN\vagrant-domain` it will fail with the same error
 
+I feel like the error in this case is due to a badly documented `ExportedSessionKey` value when
+`NTLMSSP_NEGOTIATE_KEY_EXCH` is set without the sign or seal flags. The `ExportedSessionKey` is meant to be the
+`KeyExchangeKey` except this is using the documented logic of it being `RC4K(KeyExchangeKey, Z(16))`. NTLM on macOS
+actually works when the sign or seal flags are set because the logic is now correct. Might have to revisit this
+and use on macOS instead of the builtin NTLM provider if possible.
+
 
 ## Tokens
 
