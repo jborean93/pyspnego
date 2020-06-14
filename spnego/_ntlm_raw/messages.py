@@ -16,6 +16,7 @@ from spnego._compat import (
     Tuple,
     Union,
 
+    IntEnum,
     IntFlag,
 )
 
@@ -41,7 +42,6 @@ class NegotiateFlags:
     .. _NEGOTIATE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/99d90ff4-957f-4c8a-80e4-5bfe5a9a9832
     """
-
     key_56 = 0x80000000
     key_exch = 0x40000000
     key_128 = 0x20000000
@@ -172,6 +172,20 @@ class AvFlags(IntFlag):
         }
 
 
+class MessageType(IntEnum):
+    negotiate = 1
+    challenge = 2
+    authenticate = 3
+
+    @classmethod
+    def native_labels(cls):  # type: () -> Dict[int, str]
+        return {
+            MessageType.negotiate: 'NEGOTIATE_MESSAGE',
+            MessageType.challenge: 'CHALLENGE_MESSAGE',
+            MessageType.authenticate: 'AUTHENTICATE_MESSAGE',
+        }
+
+
 class _UTC(datetime.tzinfo):
     """ UTC TimeZone. Used with FileTime to convert tz aware datetime to a UTC FILETIME value. """
 
@@ -235,6 +249,8 @@ class Negotiate:
     .. _NEGOTIATE_MESSAGE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b34032e5-3aae-4bc6-84c3-c6d80eadf7f2
     """
+
+    MESSAGE_TYPE = MessageType.negotiate
 
     def __init__(self, flags=0, domain_name=None, workstation=None, version=None, encoding='windows-1252',
                  _b_data=None):
@@ -346,6 +362,8 @@ class Challenge:
     .. _CHALLENGE_MESSAGE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/801a4681-8809-4be9-ab0d-61dcfe762786
     """
+
+    MESSAGE_TYPE = MessageType.challenge
 
     def __init__(self, flags=0, server_challenge=None, target_name=None, target_info=None, version=None,
                  encoding='windows-1252', _b_data=None):
@@ -477,6 +495,8 @@ class Authenticate:
     .. _AUTHENTICATION_MESSAGE:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/033d32cc-88f9-4483-9bf2-b273055038ce
     """
+
+    MESSAGE_TYPE = MessageType.authenticate
 
     def __init__(self, flags=0, lm_challenge_response=None, nt_challenge_response=None, domain_name=None,
                  username=None, workstation=None, encrypted_session_key=None, version=None, mic=None,

@@ -239,6 +239,19 @@ class GSSMech(Enum):
     kerberos_u2u = '1.2.840.113554.1.2.2.3'
     negoex = '1.3.6.1.4.1.311.2.2.30'
 
+    @classmethod
+    def native_labels(cls):  # type: () -> Dict[str, str]
+        return {
+            GSSMech.ntlm: 'NTLM',
+            GSSMech.spnego: 'SPNEGO',
+            GSSMech.kerberos: 'Kerberos',
+            GSSMech._ms_kerberos: 'MS Kerberos',
+            GSSMech._kerberos_draft: 'Kerberos (draft)',
+            GSSMech._iakerb: 'IAKerberos',
+            GSSMech.kerberos_u2u: 'Kerberos User to User',
+            GSSMech.negoex: "NEGOEX',"
+        }
+
     @property
     def common_name(self):
         if self.is_kerberos_oid:

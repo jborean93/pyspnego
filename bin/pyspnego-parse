@@ -23,7 +23,21 @@ import re
 import struct
 import sys
 
-from datetime import datetime
+from spnego._compat import (
+    Dict,
+    Optional,
+)
+
+from spnego._context import (
+    GSSMech,
+)
+
+from spnego._kerberos import (
+    KerberosV5Msg,
+    parse_enum,
+    parse_flags,
+    parse_kerberos_token,
+)
 
 from spnego._ntlm_raw.crypto import (
     hmac_md5,
@@ -38,17 +52,22 @@ from spnego._ntlm_raw.messages import (
     Authenticate,
     AvId,
     Challenge,
-    FileTime,
     Negotiate,
     NegotiateFlags,
     NTClientChallengeV2,
-    TargetInfo,
 )
 
 from spnego._text import (
     to_bytes,
     to_native,
     to_text,
+)
+
+from spnego._spnego import (
+    InitialContextToken,
+    NegTokenInit,
+    NegTokenResp,
+    unpack_token,
 )
 
 try:
@@ -60,596 +79,6 @@ try:
     from ruamel import yaml
 except ImportError:
     yaml = None
-
-
-class ContextFlags:
-    DELEGATION = 0
-    MUTUAL = 1
-    REPLAY = 2
-    SEQUENCE = 3
-    ANONYMOUS = 4
-    CONFIDENTIAL = 5
-    INTEGRITY = 6
-
-
-class MechTypes:
-    MS_KRB5 = '1.2.840.48018.1.2.2'
-    KRB5 = '1.2.840.113554.1.2.2'
-    KRB5_U2U = '1.2.840.113554.1.2.2.3'
-    NEGOEX = '1.3.6.1.4.1.311.2.2.30'
-    NTLMSSP = '1.3.6.1.4.1.311.2.2.10'
-    SPNEGO = '1.3.6.1.5.5.2'
-
-
-class NegotiateState:
-    ACCEPT_COMPLETE = 0
-    ACCEPT_INCOMPLETE = 1
-    REJECT = 2
-    REQUEST_MIC = 3
-
-
-# https://tools.ietf.org/html/rfc4120#section-5.5.1 - ap-options
-class KerberosAPOptions:
-    MUTUAL_REQUIRED = 0x00000020
-    USE_SESSION_KEY = 0x00000040
-    RESERVED = 0x000000080
-
-
-# https://ldapwiki.com/wiki/Kerberos%20Encryption%20Types - etypes
-class KerberosEncryptionTypes:
-    DES_CBC_CRS = 0x0001
-    DES_CBC_MD4 = 0x0002
-    DES_CBC_MD5 = 0x0003
-    DES_CBC_RAW = 0x0004
-    DES3_CBC_RAW = 0x0006
-    DES3_CBC_SHA1 = 0x0010
-    AES128_CTS_HMAC_SHA1_96 = 0x0011
-    AES256_CTS_HMAC_SHA1_96 = 0x0012
-    AES128_CTS_HMAC_SHA256_128 = 0x0013
-    AES256_CTS_HMAC_SHA384_192 = 0x0014
-    RC4_HMAC = 0x0017
-    RC4_HMAC_EXP = 0x0018
-    CAMELLIA128_CTS_CMAC = 0x0019
-    CAMELLIA256_CTS_CMAC = 0x001a
-
-
-# https://tools.ietf.org/html/rfc4120#section-7.5.9
-class KerberosErrorCode:
-    KDC_ERR_NONE = 0
-    KDC_ERR_NAME_EXP = 1
-    KDC_ERR_SERVICE_EXP = 2
-    KDC_ERR_BAD_PVNO = 3
-    KDC_ERR_C_OLD_MAST_KVNO = 4
-    KDC_ERR_S_OLD_MAST_KVNO = 5
-    KDC_ERR_C_PRINCIPAL_UNKNOWN = 6
-    KDC_ERR_S_PRINCIPAL_UNKNOWN = 7
-    KDC_ERR_PRINCIPAL_NOT_UNIQUE = 8
-    KDC_ERR_NULL_KEY = 9
-    KDC_ERR_CANNOT_POSTDATE = 10
-    KDC_ERR_NEVER_VALID = 11
-    KDC_ERR_POLICY = 12
-    KDC_ERR_BADOPTION = 13
-    KDC_ERR_ETYPE_NOSUPP = 14
-    KDC_ERR_SUMTYPE_NOSUPP = 15
-    KDC_ERR_PADATA_TYPE_NOSUPP = 16
-    KDC_ERR_TRTYPE_NOSUPP = 17
-    KDC_ERR_CLIENT_REVOKED = 18
-    KDC_ERR_SERVICE_REVOKED = 19
-    KDC_ERR_TGT_REVOKED = 20
-    KDC_ERR_CLIENT_NOTYET = 21
-    KDC_ERR_SERVICE_NOTYET = 22
-    KDC_ERR_KEY_EXPIRED = 23
-    KDC_ERR_PREAUTH_FAILED = 24
-    KDC_ERR_PREAUTH_REQUIRED = 25
-    KDC_ERR_SERVER_NOMATCH = 26
-    KDC_ERR_MUST_USE_USER2USER = 27
-    KDC_ERR_PATH_NOT_ACCEPTED = 28
-    KDC_ERR_SVC_UNAVAILABLE = 29
-    KRB_AP_ERR_BAD_INTEGRITY = 31
-    KRB_AP_ERR_TKT_EXPIRED = 32
-    KRB_AP_ERR_TKT_NYV = 33
-    KRB_AP_ERR_REPEAT = 34
-    KRB_AP_ERR_NOT_US = 35
-    KRB_AP_ERR_BADMATCH = 36
-    KRB_AP_ERR_SKEW = 37
-    KRB_AP_ERR_BADADDR = 38
-    KRB_AP_ERR_BADVERSION = 39
-    KRB_AP_ERR_MSG_TYPE = 40
-    KRB_AP_ERR_MODIFIED = 41
-    KRB_AP_ERR_BADORDER = 42
-    KRB_AP_ERR_BADKEYVER = 44
-    KRB_AP_ERR_NOKEY = 45
-    KRB_AP_ERR_MUT_FAIL = 46
-    KRB_AP_ERR_BADDIRECTION = 47
-    KRB_AP_ERR_METHOD = 48
-    KRB_AP_ERR_BADSEQ = 49
-    KRB_AP_ERR_INAPP_CKSUM = 50
-    KRB_AP_PATH_NOT_ACCEPTED = 51
-    KRB_ERR_RESPONSE_TOO_BIG = 52
-    KRB_ERR_GENERIC = 60
-    KRB_ERR_FIELD_TOOLONG = 61
-    KDC_ERROR_CLIENT_NOT_TRUSTED = 62
-    KDC_ERROR_KDC_NOT_TRUSTED = 63
-    KDC_ERROR_INVALID_SIG = 64
-    KDC_ERR_KEY_TOO_WEAK = 65
-    KDC_ERR_CERTIFICATE_MISMATCH = 66
-    KRB_AP_ERR_NO_TGT = 67
-    KDC_ERR_WRONG_REALM = 68
-    KRB_AP_ERR_USER_TO_USER_REQUIRED = 69
-    KDC_ERR_CANT_VERIFY_CERTIFICATE = 70
-    KDC_ERR_INVALID_CERTIFICATE = 71
-    KDC_ERR_REVOKED_CERTIFICATE = 72
-    KDC_ERR_REVOCATION_STATUS_UNKNOWN = 73
-    KDC_ERR_REVOCATION_STATUS_UNAVAILABLE = 74
-    KDC_ERR_CLIENT_NAME_MISMATCH = 75
-    KDC_ERR_KDC_NAME_MISMATCH = 76
-
-
-# https://tools.ietf.org/html/rfc4120#section-5.10
-class KerberosMessageTypes:
-    AS_REQ = 10
-    AS_REP = 11
-    TGS_REQ = 12
-    TGS_REP = 13
-    AP_REQ = 14
-    AP_REP = 15
-    KERB_ERROR = 30
-
-
-# https://tools.ietf.org/html/rfc4120#section-5.2.7 - padata-value
-class KerberosPADataType:
-    TGS_REQ = 1
-    ENC_TIMESTAMP = 2
-    PW_SALT = 3
-    ETYPE_INFO = 11
-    ETYPE_INFO2 = 19
-
-
-# https://tools.ietf.org/html/rfc4120#section-6.2
-class KerberosPrincipalNameType:
-    NT_UNKNOWN = 0
-    NT_PRINCIPAL = 1
-    NT_SRV_INST = 2
-    NT_SRV_HST = 3
-    NT_SRV_XHST = 4
-    NT_UID = 5
-    NT_X500_PRICNIPAL = 6
-    NT_SMTP_NAME = 7
-    NT_ENTERPRISE = 10
-
-
-class Application:
-
-    def __init__(self, value, tag_number):
-        self.value = value
-        self.tag_number = tag_number
-
-
-class ContextSpecific:
-
-    def __init__(self, value, tag_number):
-        self.value = value
-        self.tag_number = tag_number
-
-
-def _get_flag_ids(value, enum_class):
-    flags = []
-    for k, v in dict(vars(enum_class)).items():
-        if k.startswith('__'):
-            continue
-
-        if value & v == v:
-            value &= ~v
-            flags.append("%s (%d)" % (k, v))
-
-    if value != 0:
-        flags.append("UNKNOWN (%d)" % value)
-
-    return flags
-
-
-def _get_flag_ids2(value, enum_type=None):
-    raw_value = int(value)
-    flags = []
-
-    labels = enum_type.native_labels() if enum_type else value.native_labels()
-
-    for v, name in labels.items():
-        if value & v == v:
-            value &= ~v
-            flags.append("%s (%d)" % (name, v))
-
-    if value != 0:
-        flags.append('UNKNOWN (%d)' % value)
-
-    return {
-        'raw': raw_value,
-        'flags': flags,
-    }
-
-
-def _get_enum_id(value, enum_class):
-    enum_name = 'UNKNOWN'
-
-    for k, v in dict(vars(enum_class)).items():
-        if k.startswith('__'):
-            continue
-
-        if value == v:
-            enum_name = k
-            break
-
-    return "%s (%s)" % (enum_name, value)
-
-
-def _get_enum_id2(value, scalar=False):
-    enum_name = 'UNKNOWN'
-
-    for v, name in value.native_labels().items():
-        if value == v:
-            enum_name = name
-            break
-
-    if scalar:
-        return "%s (%s)" % (enum_name, int(value))
-    else:
-        return {
-            'raw': value,
-            'enum': enum_name,
-        }
-
-
-def _to_bits(b):
-    if isinstance(b, bytes):
-        int_value = struct.unpack('b', b[:1])[0]
-    else:
-        int_value = b
-
-    bits = str(bin(int_value))[2:].zfill(8)
-    return " ".join([bits[i:i + 4] for i in range(0, len(bits), 4)])
-
-
-def _unpack_asn_integer(b_data, length):
-    if length == 1:
-        value = struct.unpack("B", b_data[:1])[0]
-        is_negative = bool(value & 0b10000000)
-    else:
-        # If multiple bytes are used and the value is positive even with the leading byte, the first octet
-        # will be 0
-        is_negative = False
-        value = 0
-        idx = 0
-        while idx != length:
-            element = struct.unpack("B", b_data[idx:idx + 1])[0]
-
-            # When multiple bytes are used and the leading byte is 0, the value is a positive number.
-            if idx == 0 and element == 0:
-                idx += 1
-                continue
-
-            if idx == 0 and element & 0b10000000:
-                is_negative = True
-                element &= 0b01111111
-
-            value = (value << 8) + value
-
-            idx += 1
-
-    if is_negative:
-        value *= -1
-
-    return value
-
-
-def _unpack_asn_octet_number(b_data):
-    # Some ASN.1 fields contain an number that can be encoded over 1 or more octets. The highest bit is set when
-    # another octet is required. This bit is then discarded and the bits over all octets are combined together to make
-    # the number required.
-    i = 0
-    idx = 0
-    while True:
-        element = struct.unpack("B", b_data[idx:idx+1])[0]
-        idx += 1
-
-        # Shift the bits left by 7 (8 (was in a higher octet) - 1 (remove highest bit for more octets required)) and
-        # add the current value sans the highest bit. Keep on doing this until no more octets are required.
-        i = (i << 7) + (element & 0b01111111)
-        if not element & 0b10000000:
-            break
-
-    # The caller probably wants to know how many octets were used to serialize the number.
-    return i, idx
-
-
-def _parse_asn1(b_data):
-    """Poor mans ASN.1 parser so we don't have to rely on extra libraries."""
-    tag_class = (struct.unpack('B', b_data[:1])[0] & 0b11000000) >> 6
-    # is_constructed = bool(struct.unpack('B', b_data[:1])[0] & 0b00100000)
-    tag_number = struct.unpack('B', b_data[:1])[0] & 0b00011111
-
-    length_offset = 1
-    if tag_number == 31:
-        # Tag is in long form, need to decode the next octet(s) until we get the full tag number.
-        tag_number, octet_count = _unpack_asn_octet_number(b_data[1:])
-        length_offset += octet_count
-
-    length = struct.unpack('B', b_data[length_offset:length_offset + 1])[0]
-    if length & 0b10000000:
-        length_octets = length & 0b01111111
-        length = 0
-
-        if length_octets == 0:
-            # Indefinite form, length ends at the next end-of-content octets (b"\x00\x00")
-            length = b_data[length_offset + 1:].index(b"\x00\x00")
-        else:
-            # Definite long form, bit 7-1 of the original octet contains the number of octets that is the length.
-            for octet_idx in range(1, length_octets + 1):
-                octet_val = struct.unpack('B', b_data[length_offset + octet_idx:length_offset + octet_idx + 1])[0]
-                length += octet_val << (8 * (length_octets - octet_idx))
-    else:
-        # Definite short form, the length is the bit 7-1 of the original octet.
-        length_octets = 0
-        length &= 0b01111111
-
-    data_offset = length_offset + length_octets + 1
-
-    if length == 0:
-        return b_data[:data_offset], b_data[data_offset:]
-
-    b_data = b_data[data_offset:]
-    if tag_class == 0:  # Universal
-        b_value = b_data[:length]
-        value = b_value
-
-        if tag_class == 0:  # Universal
-            if tag_number == 1:  # BOOLEAN
-                value = b_value != b"\x00" * length
-            elif tag_number == 2:  # INTEGER
-                value = _unpack_asn_integer(b_value, length)
-            elif tag_number == 3:  # BIT_STRING
-                if length > 1:
-                    # First octet is the number of unused bits we need to make sure we clear
-                    unused_bits = struct.unpack("B", b_value[:1])[0]
-
-                    last_element = struct.unpack("B", b_value[length - 1:length])[0]
-                    last_element = (last_element >> unused_bits) << unused_bits
-
-                    value = b_value[1:-1] + struct.pack("B", last_element)
-                else:
-                    value = b""
-            elif tag_number == 4:  # OCTET STRING
-                pass  # The raw byte string is what we want here.
-            elif tag_number == 6:  # OBJECT IDENTIFIER
-                # The first 2 ids in an OID is contained in the first byte as '(X * 40) + Y'
-                first_element = struct.unpack("B", b_value[:1])[0]
-                second_element = first_element % 40
-                ids = [(first_element - second_element) // 40, second_element]
-
-                # The remaining OID fields are encoded like a long form tag id.
-                idx = 1
-                while idx != len(b_value):
-                    id, octet_len = _unpack_asn_octet_number(b_value[idx:])
-                    ids.append(id)
-                    idx += octet_len
-
-                value = ".".join([str(i) for i in ids])
-            elif tag_number == 10:  # ENUMERATED
-                value = _unpack_asn_integer(b_value, length)
-            elif tag_number == 16:  # SEQUENCE and SEQUENCE OF
-                value = []
-                while b_value:
-                    v, b_value = _parse_asn1(b_value)
-                    value.append(v)
-
-                # If all the elements have a tag number then convert to a dict (not SEQUENCE OF)
-                is_sequence = all(hasattr(v, 'tag_number') for v in value)
-                if is_sequence:
-                    value = dict((v.tag_number, v.value) for v in value)
-            elif tag_number == 24:  # GeneralizedTime
-                try:
-                    value = datetime.strptime(to_text(b_value), '%Y%m%d%H%M%S.%f%z')
-                except ValueError:
-                    value = datetime.strptime(to_text(b_value), '%Y%m%d%H%M%S%z')
-            elif tag_number == 27:  # GeneralString
-                pass  # The raw byte string is what we want here.
-            else:
-                raise NotImplementedError("Not implement tag number %d" % tag_number)
-    elif tag_class == 1:  # Application
-        values = []
-        while b_data:
-            v, b_data = _parse_asn1(b_data)
-            values.append(v)
-
-        # This could be an implicit tag where we don't know the type of the tag.
-        value = Application(values if len(values) > 1 else values[0], tag_number)
-    elif tag_class == 2:  # Context-specific
-        v, _ = _parse_asn1(b_data)
-        value = ContextSpecific(v, tag_number)
-    else:
-        raise NotImplementedError("Not implement tag class %d" % tag_number)
-
-    return value, b_data[length:]
-
-
-def _parse_kerberos_enc_data(raw_data, b_secret=None):
-    data = {
-        'etype': _get_enum_id(raw_data[0], KerberosEncryptionTypes),
-        'etype_raw': raw_data[0],
-        'kvno': raw_data.get(1, None),
-        'cipher': to_text(base64.b16encode(raw_data[2])),
-    }
-
-    if b_secret:
-        raise NotImplementedError()
-        # Would love to be able to do this but it's probably a bit more than I chew right now
-        #if raw_data[0] == KerberosEncryptionTypes.AES256_CTS_HMAC_SHA1_96:
-        #    from cryptography.hazmat.backends import default_backend
-        #    from cryptography.hazmat.primitives import hashes
-        #    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        #
-        #    # tkey = random2key(PBKDF2(passphrase, salt, iter_count, keylength))
-        #    # key = DK(tkey, "kerberos")
-        #    # (iterations,) = unpack('>L', params or b'\x00\x00\x10\x00')
-        #    iterations = struct.unpack(">I", b"\x00\x00\x10\x00")[0]
-        #
-        #    hkdf = PBKDF2HMAC(
-        #        algorithm=hashes.SHA1(),
-        #        length=16,  # 32
-        #        salt=b"ATHENA.MIT.EDUraeburn",
-        #        iterations=1,
-        #        backend=default_backend(),
-        #    )
-        #    tkey = hkdf.derive(b"password")
-        #    a = base64.b16encode(tkey)  # cd ed b5 28 1b b2 f8 01 56 5a 11 22 b2 56 35 15
-        #
-        #    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-        #    c = Cipher(algorithms.AES(tkey), modes.CBC(b"\x00" * 16), default_backend()).encryptor()
-        #    key = c.update(b"kerberos".zfill(16)) + c.finalize()
-        #    b = base64.b16encode(key)  # 42 26 3c 6e 89 f4 fc 28 b8 df 68 ee 09 79 9f 15 - AES key
-        #
-        #    # ciphertext output is the concatenation of the output of E and a (possibly truncated) HMAC using the
-        #    # specified hash function H (SHA1), both applied to the plaintext with a random confounder prefix and
-        #    # sufficient padding to bring it to a multiple of the message block size. When HMAC is computed the key is
-        #    # used in the protocol key form.
-        #    a = ''
-        #else:
-        #    raise NotImplementedError("Cannot decrypt encryption type '%s'" % data['etype'])
-
-    return data
-
-
-def _parse_kerberos_principal_name(raw_data, encoding):
-    if not raw_data:
-        return None
-
-    return {
-        'name-type': _get_enum_id(raw_data[0], KerberosPrincipalNameType),
-        'name-type_raw': raw_data[0],
-        'name-string': [to_text(b, encoding=encoding) for b in raw_data[1]],
-    }
-
-
-def _parse_kerberos_as_req(raw_data, encoding):
-    padata = []
-    for data in raw_data[3]:
-        value = to_text(base64.b16encode(data[2])),
-        if data[1] == KerberosPADataType.ENC_TIMESTAMP:
-            enc_timestamp = _parse_asn1(data[2])[0]
-            value = _parse_kerberos_enc_data(enc_timestamp)
-        elif data[1] == KerberosPADataType.TGS_REQ:
-            a = ''
-
-        padata.append({
-            'padata-type': _get_enum_id(data[1], KerberosPADataType),
-            'padata-type_raw': data[1],
-            'padata-value': value,
-        })
-
-    msg = {
-        'pvno': raw_data[1],
-        'msg-type': _get_enum_id(raw_data[2], KerberosMessageTypes),
-        'padata': padata,
-        'req-body': None,
-    }
-    return msg
-
-
-def _parse_kerberos_ap_req(raw_data, encoding):
-    """
-    RFC 4120
-
-    AP-REQ          ::= [APPLICATION 14] SEQUENCE {
-        pvno            [0] INTEGER (5),
-        msg-type        [1] INTEGER (14),
-        ap-options      [2] APOptions,
-        ticket          [3] Ticket,
-        authenticator   [4] EncryptedData -- Authenticator
-    }
-    """
-    ap_options = struct.unpack("<I", raw_data[2])[0]
-
-    raw_ticket = raw_data[3].value[0]
-    ticket = {
-        'tkt-vno': raw_ticket[0],
-        'realm': to_text(raw_ticket[1], encoding=encoding),
-        'sname': _parse_kerberos_principal_name(raw_ticket[2], encoding),
-        'enc-part': _parse_kerberos_enc_data(raw_ticket[3]),
-    }
-
-    msg = {
-        'pvno': raw_data[0],
-        'msg-type': _get_enum_id(raw_data[1], KerberosMessageTypes),
-        'msg-type_raw': raw_data[1],
-        'ap-options': _get_flag_ids(ap_options, KerberosAPOptions),
-        'ap-options_raw': ap_options,
-        'ticket': ticket,
-        'authenticator': _parse_kerberos_enc_data(raw_data[4]),
-    }
-    return msg
-
-
-def _parse_kerberos_ap_rep(raw_data, encoding):
-    """
-    RFC 4120
-
-    AS-REQ          ::= [APPLICATION 10] KDC-REQ
-
-    KDC-REQ         ::= SEQUENCE {
-        -- NOTE: first tag is [1], not [0]
-        pvno            [1] INTEGER (5) ,
-        msg-type        [2] INTEGER (10 -- AS -- | 12 -- TGS --),
-        padata          [3] SEQUENCE OF PA-DATA OPTIONAL
-                            -- NOTE: not empty --,
-        req-body        [4] KDC-REQ-BODY
-    }
-    """
-    msg = {
-        'pvno': raw_data[0],
-        'msg-type': _get_enum_id(raw_data[1], KerberosMessageTypes),
-        'msg-type_raw': raw_data[1],
-        'enc-part': _parse_kerberos_enc_data(raw_data[2]),
-    }
-    return msg
-
-
-def _parse_kerberos_krb_error(raw_data, encoding):
-    """
-    RFC 4120
-
-    KRB-ERROR       ::= [APPLICATION 30] SEQUENCE {
-        pvno            [0] INTEGER (5),
-        msg-type        [1] INTEGER (30),
-        ctime           [2] KerberosTime OPTIONAL,
-        cusec           [3] Microseconds OPTIONAL,
-        stime           [4] KerberosTime,
-        susec           [5] Microseconds,
-        error-code      [6] Int32,
-        crealm          [7] Realm OPTIONAL,
-        cname           [8] PrincipalName OPTIONAL,
-        realm           [9] Realm -- service realm --,
-        sname           [10] PrincipalName -- service name --,
-        e-text          [11] KerberosString OPTIONAL,
-        e-data          [12] OCTET STRING OPTIONAL
-    }
-    """
-    msg = {
-        'pvno': raw_data[0],
-        'msg-type': _get_enum_id(raw_data[1], KerberosMessageTypes),
-        'msg-type_raw': raw_data[1],
-        'ctime': raw_data[2].isoformat() if 2 in raw_data else None,
-        'cusec': raw_data.get(3, None),
-        'stime': raw_data[4].isoformat(),
-        'susec': raw_data[5],
-        'error-code': _get_enum_id(raw_data[6], KerberosErrorCode),
-        'error-code_raw': raw_data[6],
-        'crealm': to_text(raw_data.get(7, None), encoding=encoding, nonstring='passthru'),
-        'cname': _parse_kerberos_principal_name(raw_data.get(8, None), encoding),
-        'realm': to_text(raw_data[9], encoding=encoding),
-        'sname': _parse_kerberos_principal_name(raw_data[10], encoding),
-        'e-text': to_text(raw_data.get(11, None), encoding=encoding, nonstring='passthru'),
-        'e-data': to_text(base64.b16encode(raw_data[12])) if 12 in raw_data else None,
-    }
-    return msg
 
 
 def _get_ntlm_payload_offset(msg, fields, expected_payload_offset):
@@ -694,7 +123,7 @@ def _parse_ntlm_target_info(target_info):
         elif av_id in text_values:
             value = raw_value
         elif av_id == AvId.flags:
-            value = _get_flag_ids2(raw_value)
+            value = parse_flags(raw_value)
         elif av_id == AvId.timestamp:
             value = to_text(raw_value)
         elif av_id == AvId.single_host:
@@ -707,16 +136,16 @@ def _parse_ntlm_target_info(target_info):
         else:
             value = to_text(base64.b16encode(raw_value))
 
-        info.append({'AvId': _get_enum_id2(av_id, scalar=True), 'Value': value})
+        info.append({'AvId': parse_enum(av_id, scalar=True), 'Value': value})
 
     return info
 
 
-def _parse_ntlm_negotiate(b_data, oem_cp):
-    negotiate = Negotiate.unpack(b_data, encoding=oem_cp)
+def _parse_ntlm_negotiate(data):  # type: (Negotiate) -> Dict[str, any]
+    b_data = data.pack()
 
     msg = {
-        'NegotiateFlags': _get_flag_ids2(negotiate.flags, enum_type=NegotiateFlags),
+        'NegotiateFlags': parse_flags(data.flags, enum_type=NegotiateFlags),
         'DomainNameFields': {
             'Len': struct.unpack("<H", b_data[16:18])[0],
             'MaxLen': struct.unpack("<H", b_data[18:20])[0],
@@ -727,10 +156,10 @@ def _parse_ntlm_negotiate(b_data, oem_cp):
             'MaxLen': struct.unpack("<H", b_data[26:28])[0],
             'BufferOffset': struct.unpack("<I", b_data[28:32])[0],
         },
-        'Version': _parse_ntlm_version(negotiate.version),
+        'Version': _parse_ntlm_version(data.version),
         'Payload': {
-            'DomainName': negotiate.domain_name,
-            'Workstation': negotiate.workstation,
+            'DomainName': data.domain_name,
+            'Workstation': data.workstation,
         }
     }
 
@@ -741,8 +170,8 @@ def _parse_ntlm_negotiate(b_data, oem_cp):
     return msg
 
 
-def _parse_ntlm_challenge(b_data, oem_cp):
-    challenge = Challenge.unpack(b_data, encoding=oem_cp)
+def _parse_ntlm_challenge(data):  # type: (Challenge) -> Dict[str, any]
+    b_data = data.pack()
 
     msg = {
         'TargetNameFields': {
@@ -750,7 +179,7 @@ def _parse_ntlm_challenge(b_data, oem_cp):
             'MaxLen': struct.unpack("<H", b_data[14:16])[0],
             'BufferOffset': struct.unpack("<I", b_data[16:20])[0],
         },
-        'NegotiateFlags': _get_flag_ids2(challenge.flags, enum_type=NegotiateFlags),
+        'NegotiateFlags': parse_flags(data.flags, enum_type=NegotiateFlags),
         'ServerChallenge': to_text(base64.b16encode(b_data[24:32])),
         'Reserved': to_text(base64.b16encode(b_data[32:40])),
         'TargetInfoFields': {
@@ -758,10 +187,10 @@ def _parse_ntlm_challenge(b_data, oem_cp):
             'MaxLen': struct.unpack("<H", b_data[42:44])[0],
             'BufferOffset': struct.unpack("<I", b_data[44:48])[0],
         },
-        'Version': _parse_ntlm_version(challenge.version),
+        'Version': _parse_ntlm_version(data.version),
         'Payload': {
-            'TargetName': challenge.target_name,
-            'TargetInfo': _parse_ntlm_target_info(challenge.target_info),
+            'TargetName': data.target_name,
+            'TargetInfo': _parse_ntlm_target_info(data.target_info),
         },
     }
 
@@ -772,8 +201,8 @@ def _parse_ntlm_challenge(b_data, oem_cp):
     return msg
 
 
-def _parse_ntlm_authenticate(b_data, oem_cp, password):
-    auth = Authenticate.unpack(b_data, encoding=oem_cp)
+def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Dict[str, any]
+    b_data = data.pack()
 
     msg = {
         'LmChallengeResponseFields': {
@@ -806,15 +235,15 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
             'MaxLen': struct.unpack("<H", b_data[54:56])[0],
             'BufferOffset': struct.unpack("<I", b_data[56:60])[0],
         },
-        'NegotiateFlags': _get_flag_ids2(auth.flags, enum_type=NegotiateFlags),
-        'Version': _parse_ntlm_version(auth.version),
-        'MIC': to_text(base64.b16encode(auth.mic)) if auth.mic else None,
+        'NegotiateFlags': parse_flags(data.flags, enum_type=NegotiateFlags),
+        'Version': _parse_ntlm_version(data.version),
+        'MIC': to_text(base64.b16encode(data.mic)) if data.mic else None,
         'Payload': {
             'LmChallengeResponse': None,
             'NtChallengeResponse': None,
-            'DomainName': auth.domain_name,
-            'UserName': auth.user_name,
-            'Workstation': auth.workstation,
+            'DomainName': data.domain_name,
+            'UserName': data.user_name,
+            'Workstation': data.workstation,
             'EncryptedRandomSessionKey': None,
         },
     }
@@ -838,7 +267,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
 
     key_exchange_key = None
 
-    lm_response_data = auth.lm_challenge_response
+    lm_response_data = data.lm_challenge_response
     if lm_response_data:
         lm_response = {
             'ResponseType': None,
@@ -856,7 +285,7 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
 
         msg['Payload']['LmChallengeResponse'] = lm_response
 
-    nt_response_data = auth.nt_challenge_response
+    nt_response_data = data.nt_challenge_response
     if nt_response_data:
         nt_response = {
             'ResponseType': None,
@@ -872,8 +301,8 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
                 lmowf = lmowfv1(password)
 
                 # TODO: need to get a sane way to include the server challenge for ESS KXKEY.
-                if auth.flags & NegotiateFlags.extended_session_security == 0:
-                    key_exchange_key = kxkey(auth.flags, session_base_key, lmowf, lm_response_data, b"")
+                if data.flags & NegotiateFlags.extended_session_security == 0:
+                    key_exchange_key = kxkey(data.flags, session_base_key, lmowf, lm_response_data, b"")
 
         else:
             nt_proof_str = nt_response_data[:16]
@@ -901,13 +330,13 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
 
         msg['Payload']['NtChallengeResponse'] = nt_response
 
-    if auth.encrypted_random_session_key:
-        msg['Payload']['EncryptedRandomSessionKey'] = to_text(base64.b16encode(auth.encrypted_random_session_key))
+    if data.encrypted_random_session_key:
+        msg['Payload']['EncryptedRandomSessionKey'] = to_text(base64.b16encode(data.encrypted_random_session_key))
 
-    if auth.flags & NegotiateFlags.key_exch and (auth.flags & NegotiateFlags.sign or auth.flags & NegotiateFlags.seal):
+    if data.flags & NegotiateFlags.key_exch and (data.flags & NegotiateFlags.sign or data.flags & NegotiateFlags.seal):
         session_key = None
         if key_exchange_key:
-            session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key)
+            session_key = rc4k(key_exchange_key, data.encrypted_random_session_key)
 
     else:
         session_key = key_exchange_key
@@ -917,99 +346,47 @@ def _parse_ntlm_authenticate(b_data, oem_cp, password):
     return msg
 
 
-def _parse_spnego_init(raw_data, secret=None, encoding=None):
-    """
-    Parses a NegTokenInit ASN.1 structure.
+def _parse_spnego_init(data, secret=None, encoding=None):
+    # type: (NegTokenInit, Optional[str], Optional[str]) -> Dict[str, any]
+    mech_types = [parse_enum(m, scalar=True, enum_type=GSSMech) for m in data.mech_types] \
+        if data.mech_types else None
 
-    RFC 4178
-    NegTokenInit ::= SEQUENCE {
-        mechTypes       [0] MechTypeList,
-        reqFlags        [1] ContextFlags  OPTIONAL,
-        -- inherited from RFC 2478 for backward compatibility,
-        -- RECOMMENDED to be left out
-        mechToken       [2] OCTET STRING  OPTIONAL,
-        mechListMIC     [3] OCTET STRING  OPTIONAL,
-        ...
-    }
-
-    Can also be:
-
-    NegHints ::= SEQUENCE {
-        hintName[0] GeneralString OPTIONAL,
-        hintAddress[1] OCTET STRING OPTIONAL
-    }
-    NegTokenInit2 ::= SEQUENCE {
-        mechTypes[0] MechTypeList OPTIONAL,
-        reqFlags [1] ContextFlags OPTIONAL,
-        mechToken [2] OCTET STRING OPTIONAL,
-        negHints [3] NegHints OPTIONAL,
-        mechListMIC [4] OCTET STRING OPTIONAL,
-        ...
-    }
-    https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/8e71cf53-e867-4b79-b5b5-38c92be3d472
-    """
     mech_token = None
-    if 2 in raw_data:
-        try:
-            mech_token = parse_token(raw_data[2], secret=secret, encoding=encoding)
-        except Exception as e:
-            mech_token = {
-                'MessageType': 'Unknown - Failed to parse see Data for more details.',
-                'Data': 'Failed to parse SPNEGO token: %s' % to_native(e),
-                'RawData': to_text(base64.b16encode(raw_data[2])),
-            }
+    if data.mech_token:
+        mech_token = parse_token(data.mech_token, secret=secret, encoding=encoding)
 
     msg = {
-        'mechTypes': [_get_enum_id(m, MechTypes) for m in raw_data[0]],
-        'reqFlags': _get_flag_ids(struct.unpack("<I", raw_data[1])[0], ContextFlags) if 1 in raw_data else None,
-        'reqFlags_raw': struct.unpack("<I", raw_data[1])[0] if 1 in raw_data else None,
+        'mechTypes': mech_types,
+        'reqFlags': parse_flags(data.req_flags) if data.req_flags is not None else None,
         'mechToken': mech_token,
-        'mechListMIC': None
-        #'mechListMIC': to_text(base64.b16encode(raw_data.get[3])) if 3 in raw_data else None,
+        'mechListMIC': to_text(base64.b16encode(data.mech_list_mic)) if data.mech_list_mic is not None else None,
     }
 
-    mech_list_mic = None
-
-    if 4 in raw_data:
+    if data.hint_name or data.hint_address:
         # This is a NegTokenInit2 structure.
-        msg['negHints'] = {}
-        mech_list_mic = raw_data[4]
-
-    if 3 in raw_data:
-        if isinstance(raw_data[3], dict):
-            encoding = encoding or 'utf-8'
-
-            msg['negHints'] = {
-                'hintName': to_text(raw_data[3][0], encoding=encoding) if 0 in raw_data[3] else None,
-                'hintAddress': to_text(raw_data[3][1], encoding=encoding) if 1 in raw_data[3] else None,
-            }
-
-        else:
-            mech_list_mic = raw_data[3]
-
-    msg['mechListMIC'] = to_text(base64.b16encode(mech_list_mic)) if mech_list_mic else None
+        msg['negHints'] = {
+            'hintName': to_text(data.hint_name, encoding=encoding) if data.hint_name else None,
+            'hintAddress': to_text(data.hint_address, encoding=encoding) if data.hint_address else None,
+        }
 
     return msg
 
 
-def _parse_spnego_resp(raw_data, secret=None, encoding=None):
+def _parse_spnego_resp(data, secret=None, encoding=None):
+    # type: (NegTokenResp, Optional[str], Optional[str]) -> Dict[str, any]
+
+    supported_mech = parse_enum(data.supported_mech, scalar=True, enum_type=GSSMech) \
+                         if data.supported_mech else None,
+
     response_token = None
-    if 2 in raw_data:
-        try:
-            response_token = parse_token(raw_data[2], secret=secret, encoding=encoding)
-        except Exception as e:
-            response_token = {
-                'MessageType': 'Unknown - Failed to parse see Data for more details.',
-                'Data': 'Failed to parse SPNEGO token: %s' % to_native(e),
-                'RawData': to_text(base64.b16encode(raw_data[2])),
-            }
+    if data.response_token:
+        response_token = parse_token(data.response_token, secret=secret, encoding=encoding)
 
     msg = {
-        'negState': _get_enum_id(raw_data[0], NegotiateState) if 0 in raw_data else None,
-        'negstate_raw': raw_data[0] if 0 in raw_data else None,
-        'supportedMech': _get_enum_id(raw_data[1], MechTypes) if 1 in raw_data else None,
+        'negState': parse_enum(data.neg_state) if data.neg_state else None,
+        'supportedMech': supported_mech,
         'responseToken': response_token,
-        'mechListMIC': to_text(base64.b16encode(raw_data[3])) if 3 in raw_data else None,
+        'mechListMIC': to_text(base64.b16encode(data.mech_list_mic)) if data.mech_list_mic is not None else None,
     }
     return msg
 
@@ -1095,7 +472,7 @@ def parse_args():
     return args
 
 
-def parse_token(b_data, secret=None, encoding=None):
+def parse_token(b_data, secret=None, encoding=None, mech=None):
     """
     :param b_data: A byte string of the token to parse. This can be a NTLM or GSSAPI (SPNEGO/Kerberos) token.
     :param secret: The secret data used to decrypt fields and/or derive session keys.
@@ -1104,137 +481,62 @@ def parse_token(b_data, secret=None, encoding=None):
         for Kerberos.
     :return: A dict containing the parsed token data.
     """
-    if b_data.startswith(b'NTLMSSP\x00'):
-        token_info = parse_ntlm_message(b_data, password=secret, oem_cp=encoding)
-    else:
-        token_info = parse_gssapi_message(b_data, secret=secret, encoding=encoding)
+    if mech and not isinstance(mech, GSSMech):
+        mech = GSSMech.from_oid(mech)
 
-    return token_info
+    try:
+        token = unpack_token(b_data, mech=mech, unwrap=False, encoding=encoding or 'windows-1252')
+    except Exception as e:
+        return {
+            'MessageType': 'Unknown - Failed to parse see Data for more details.',
+            'Data': 'Failed to parse token: %s' % to_native(e),
+            'RawData': to_text(base64.b16encode(b_data)),
+        }
 
+    # SPNEGO messages.
+    if isinstance(token, InitialContextToken):
+        msg_type = 'SPNEGO InitiateContextToken'
+        data = {
+            'thisMech': parse_enum(token.this_mech, scalar=True, enum_type=GSSMech),
+            'innerContextToken': parse_token(token.inner_context_token, mech=token.this_mech, secret=secret,
+                                             encoding=encoding),
+        }
 
-def parse_gssapi_message(b_data, secret=None, encoding=None):
-    """
-    Parse a GSSAPI token and return a dict containing the structured values for easier parsing. The values inside the
-    'Data' key are dynamic and are based on the MessageType that is being parsed.
+    elif isinstance(token, NegTokenInit):
+        msg_type = 'SPNEGO NegTokenInit'
+        data = _parse_spnego_init(token, secret, encoding)
 
-    :param b_data: A byte string of the GSSAPI token to parse.
-    :param encoding: The encoding to use for KerberosString values as the encoding is not part of the token data.
-        Defaults to utf-8.
-    :return: A dict containing the parsed GSSAPI message.
-    """
-    raw_data = _parse_asn1(b_data)[0]
+    elif isinstance(token, NegTokenResp):
+        msg_type = 'SPNEGO NegTokenResp'
+        data = _parse_spnego_resp(token, secret, encoding)
 
-    # RFC 2743
-    # InitialContextToken ::=
-    # -- option indication (delegation, etc.) indicated within
-    # -- mechanism-specific token
-    # [APPLICATION 0] IMPLICIT SEQUENCE {
-    #         thisMech MechType,
-    #         innerContextToken ANY DEFINED BY thisMech
-    #            -- contents mechanism-specific
-    #            -- ASN.1 structure not required
-    #         }
-    if isinstance(raw_data, Application) and isinstance(raw_data.value, list) and raw_data.tag_number == 0:
-        mech_type = raw_data.value[0]
-        if mech_type in [MechTypes.MS_KRB5, MechTypes.KRB5]:
-            # Kerberos defines 4 bytes after the mech type to denote the message type. This info is already contained
-            # in the data so we just ignore it here.
-            raw_data = raw_data.value[2]
+    # NTLM messages.
+    elif isinstance(token, (Negotiate, Challenge, Authenticate)):
+        msg_type = parse_enum(token.MESSAGE_TYPE, scalar=True)
+
+        if isinstance(token, Negotiate):
+            data = _parse_ntlm_negotiate(token)
+
+        elif isinstance(token, Challenge):
+            data = _parse_ntlm_challenge(token)
+
         else:
-            raw_data = raw_data.value[1]
-    elif isinstance(raw_data, ContextSpecific) and raw_data.tag_number == 1:
-        # Subsequent SPNEGO tokens aren't wrapped in the InitialContextToken structure and are just sent as the
-        # innerContextToken. So this check sees if the value is a ContextSpecific structure with a tag of [1] as
-        # expected by a SPNEGO negTokenResp
-        mech_type = MechTypes.SPNEGO
+            data = _parse_ntlm_authenticate(token, secret)
+
+    # Kerberos messages.
+    elif isinstance(token, KerberosV5Msg):
+        msg_type = parse_enum(token.MESSAGE_TYPE, scalar=True)
+        data = parse_kerberos_token(token, secret, encoding)
+
     else:
-        raise ValueError("Token was not a GSSAPI InitialContextToken as defined in RFC 2743.")
+        msg_type = 'Unknown'
+        data = 'Failed to parse SPNEGO token due to unknown mech type'
 
-    if mech_type in [MechTypes.MS_KRB5, MechTypes.KRB5]:
-        if not encoding:
-            encoding = 'utf-8'
-
-        # The raw_data at this point is the [APPLICATION {num}] Message of the Kerberos ticket, we use the explicit
-        # tag number to determine the message type.
-        if raw_data.tag_number == KerberosMessageTypes.AS_REQ:
-            raise NotImplementedError()
-            #data = _parse_kerberos_as_req(raw_data, encoding)
-        elif raw_data.tag_number == KerberosMessageTypes.AS_REP:
-            raise NotImplementedError()
-            #data = _parse_kerberos_as_rep(raw_data, encoding)
-        elif raw_data.tag_number == KerberosMessageTypes.TGS_REQ:
-            raise NotImplementedError()
-            #data = _parse_kerberos_tgs_req(raw_data, encoding)
-        elif raw_data.tag_number == KerberosMessageTypes.TGS_REP:
-            raise NotImplementedError()
-            #data = _parse_kerberos_tgs_rep(raw_data, encoding)
-        elif raw_data.tag_number == KerberosMessageTypes.AP_REQ:
-            data = _parse_kerberos_ap_req(raw_data.value, encoding)
-        elif raw_data.tag_number == KerberosMessageTypes.AP_REP:
-            data = _parse_kerberos_ap_rep(raw_data.value, encoding)
-        elif raw_data.tag_number == KerberosMessageTypes.KERB_ERROR:
-            data = _parse_kerberos_krb_error(raw_data.value, encoding)
-        else:
-            raise NotImplementedError("Cannot decode Kerberos message type '%s'" % raw_data.tag_number)
-
-        message_type = _get_enum_id(raw_data.tag_number, KerberosMessageTypes)
-    elif mech_type == MechTypes.SPNEGO:
-        # RFC 4178
-        # NegotiationToken ::= CHOICE {
-        #     negTokenInit    [0] NegTokenInit,
-        #     negTokenResp    [1] NegTokenResp
-        # }
-        if raw_data.tag_number == 0:
-            data = _parse_spnego_init(raw_data.value, secret=secret, encoding=encoding)
-            message_type = 'SPNEGO NegTokenInit2' if 'negHints' in data else 'SPNEGO NegTokenInit'
-        elif raw_data.tag_number == 1:
-            message_type = 'SPNEGO NegTokenResp'
-            data = _parse_spnego_resp(raw_data.value, secret=secret, encoding=encoding)
-        else:
-            raise ValueError("Unknown SPNEGO token choice %d" % raw_data.tag_number)
-    else:
-        raise ValueError("Unknown OID mech type '%s'" % mech_type)
-
-    msg = {
-        'MessageType': '%s - %s' % (message_type, _get_enum_id(mech_type, MechTypes)),
+    return {
+        'MessageType': msg_type,
         'Data': data,
         'RawData': to_text(base64.b16encode(b_data)),
     }
-    return msg
-
-
-def parse_ntlm_message(b_data, password=None, oem_cp=None):
-    """
-    Parse an NTLM token and return a dict containing the structured values for easier parsing. The values inside the
-    'Data' key are dynamic and are based on the MessageType that is being parsed.
-
-    :param b_data: A byte string of the NTLM token to parse.
-    :param password: The password for the user that was authenticated, this is used to derive the session key in the
-        exchange.
-    :param oem_cp: Override the OEM codepage for NTLM messages that are not Unicode aware.
-    :return: A dict containing the parsed NTLM message.
-    """
-    if not oem_cp:
-        oem_cp = 'windows-1252'
-
-    message_type = struct.unpack("<I", b_data[8:12])[0]
-    if message_type == 1:
-        message_type_name = "NtlmNegotiate"
-        data = _parse_ntlm_negotiate(b_data, oem_cp)
-    elif message_type == 2:
-        message_type_name = "NtlmChallenge"
-        data = _parse_ntlm_challenge(b_data, oem_cp)
-    else:
-        message_type_name = "NtlmAuthenticate"
-        data = _parse_ntlm_authenticate(b_data, oem_cp, password)
-
-    msg = {
-        'MessageType': "%s (%d)" % (message_type_name, message_type),
-        'Signature': to_text(b_data[0:8], encoding='ascii'),
-        'Data': data,
-        'RawData': to_text(base64.b16encode(b_data)),
-    }
-    return msg
 
 
 if __name__ == '__main__':

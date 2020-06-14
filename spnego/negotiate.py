@@ -22,13 +22,9 @@ from spnego._context import (
 from spnego._spnego import (
     NegState,
     NegTokenInit,
-    NegTokenInit2,
     NegTokenResp,
     pack_mech_type_list,
-    pack_neg_token_init,
-    pack_neg_token_init2,
-    pack_neg_token_resp,
-    unpack_neg_token,
+    unpack_token,
 )
 
 from spnego._text import (
@@ -135,11 +131,11 @@ class NegotiateProxy(ContextProxy):
         token = None
 
         if in_token:
-            in_token = unpack_neg_token(in_token)
+            in_token = unpack_token(in_token)
 
             mech_list_mic = in_token.mech_list_mic
 
-            if isinstance(in_token, (NegTokenInit, NegTokenInit2)):
+            if isinstance(in_token, NegTokenInit):
                 token = in_token.mech_token
 
                 self._mech_list = self._rebuild_context_list(self._mech_list, in_token=token)
@@ -210,8 +206,14 @@ class NegotiateProxy(ContextProxy):
         if not self._init_sent:
             self._init_sent = True
 
-            build_func = pack_neg_token_init if self.usage == 'initiate' else pack_neg_token_init2
-            return build_func(self._mech_list, mech_token=out_token, mech_list_mic=out_mic)
+            init_kwargs = {
+                'mech_token': out_token,
+                'mech_list_mic': out_mic,
+            }
+            if self.usage == 'accept':
+                hint_name = b'not_defined_in_RFC4178@please_ignore'
+
+            return NegTokenInit(self._mech_list, **init_kwargs).pack()
 
         elif not self.complete:
             # As per RFC 4178 - 4.2.2: supportedMech should only be present in the first reply from the target.
@@ -231,8 +233,8 @@ class NegotiateProxy(ContextProxy):
                     state = NegState.accept_complete
                     self._complete = True
 
-            return pack_neg_token_resp(neg_state=state, response_token=out_token,
-                                       supported_mech=supported_mech, mech_list_mic=out_mic)
+            return NegTokenResp(neg_state=state, supported_mech=supported_mech, response_token=out_token,
+                                mech_list_mic=out_mic).pack()
 
     def wrap(self, data, encrypt=True, qop=None):
         return self._context.wrap(data, encrypt=encrypt, qop=qop)
@@ -285,7 +287,7 @@ class NegotiateProxy(ContextProxy):
                 except ValueError:
                     continue
 
-                if gss_mech in available_mechs or (GSSMech.kerberos in available_mechs and gss_mech.is_kerberos_oid()):
+                if gss_mech in available_mechs or (GSSMech.kerberos in available_mechs and gss_mech.is_kerberos_oid):
                     chosen_mechs.append(gss_mech)
 
         else:

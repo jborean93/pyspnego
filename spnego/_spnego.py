@@ -4,11 +4,12 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-import collections
 import struct
 
 from spnego._asn1 import (
+    get_sequence_value,
     pack_asn1,
+    pack_asn1_bit_string,
     pack_asn1_enumerated,
     pack_asn1_general_string,
     pack_asn1_object_identifier,
@@ -19,393 +20,468 @@ from spnego._asn1 import (
     unpack_asn1,
     unpack_asn1_bit_string,
     unpack_asn1_enumerated,
+    unpack_asn1_general_string,
     unpack_asn1_object_identifier,
+    unpack_asn1_octet_string,
+    unpack_asn1_sequence,
+    unpack_asn1_tagged_sequence,
+)
+
+from spnego._compat import (
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+
+    IntEnum,
+    IntFlag,
 )
 
 from spnego._context import (
     GSSMech,
 )
 
+from spnego._kerberos import (
+    KerberosV5Msg,
+)
 
-NegTokenInit = collections.namedtuple('NegTokenInit', ['mech_types', 'req_flags', 'mech_token', 'mech_list_mic'])
-NegTokenInit2 = collections.namedtuple('NegTokenInit2', ['mech_types', 'req_flags', 'mech_token', 'neg_hints',
-                                                         'mech_list_mic'])
-NegTokenResp = collections.namedtuple('NegTokenResp', ['neg_state', 'supported_mech', 'response_token',
-                                                       'mech_list_mic'])
+from spnego._ntlm_raw import (
+    messages as ntlm_messages,
+)
 
 
-class NegState:
+def pack_mech_type_list(mech_list):  # type: (Union[str, List[str], Tuple[str, ...], Set[str]]) -> bytes
+    """Packs a list of OIDs for the mechListMIC value.
+
+    Will pack a list of object identifiers to the raw byte string value for the mechListMIC.
+
+    Args:
+        mech_list: The list of OIDs to back
+
+    Returns:
+        bytes: The byte string of the packed ASN.1 MechTypeList SEQUENCE OF value.
+    """
+    if not isinstance(mech_list, (list, tuple, set)):
+        mech_list = [mech_list]
+
+    return pack_asn1_sequence([pack_asn1_object_identifier(oid) for oid in mech_list])
+
+
+def unpack_token(b_data, mech=None, unwrap=True, encoding='windows-1252'):
+    # type: (bytes, Optional[GSSMech], bool, str) -> any
+    """Unpacks a raw GSSAPI/SPNEGO token to a Python object.
+
+    Unpacks the byte string into a Python object that represents the token passed in. This can return many different
+    token types such as:
+
+    * NTLM message(s)
+    * SPNEGO/Negotiate init or response
+    * Kerberos message(s)
+
+    Args:
+        b_data: The raw byte string to unpack.
+        mech: A hint as to what the byte string is for.
+        unwrap: Whether to get the inner token in the InitialContextToken or return the InitialContextToken.
+        encoding: Optional encoding used when unpacking NTLM messages.
+
+    Returns:
+        any: The unpacked SPNEGO, Kerberos, or NTLM token.
+    """
+    # First check if the message is an NTLM message.
+    if b_data.startswith(b"NTLMSSP\x00\x01"):
+        return ntlm_messages.Negotiate.unpack(b_data, encoding=encoding)
+
+    elif b_data.startswith(b"NTLMSSP\x00\x02"):
+        return ntlm_messages.Challenge.unpack(b_data, encoding=encoding)
+
+    elif b_data.startswith(b"NTLMSSP\x00\x03"):
+        return ntlm_messages.Authenticate.unpack(b_data, encoding=encoding)
+
+    if mech and mech.is_kerberos_oid:
+        # A Kerberos value inside an InitialContextToken contains 2 bytes which we ignore.
+        b_data = b_data[2:]
+
+    raw_data = unpack_asn1(b_data)[0]
+
+    if raw_data.tag_class == TagClass.application and mech and mech.is_kerberos_oid:
+        return KerberosV5Msg.unpack(unpack_asn1(raw_data.b_data)[0])
+
+    elif raw_data.tag_class == TagClass.application:
+        # The first token is encapsulated in an InitialContextToken.
+        if raw_data.tag_number != 0:
+            raise ValueError("Expecting a tag number of 0 not %s for InitialContextToken" % raw_data.tag_number)
+
+        initial_context_token = InitialContextToken.unpack(raw_data.b_data)
+
+        if not unwrap:
+            return initial_context_token
+
+        try:
+            this_mech = GSSMech.from_oid(initial_context_token.this_mech)
+        except ValueError:
+            this_mech = initial_context_token.this_mech
+
+        # We currently only support SPNEGO, or raw Kerberos here.
+        if this_mech and (this_mech == GSSMech.spnego or this_mech.is_kerberos_oid):
+            return unpack_token(initial_context_token.inner_context_token, mech=this_mech)
+
+        return initial_context_token
+
+    elif raw_data.tag_class == TagClass.context_specific:
+        # This is a raw NegotiationToken that is wrapped in a CHOICE or 0 or 1.
+        if raw_data.tag_number == 0:
+            return NegTokenInit.unpack(raw_data.b_data)
+
+        elif raw_data.tag_number == 1:
+            return NegTokenResp.unpack(raw_data.b_data)
+
+        else:
+            raise ValueError("Unknown NegotiationToken CHOICE %d, only expecting 0 or 1"
+                             % raw_data.tag_number)
+
+    else:
+        # Could also be the ASN.1 Sequence of the Kerberos message.
+        return KerberosV5Msg.unpack(raw_data)
+
+
+# https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.1 - ContextFlags
+class ContextFlags(IntFlag):
+    deleg = 0
+    mutual = 1
+    replay = 2
+    sequence = 3
+    anon = 4
+    conf = 5
+    integ = 6
+
+    @classmethod
+    def native_labels(cls):  # type: () -> Dict[int, str]
+        return {
+            ContextFlags.deleg: 'delegFlag',
+            ContextFlags.mutual: 'mutualFlag',
+            ContextFlags.replay: 'replayFlag',
+            ContextFlags.sequence: 'sequenceFlag',
+            ContextFlags.anon: 'anonFlag',
+            ContextFlags.conf: 'confFlag',
+            ContextFlags.integ: 'integFlag',
+        }
+
+
+# https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.2 - negState
+class NegState(IntEnum):
     accept_complete = 0
     accept_incomplete = 1
     reject = 2
     request_mic = 3
 
-
-def pack_mech_type_list(mech_list):
-    if not isinstance(mech_list, (list, tuple, set)):
-        mech_list = [mech_list]
-
-    b_mech_list = pack_asn1_sequence([pack_asn1_object_identifier(oid) for oid in mech_list])
-    return b_mech_list
-
-
-def pack_neg_token_init(mech_list, mech_token=None, mech_list_mic=None):
-    """
-    Creates a SPNEGO NegTokenInit token that is wrapped in an InitialContextToken token.
-
-    MechType ::= OBJECT IDENTIFIER
-
-    MechTypeList ::= SEQUENCE OF MechType
-
-    NegTokenInit ::= SEQUENCE {
-        mechTypes       [0] MechTypeList,
-        reqFlags        [1] ContextFlags  OPTIONAL,
-          -- inherited from RFC 2478 for backward compatibility,
-          -- RECOMMENDED to be left out
-        mechToken       [2] OCTET STRING  OPTIONAL,
-        mechListMIC     [3] OCTET STRING  OPTIONAL,
-        ...
-    }
-
-    :param mech_list:
-    :param mech_token:
-    :param mech_list_mic:
-    :return:
-    """
-    elements = []
-
-    # mechTypes
-    elements.append(pack_asn1(TagClass.context_specific, True, 0, pack_mech_type_list(mech_list)))
-
-    # mechToken
-    if mech_token:
-        elements.append(pack_asn1(TagClass.context_specific, True, 2, pack_asn1_octet_string(mech_token)))
-
-    # mechListMIC
-    if mech_list_mic:
-        elements.append(pack_asn1(TagClass.context_specific, True, 3, pack_asn1_octet_string(mech_list_mic)))
-
-    neg_token_init = pack_asn1_sequence(elements)
-    return _pack_negotiation_token(neg_token_init, 0)
-
-
-def pack_neg_token_init2(mech_list, mech_token=None, hint_name=u"not_defined_in_RFC4178@please_ignore",
-                         hint_address=None, mech_list_mic=None):
-    """
-    Creates a SPNEGO NegTokenInit2 token that is wrapped in an InitialContextToken token. This token is the one
-    generated from an acceptor context that tells the client what mechs it can accept.
-
-    MechType ::= OBJECT IDENTIFIER
-
-    MechTypeList ::= SEQUENCE OF MechType
-
-    NegHints ::= SEQUENCE {
-        hintName[0] GeneralString OPTIONAL,
-        hintAddress[1] OCTET STRING OPTIONAL
-    }
-    NegTokenInit2 ::= SEQUENCE {
-        mechTypes[0] MechTypeList OPTIONAL,
-        reqFlags [1] ContextFlags OPTIONAL,
-        mechToken [2] OCTET STRING OPTIONAL,
-        negHints [3] NegHints OPTIONAL,
-        mechListMIC [4] OCTET STRING OPTIONAL,
-        ...
-    }
-
-    :param mech_list:
-    :param mech_token:
-    :param hint_name:
-    :param hint_address:
-    :param mech_list_mic:
-    :return:
-    """
-    elements = []
-
-    # mechTypes
-    elements.append(pack_asn1(TagClass.context_specific, True, 0, pack_mech_type_list(mech_list)))
-
-    # mechToken
-    if mech_token:
-        elements.append(pack_asn1(TagClass.context_specific, True, 2, pack_asn1_octet_string(mech_token)))
-
-    # negHints
-    neg_hints = []
-    if hint_name:
-        neg_hints.append(pack_asn1(TagClass.context_specific, True, 0, pack_asn1_general_string(hint_name)))
-
-    if hint_address:
-        neg_hints.append(pack_asn1(TagClass.context_specific, True, 1, pack_asn1_octet_string(hint_address)))
-
-    if neg_hints:
-        elements.append(pack_asn1(TagClass.context_specific, True, 3, pack_asn1_sequence(neg_hints)))
-
-    # mechListMIC
-    if mech_list_mic:
-        elements.append(pack_asn1(TagClass.context_specific, True, 4, pack_asn1_octet_string(mech_list_mic)))
-
-    neg_token_init = pack_asn1_sequence(elements)
-    return _pack_negotiation_token(neg_token_init, 0)
-
-
-def _unpack_neg_token_init(b_data):
-    tag_class, _, tag_number, token_data, _ = unpack_asn1(b_data)
-    if tag_class != TagClass.universal or tag_number != TypeTagNumber.sequence:
-        raise ValueError("Expected SEQUENCE in NegTokenInit but got tag class %d and tag number %d"
-                         % (tag_class, tag_number))
-
-    entries = {}
-    init2 = False
-
-    while token_data:
-        sequence_class, _, sequence_no, sequence_data, token_data = unpack_asn1(token_data)
-        if sequence_class != TagClass.context_specific:
-            raise ValueError("Expected explicit tagged sequence entries but got tag class of %d" % sequence_class)
-
-        unpack_data = sequence_data
-
-        if sequence_no == 0:
-            mech_list_class, _, mech_list_tag, mech_list_data, _ = unpack_asn1(sequence_data)
-            if mech_list_class != TagClass.universal or mech_list_tag != TypeTagNumber.sequence:
-                raise ValueError("Expected SEQUENCE of mechTypes in NegTokenInit but got tag class %d and tag "
-                                 "number %d" % (mech_list_class, mech_list_tag))
-
-            unpack_data = []
-            while mech_list_data:
-                mech_class, _, mech_tag, mech_data, mech_list_data = unpack_asn1(mech_list_data)
-                if mech_class != TagClass.universal or mech_tag != TypeTagNumber.object_identifier:
-                    raise ValueError("Expected SEQUENCE of MechType in mechTypes for NegTokenInit but got tag class "
-                                     "%d and tag number %d" % (mech_class, mech_tag))
-
-                unpack_data.append(unpack_asn1_object_identifier(mech_data))
-
-        elif sequence_no == 1:
-            req_class, _, req_tag, req_data, _ = unpack_asn1(sequence_data)
-            if req_class != TagClass.universal or req_tag != TypeTagNumber.bit_string:
-                raise ValueError("Expected ContextFlags BIT STRING in NegTokenInit but got tag class %d and tag "
-                                 "number %d" % (req_class, req_tag))
-
-            # Can be up to 32 bits in length but RFC 4178 states "Implementations should not expect to receive exactly
-            # 32 bits in an encoding of ContextFlags." The spec also documents req flags up to 6 so let's just get the
-            # last byte. In reality we shouldn't ever receive this but it's left here for posterity.
-            unpack_data = struct.unpack("B", unpack_asn1_bit_string(req_data)[-1])[0]
-
-        elif sequence_no == 2:
-            token_class, _, token_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if token_class != TagClass.universal or token_tag != TypeTagNumber.octet_string:
-                raise ValueError("Expected mechToken OCTET STRING in NegTokenInit but got tag class %d and tag number "
-                                 "%d" % (token_class, token_tag))
-
-        elif sequence_no in [3, 4]:
-            tag_class, _, tag_number, tag_data, _ = unpack_asn1(sequence_data)
-
-            # Microsoft helpfully sends a NegTokenInit2 payload which sets 'negHints [3] NegHints OPTIONAL' and the
-            # mechListMIC is actually at the 4th sequence entry. Because the NegTokenInit2 has the same choice in
-            # NegotiationToken as NegTokenInit ([0]) we can only differentiate when unpacking.
-            unpack_data = None
-            if tag_class == TagClass.universal:
-                if tag_number == TypeTagNumber.sequence:
-                    init2 = True
-
-                    unpack_data = {}
-                    while tag_data:
-                        hint_class, _, hint_number, hint_data, tag_data = unpack_asn1(tag_data)
-                        hint = unpack_asn1(hint_data)[3]
-
-                        if hint_number == 0:
-                            unpack_data['name'] = hint
-                        elif hint_number == 1:
-                            # Windows 2000, 2003, and XP put the SPN in the OEM code page, because there's no sane way
-                            # to decode this without prior knowledge we just keep it as bytes.
-                            # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/211417c4-11ef-46c0-a8fb-f178a51c2088#Appendix_A_5
-                            unpack_data['address'] = hint
-                        else:
-                            raise ValueError("Expected negHints sequence 0 or 1 not %d" % hint_number)
-
-                elif tag_number == TypeTagNumber.octet_string:
-                    if sequence_no == 4:
-                        init2 = True
-
-                    unpack_data = tag_data
-
-            # It was neither the expected entry for NegTokenInit and NegTokenInit2, just error for NegTokenInit as that
-            # is closer to the spec.
-            if unpack_data is None:
-                raise ValueError("Expected mechListMIC OCTET STRING in NegTokenInit but got tag class %d and tag "
-                                 "number %d" % (tag_class, tag_number))
-
-        entries[sequence_no] = unpack_data
-
-    if init2:
-        return NegTokenInit2(entries.get(0, []), entries.get(1, None), entries.get(2, None), entries.get(3, {}),
-                             entries.get(4, None))
-    else:
-        return NegTokenInit(entries[0], entries.get(1, None), entries.get(2, None), entries.get(3, None))
-
-
-def pack_neg_token_resp(neg_state=None, supported_mech=None, response_token=None, mech_list_mic=None):
-    """
-    Creates a SPNEGO NegTokenResp token.
-
-    MechType ::= OBJECT IDENTIFIER
-
-    NegTokenResp ::= SEQUENCE {
-        negState       [0] ENUMERATED {
-            accept-completed    (0),
-            accept-incomplete   (1),
-            reject              (2),
-            request-mic         (3)
-        }                                 OPTIONAL,
-          -- REQUIRED in the first reply from the target
-        supportedMech   [1] MechType      OPTIONAL,
-          -- present only in the first reply from the target
-        responseToken   [2] OCTET STRING  OPTIONAL,
-        mechListMIC     [3] OCTET STRING  OPTIONAL,
-        ...
-    }
-
-    :param neg_state:
-    :param supported_mech:
-    :param response_token:
-    :param mech_list_mic:
-    :return:
-    """
-    elements = []
-
-    if neg_state is not None:
-        elements.append(pack_asn1(TagClass.context_specific, True, 0, pack_asn1_enumerated(neg_state)))
-
-    if supported_mech:
-        elements.append(pack_asn1(TagClass.context_specific, True, 1, pack_asn1_object_identifier(supported_mech)))
-
-    if response_token:
-        elements.append(pack_asn1(TagClass.context_specific, True, 2, pack_asn1_octet_string(response_token)))
-
-    if mech_list_mic:
-        elements.append(pack_asn1(TagClass.context_specific, True, 3, pack_asn1_octet_string(mech_list_mic)))
-
-    neg_token_resp = pack_asn1_sequence(elements)
-    return _pack_negotiation_token(neg_token_resp, 1)
-
-
-def _unpack_neg_token_resp(b_data):
-    tag_class, _, tag_number, token_data, _ = unpack_asn1(b_data)
-    if tag_class != TagClass.universal or tag_number != TypeTagNumber.sequence:
-        raise ValueError("Expected SEQUENCE in NegTokenResp but got tag class %d and tag number %d"
-                         % (tag_class, tag_number))
-
-    entries = {}
-    while token_data:
-        sequence_class, _, sequence_no, sequence_data, token_data = unpack_asn1(token_data)
-        if sequence_class != TagClass.context_specific:
-            raise ValueError("Expected explicit tagged sequence entries but got tag class of %d" % sequence_class)
-
-        unpack_data = sequence_data
-
-        if sequence_no == 0:
-            state_class, _, state_tag, state, _ = unpack_asn1(sequence_data)
-            if state_class != TagClass.universal or state_tag != TypeTagNumber.enumerated:
-                raise ValueError("Expected negState ENUMERATED in NegTokenResp but got tag class %d and tag "
-                                 "number %d" % (state_class, state_tag))
-
-            unpack_data = unpack_asn1_enumerated(state)
-
-        elif sequence_no == 1:
-            mech_class, _, mech_tag, mech, _ = unpack_asn1(sequence_data)
-            if mech_class != TagClass.universal or mech_tag != TypeTagNumber.object_identifier:
-                raise ValueError("Expected supportedMech MechType in NegTokenResp but got tag class %d and tag "
-                                 "number %d" % (mech_class, mech_tag))
-
-            unpack_data = unpack_asn1_object_identifier(mech)
-
-        elif sequence_no == 2:
-            token_class, _, token_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if token_class != TagClass.universal or token_tag != TypeTagNumber.octet_string:
-                raise ValueError("Expected responseToken OCTET STRING in NegTokenResp but got tag class %d and tag "
-                                 "number %d" % (token_class, token_tag))
-
-        elif sequence_no == 3:
-            mic_class, _, mic_tag, unpack_data, _ = unpack_asn1(sequence_data)
-            if mic_class != TagClass.universal or mic_tag != TypeTagNumber.octet_string:
-                raise ValueError("Expected mechListMIC OCTET STRING in NegTokenResp but got tag class %d and tag "
-                                 "number %d" % (mic_class, mic_tag))
-
-        entries[sequence_no] = unpack_data
-
-    return NegTokenResp(entries.get(0, None), entries.get(1, None), entries.get(2, None), entries.get(3, None))
-
-
-def unpack_neg_token(b_data):
-    tag_class, constructed, tag_number, b_data, _ = unpack_asn1(b_data)
-
-    if tag_class == TagClass.application:
-        # The first token may be encapsulated in the InitialContextToken, we verify the OID is the SPNEGO OID and
-        # extract the NegTokenInit inside that.
-        if tag_number != 0:
-            raise ValueError("Expecting a tag number of 0 not %d for InitialContextToken" % tag_number)
-
-        mech_class, _, tag_number, mech, inner_context_token = unpack_asn1(b_data)
-        if mech_class != TagClass.universal or tag_number != TypeTagNumber.object_identifier:
-            raise ValueError("Expecting an OID as the first element in the InitialContextToken but got tag class %d "
-                             "and tag number %d" % (mech_class, tag_number))
-
-        mech = unpack_asn1_object_identifier(mech)
-        if mech != GSSMech.spnego.value:
-            raise ValueError("Expecting a InitialContextToken with a SPNEGO mech but received %s" % mech)
-
-        return unpack_neg_token(inner_context_token)
-
-    elif tag_class == TagClass.context_specific:
-        if tag_number == 0:
-            return _unpack_neg_token_init(b_data)
-
-        elif tag_number == 1:
-            return _unpack_neg_token_resp(b_data)
-
-        else:
-            raise ValueError("Expecting a tag number of 0 or 1 not %d for NegotiationToken" % tag_number)
-
-    else:
-        raise ValueError("Expecting tag class of 1 or 2 not %d for NegotiationToken" % tag_class)
-
-
-def _pack_negotiation_token(token, choice):
-    """
-    Creates the NegotiationToken for the token choice specified. A NegTokenInit is further wrapped in an
-    InitialContextToken as specified in RFC 2743.
-
-    NegotiationToken ::= CHOICE {
-        negTokenInit    [0] NegTokenInit,
-        negTokenResp    [1] NegTokenResp
-    }
-
-    :param token: The token value.
-    :param choice: 0 for NegTokenInit and 1 for NegTokenResp.
-    :return: Bytes string of the packed token.
-    """
-    negotiation_token = pack_asn1(TagClass.context_specific, True, choice, token)
-    if choice == 0:
-        return _pack_initial_context_token(GSSMech.spnego.value, negotiation_token)
-    else:
-        return negotiation_token
-
-
-def _pack_initial_context_token(mech, inner_context_token):
-    """
-    Creates the InitialContextToken as defined in RFC 2743 3.1 https://www.rfc-editor.org/rfc/rfc2743#section-3.1.
-
-    InitialContextToken ::=
-    -- option indication (delegation, etc.) indicated within
-    -- mechanism-specific token
-    [APPLICATION 0] IMPLICIT SEQUENCE {
+    @classmethod
+    def native_labels(cls):  # type: () -> Dict[int, str]
+        return {
+            NegState.accept_complete: 'accept-complete',
+            NegState.accept_incomplete: 'accept-incomplete',
+            NegState.reject: 'reject',
+            NegState.request_mic: 'request-mic',
+        }
+
+
+class InitialContextToken:
+    """GSSAPI InitialContextToken object.
+
+    The InitialContextToken is the ASN.1 structure that contains the first GSSAPI token that is sent across the wire.
+    The ASN.1 definition for this structure is defined in `RFC 2743 3.1`_::
+
+        MechType ::= OBJECT IDENTIFIER
+        -- data structure definitions
+        -- callers must be able to distinguish among
+        -- InitialContextToken, SubsequentContextToken,
+        -- PerMsgToken, and SealedMessage data elements
+        -- based on the usage in which they occur
+
+        InitialContextToken ::=
+        -- option indication (delegation, etc.) indicated within
+        -- mechanism-specific token
+        [APPLICATION 0] IMPLICIT SEQUENCE {
             thisMech MechType,
             innerContextToken ANY DEFINED BY thisMech
                -- contents mechanism-specific
                -- ASN.1 structure not required
             }
 
-    :param mech: The mech that the token related to, typically this is SPNEGO.
-    :param inner_context_token: The raw data to wrap in the InitialContextToken.
-    :return: Byte string of the InitialContextToken.
+    Args:
+        mech: The OID that defines the structure of the `token`.
+        token: The token of the GSSAPI value.
+
+    Attributes:
+        this_mech (str): The object identifier that identifies what the inner_context_token is for.
+        inner_context_token (bytes): The token value as defined by `this_mech`.
+
+    .. _RFC 2743 3.1:
+        https://www.rfc-editor.org/rfc/rfc2743#section-3.1.
     """
-    b_mech = pack_asn1_object_identifier(mech)
-    return pack_asn1(TagClass.application, True, 0, b_mech + inner_context_token)
+
+    def __init__(self, mech, token):  # type: (str, bytes) -> None
+        self.this_mech = mech
+        self.inner_context_token = token
+
+    @property
+    def token(self):  # type: () -> any
+        try:
+            mech = GSSMech.from_oid(self.this_mech)
+        except ValueError:
+            mech = None
+
+        return unpack_token(self.inner_context_token, mech=mech)
+
+    def pack(self):  # type: () -> bytes
+        """ Packs the InitialContextToken as a byte string. """
+        return pack_asn1(TagClass.application, True, 0,
+                         pack_asn1_object_identifier(self.this_mech, tag=True) + self.inner_context_token)
+
+    @staticmethod
+    def unpack(b_data):  # type: (bytes) -> InitialContextToken
+        """ Unpacks the InitialContextToken TLV value. """
+        this_mech, inner_context_token = unpack_asn1(b_data)
+        mech = unpack_asn1_object_identifier(this_mech)
+
+        return InitialContextToken(mech, inner_context_token)
+
+
+class NegTokenInit:
+    """The NegTokenInit GSSAPI value.
+
+    This is the initial negotiation message token in a GSSAPI exchange. Typically the `NegTokenInit` value is sent
+    when sending the first authentication token. The `NegTokenInit2` token is an extension that adds the `negHints`
+    field. Unfortunately as the tag number for the `mechListMIC` is the same for `negHints` unpacking the value
+    requires some extra checks.
+
+    The ASN.1 definition for the NegTokenInit structure is defined in `RFC 4178 4.2.1`_::
+
+        NegTokenInit ::= SEQUENCE {
+            mechTypes       [0] MechTypeList,
+            reqFlags        [1] ContextFlags  OPTIONAL,
+            -- inherited from RFC 2478 for backward compatibility,
+            -- RECOMMENDED to be left out
+            mechToken       [2] OCTET STRING  OPTIONAL,
+            mechListMIC     [3] OCTET STRING  OPTIONAL,
+            ...
+        }
+        ContextFlags ::= BIT STRING {
+            delegFlag       (0),
+            mutualFlag      (1),
+            replayFlag      (2),
+            sequenceFlag    (3),
+            anonFlag        (4),
+            confFlag        (5),
+            integFlag       (6)
+        } (SIZE (32))
+
+    The ASN.1 definition for the `NegTokenInit2`_ structure is defined as::
+
+        NegHints ::= SEQUENCE {
+            hintName[0] GeneralString OPTIONAL,
+            hintAddress[1] OCTET STRING OPTIONAL
+        }
+        NegTokenInit2 ::= SEQUENCE {
+            mechTypes[0] MechTypeList OPTIONAL,
+            reqFlags [1] ContextFlags OPTIONAL,
+            mechToken [2] OCTET STRING OPTIONAL,
+            negHints [3] NegHints OPTIONAL,
+            mechListMIC [4] OCTET STRING OPTIONAL,
+            ...
+        }
+
+    Args:
+        mech_types: One or more security mechanisms available for the initiator, in decreasing preference order.
+        req_flags: Should be omitted, service options that are requested to establish the context.
+        mech_token: Contains the optimistic mechanism token.
+        hint_name: Used for the NegTokenInit2 structure only, should be omitted.
+        hint_address: Used for the NegTokenINit2 structure only, should be omitted.
+        mech_list_mic: The message integrity code (MIC) token.
+
+    Attributes:
+        mech_types (List): See args.
+        req_flags (ContextFlags): See args.
+        mech_token (bytes): See args.
+        hint_name (bytes): See args.
+        hint_address (bytes): See args.
+        mech_list_mic (bytes): See args.
+
+    .. _RFC 4178 4.2.1:
+        https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.1
+
+    .. _NegTokenInit2:
+        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/8e71cf53-e867-4b79-b5b5-38c92be3d472
+    """
+
+    def __init__(self, mech_types=None, req_flags=None, mech_token=None, hint_name=None, hint_address=None,
+                 mech_list_mic=None):
+        # type: (Optional[List[str]], Optional[ContextFlags], Optional[bytes], Optional[bytes], Optional[bytes], Optional[bytes]) -> None  # noqa
+        self.mech_types = mech_types or []
+        self.req_flags = req_flags
+        self.mech_token = mech_token
+        self.hint_name = hint_name
+        self.hint_address = hint_address
+        self.mech_list_mic = mech_list_mic
+
+    def pack(self):  # type: () -> bytes
+        """ Packs the NegTokenInit as a byte string. """
+
+        def pack_elements(value_map):
+            elements = []
+            for tag, value, pack_func in value_map:
+                if value is not None:
+                    elements.append(pack_asn1(TagClass.context_specific, True, tag, pack_func(value)))
+
+            return elements
+
+        req_flags = struct.pack("B", self.req_flags) if self.req_flags is not None else None
+        base_map = [
+            (0, self.mech_types, pack_mech_type_list),
+            (1, req_flags, pack_asn1_bit_string),
+            (2, self.mech_token, pack_asn1_octet_string),
+        ]
+
+        # The placement of the mechListMIC is dependent on whether we are packing a NegTokenInit with or without the
+        # negHints field.
+        neg_hints_map = [
+            (0, self.hint_name, pack_asn1_general_string),
+            (1, self.hint_address, pack_asn1_octet_string),
+        ]
+        neg_hints = pack_elements(neg_hints_map)
+
+        if neg_hints:
+            base_map.append((3, neg_hints, pack_asn1_sequence))
+            base_map.append((4, self.mech_list_mic, pack_asn1_octet_string))
+
+        else:
+            base_map.append((3, self.mech_list_mic, pack_asn1_octet_string))
+
+        init_sequence = pack_elements(base_map)
+
+        # The NegTokenInit will always be wrapped in an InitialContextToken -> NegotiationToken - CHOICE 0.
+        b_data = pack_asn1_sequence(init_sequence)
+        return InitialContextToken(GSSMech.spnego.value, pack_asn1(TagClass.context_specific, True, 0, b_data)).pack()
+
+    @staticmethod
+    def unpack(b_data):  # type: (bytes) -> NegTokenInit
+        """ Unpacks the NegTokenInit TLV value. """
+        neg_seq = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
+
+        mech_types = [unpack_asn1_object_identifier(m) for m
+                      in get_sequence_value(neg_seq, 0, 'NegTokenInit', 'mechTypes', unpack_asn1_sequence) or []]
+
+        req_flags = get_sequence_value(neg_seq, 1, 'NegTokenInit', 'reqFlags', unpack_asn1_bit_string)
+        if req_flags:
+            # Can be up to 32 bits in length but RFC 4178 states "Implementations should not expect to receive exactly
+            # 32 bits in an encoding of ContextFlags." The spec also documents req flags up to 6 so let's just get the
+            # last byte. In reality we shouldn't ever receive this but it's left here for posterity.
+            req_flags = ContextFlags(struct.unpack("B", req_flags[-2:-1])[0])
+
+        mech_token = get_sequence_value(neg_seq, 2, 'NegTokenInit', 'mechToken', unpack_asn1_octet_string)
+
+        hint_name = hint_address = mech_list_mic = None
+        if 3 in neg_seq:
+            # Microsoft helpfully sends a NegTokenInit2 payload which sets 'negHints [3] NegHints OPTIONAL' and the
+            # mechListMIC is actually at the 4th sequence entry. Because the NegTokenInit2 has the same choice in
+            # NegotiationToken as NegTokenInit ([0]) we can only differentiate when unpacking based on the class/tags.
+            tag_class = neg_seq[3].tag_class
+            tag_number = neg_seq[3].tag_number
+
+            if tag_class == TagClass.universal and tag_number == TypeTagNumber.sequence:
+                neg_hints = unpack_asn1_tagged_sequence(neg_seq[3].b_data)
+
+                # Windows 2000, 2003, and XP put the SPN encoded as the OEM code page, because there's no sane way
+                # to decode this without prior knowledge a GeneralString stays a byte string in Python.
+                # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/211417c4-11ef-46c0-a8fb-f178a51c2088#Appendix_A_5
+                hint_name = get_sequence_value(neg_hints, 0, 'NegHints', 'hintName', unpack_asn1_general_string)
+                hint_address = get_sequence_value(neg_hints, 1, 'NegHints', 'hintAddress', unpack_asn1_octet_string)
+
+            else:
+                # Wasn't a sequence, should be mechListMIC.
+                mech_list_mic = get_sequence_value(neg_seq, 3, 'NegTokenInit', 'mechListMIC', unpack_asn1_octet_string)
+
+        if not mech_list_mic:
+            mech_list_mic = get_sequence_value(neg_seq, 4, 'NegTokenInit2', 'mechListMIC', unpack_asn1_octet_string)
+
+        return NegTokenInit(mech_types, req_flags, mech_token, hint_name, hint_address, mech_list_mic)
+
+
+class NegTokenResp:
+    """The NegTokenResp GSSAPI value.
+
+    This is the message token in a GSSAPI exchange that is used for subsequent messages after the `NegTokenInit` has
+    been exchanged.
+
+    The ASN.1 definition for the NegTokenResp structure is defined in `RFC 4178 4.2.2`_::
+
+        NegTokenResp ::= SEQUENCE {
+            negState       [0] ENUMERATED {
+                accept-completed    (0),
+                accept-incomplete   (1),
+                reject              (2),
+                request-mic         (3)
+            }                                 OPTIONAL,
+            -- REQUIRED in the first reply from the target
+            supportedMech   [1] MechType      OPTIONAL,
+            -- present only in the first reply from the target
+            responseToken   [2] OCTET STRING  OPTIONAL,
+            mechListMIC     [3] OCTET STRING  OPTIONAL,
+            ...
+        }
+
+    Args:
+        neg_state: The state of the negotiation.
+        supported_mech: Should only be present in the first reply, must be one of the mech(s) offered by the initiator.
+        response_token: Contains the token specific to the mechanism selected.
+        mech_list_mic: The message integrity code (MIC) token.
+
+    Attributes:
+        neg_state (NegState): See args.
+        supported_mech (str): See args.
+        response_token (bytes): See args.
+        mech_list_mic (bytes): See args.
+
+    .. _RFC 4178 4.2.2:
+        https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.2
+    """
+
+    def __init__(self, neg_state=None, supported_mech=None, response_token=None, mech_list_mic=None):
+        # type: (Optional[NegState], Optional[str], Optional[bytes], Optional[bytes]) -> None
+        self.neg_state = neg_state
+        self.supported_mech = supported_mech
+        self.response_token = response_token
+        self.mech_list_mic = mech_list_mic
+
+    def pack(self):  # type: () -> bytes
+        """ Packs the NegTokenResp as a byte string. """
+        value_map = [
+            (0, self.neg_state, pack_asn1_enumerated),
+            (1, self.supported_mech, pack_asn1_object_identifier),
+            (2, self.response_token, pack_asn1_octet_string),
+            (3, self.mech_list_mic, pack_asn1_octet_string),
+        ]
+        elements = []
+        for tag, value, pack_func in value_map:
+            if value is not None:
+                elements.append(pack_asn1(TagClass.context_specific, True, tag, pack_func(value)))
+
+        # The NegTokenResp will always be wrapped NegotiationToken - CHOICE 1.
+        b_data = pack_asn1_sequence(elements)
+        return pack_asn1(TagClass.context_specific, True, 1, b_data)
+
+    @staticmethod
+    def unpack(b_data):  # type: (bytes) -> NegTokenResp
+        """ Unpacks the NegTokenResp TLV value. """
+        neg_seq = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
+
+        neg_state = get_sequence_value(neg_seq, 0, 'NegTokenResp', 'negState', unpack_asn1_enumerated)
+        if neg_state is not None:
+            neg_state = NegState(neg_state)
+
+        supported_mech = get_sequence_value(neg_seq, 1, 'NegTokenResp', 'supportedMech', unpack_asn1_object_identifier)
+        response_token = get_sequence_value(neg_seq, 2, 'NegTokenResp', 'responseToken', unpack_asn1_octet_string)
+        mech_list_mic = get_sequence_value(neg_seq, 3, 'NegTokenResp', 'mechListMIC', unpack_asn1_octet_string)
+
+        return NegTokenResp(neg_state, supported_mech, response_token, mech_list_mic)

@@ -20,6 +20,7 @@ try:
         Dict,
         List,
         Optional,
+        Set,
         Tuple,
         Union,
     )
@@ -29,6 +30,7 @@ except ImportError:
     Dict = any
     List = any
     Optional = any
+    Set = any
     Tuple = any
     Union = any
 
