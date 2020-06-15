@@ -287,26 +287,26 @@ def pack_asn1_integer(value, tag=True):  # type: (int, bool) -> bytes
 
     b_int = bytearray()
     while value > limit:
-        val = value & 0xff
+        val = value & 0xFF
 
         if is_negative:
-            val = 0xff - val
+            val = 0xFF - val
 
         b_int.append(val)
         value >>= 8
 
-    b_int.append(((0xff - value) if is_negative else value) & 0xff)
+    b_int.append(((0xFF - value) if is_negative else value) & 0xFF)
 
     if is_negative:
         for idx, val in enumerate(b_int):
-            if val < 0xff:
+            if val < 0xFF:
                 b_int[idx] += 1
                 break
 
             b_int[idx] = 0
 
-    if is_negative and b_int[-1] == 0x7f:  # Two's complement corner case
-        b_int.append(0xff)
+    if is_negative and b_int[-1] == 0x7F:  # Two's complement corner case
+        b_int.append(0xFF)
 
     b_int.reverse()
     b_int = bytes(b_int)
@@ -471,37 +471,27 @@ def unpack_asn1_generalized_time(value):  # type: (Union[bytes, ASN1Value]) -> d
 
 def unpack_asn1_integer(value):  # type: (Union[bytes, ASN1Value]) -> int
     """ Unpacks an ASN.1 INTEGER value. """
-    # FIXME: not unpacking a value like '02030b6c2f' == 748591
-    b_data = extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.integer)
-    length = len(b_data)
+    b_int = bytearray(extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.integer))
 
-    if length == 1:
-        # The MSB denotes whether the number is negative or not.
-        value = struct.unpack("B", b_data)[0]
-        is_negative = bool(value & 0b10000000)
-    else:
-        is_negative = False
-        value = 0
-        idx = 0
+    is_negative = b_int[0] & 0b10000000
+    if is_negative:
+        # Get the two's compliment.
+        for i in range(len(b_int)):
+            b_int[i] = 0xFF - b_int[i]
 
-        while idx != length:
-            b_val = b_data[idx:idx + 1]
+        for i in range(len(b_int) - 1, -1, -1):
+            if b_int[i] == 0xFF:
+                b_int[i - 1] += 1
+                b_int[i] = 0
+                break
 
-            # The first octet can be \x00 which indicate the value is a positive number regardless of the MSB in the
-            # next octet.
-            if idx == 0 and b_val == b"\x00":
-                idx += 1
-                continue
+            else:
+                b_int[i] += 1
+                break
 
-            element = struct.unpack("B", b_val)[0]
-
-            # If the first octet's MSB is set then the number is a negative number.
-            if idx == 0 and element & 0b10000000:
-                is_negative = True
-                element &= 0b01111111
-
-            value = (value << 8) + value
-            idx += 1
+    value = 0
+    for val in b_int:
+        value = (value << 8) | val
 
     if is_negative:
         value *= -1

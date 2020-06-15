@@ -57,6 +57,13 @@ def test_av_flags_native_labels():
     assert actual[messages.AvFlags.mic] == 'MIC_PROVIDED'
 
 
+def test_message_type_native_labels():
+    actual = messages.MessageType.native_labels()
+
+    assert isinstance(actual, dict)
+    assert actual[messages.MessageType.challenge] == 'CHALLENGE_MESSAGE'
+
+
 def test_negotiate_pack_defaults():
     negotiate = messages.Negotiate()
 
