@@ -269,12 +269,7 @@ def test_negotiate_unpack_invalid_encoding():
 
 def test_negotiate_invalid_size():
     with pytest.raises(ValueError, match="Invalid NTLM Negotiate raw byte length"):
-        messages.Negotiate.unpack(b"\x00")
-
-
-def test_negotiate_invalid_signature():
-    with pytest.raises(ValueError, match="Invalid NTLM Negotiate signature"):
-        messages.Negotiate.unpack(b"\x00" * 32)
+        messages.Negotiate.unpack(b"NTLMSSP\x00\x01\x00\x00\x00")
 
 
 def test_challenge_pack():
@@ -448,12 +443,7 @@ def test_challenge_invalid_server_challenge_length():
 
 def test_challenge_invalid_size():
     with pytest.raises(ValueError, match="Invalid NTLM Challenge raw byte length"):
-        messages.Challenge.unpack(b"\x00")
-
-
-def test_challenge_invalid_signature():
-    with pytest.raises(ValueError, match="Invalid NTLM Challenge signature"):
-        messages.Challenge.unpack(b"\x00" * 48)
+        messages.Challenge.unpack(b"NTLMSSP\x00\x02\x00\x00\x00")
 
 
 def test_challenge_unpack_ntlmv1():
@@ -990,12 +980,7 @@ def test_authenticate_unpack_mic_no_version():
 
 def test_authenticate_invalid_size():
     with pytest.raises(ValueError, match="Invalid NTLM Authenticate raw byte length"):
-        messages.Authenticate.unpack(b"\x00")
-
-
-def test_authenticate_invalid_signature():
-    with pytest.raises(ValueError, match="Invalid NTLM Authenticate signature"):
-        messages.Authenticate.unpack(b"\x00" * 64)
+        messages.Authenticate.unpack(b"NTLMSSP\x00\x03\x00\x00\x00")
 
 
 def test_filetime_pack():

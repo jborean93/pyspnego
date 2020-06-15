@@ -51,18 +51,13 @@ from spnego._text import (
 
 def _enum_labels(value, enum_type=None):  # type: (Union[int, IntEnum, IntFlag], Optional[type]) -> Dict[int, str]
     """ Gets the human friendly labels of a known enum and what value they map to. """
-    labels = {}
-    if enum_type:
-        labels = enum_type.native_labels()
+    def get_labels(v):
+        return getattr(v, 'native_labels', lambda: {})()
 
-    elif isinstance(value, (IntEnum, IntFlag)):
-        labels = value.native_labels()
-
-    return labels
+    return get_labels(enum_type) if enum_type else get_labels(value)
 
 
-def parse_enum(value, scalar=False, enum_type=None):
-    # type: (Union[int, IntEnum], bool, Optional[type]) -> Union[str, Dict[str, any]]
+def parse_enum(value, enum_type=None):  # type: (Union[int, IntEnum], Optional[type]) -> str
     """ Parses an IntEnum into a human representative object of that enum. """
     enum_name = 'UNKNOWN'
 
@@ -74,13 +69,7 @@ def parse_enum(value, scalar=False, enum_type=None):
             enum_name = name
             break
 
-    if scalar:
-        return "%s (%s)" % (enum_name, value)
-    else:
-        return {
-            'raw': value,
-            'enum': enum_name,
-        }
+    return "%s (%s)" % (enum_name, value)
 
 
 def parse_flags(value, enum_type=None):  # type: (Union[int, IntFlag], Optional[type]) -> Dict[str, any]
@@ -142,6 +131,11 @@ def parse_kerberos_token(token, secret=None, encoding=None):
         def parse_token(value):  # type: (any) -> Dict[str, any]
             return parse_kerberos_token(value, secret, encoding)
 
+        parse_args = []
+        if isinstance(attr_type, tuple):
+            parse_args.append(attr_type[1])
+            attr_type = attr_type[0]
+
         parse_func = {
             ParseType.default: parse_default,
             ParseType.enum: parse_enum,
@@ -158,10 +152,10 @@ def parse_kerberos_token(token, secret=None, encoding=None):
             parsed_value = None
 
         elif isinstance(attr_value, list):
-            parsed_value = [parse_func(v) if v is not None else None for v in attr_value]
+            parsed_value = [parse_func(v, *parse_args) if v is not None else None for v in attr_value]
 
         else:
-            parsed_value = parse_func(attr_value)
+            parsed_value = parse_func(attr_value, *parse_args)
 
         msg[name] = parsed_value
 
@@ -242,7 +236,7 @@ class KerberosAPOptions(IntFlag):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1 - KDCOptions
-class KerberosKDCOptions(IntFlag):
+class KerberosKDCOptions:  # TODO: Use IntEnum when we've dropped py27
     reserved = 0x80000000
     forwardable = 0x40000000
     forwarded = 0x20000000
@@ -1102,7 +1096,7 @@ class KdcReqBody:
         additional_tickets: Additional tickets to be optionally included in a request.
 
     Attributes:
-        kdc_options (KerberosKDCOptions): See args.
+        kdc_options (int): See args.
         cname (Optional[PrincipalName]): See args.
         realm (bytes): See args.
         sname (PrincipalName): See args.
@@ -1119,7 +1113,7 @@ class KdcReqBody:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
     """
     PARSE_MAP = [
-        ('kdc-options', 'kdc_options', ParseType.flags),
+        ('kdc-options', 'kdc_options', (ParseType.flags, KerberosKDCOptions)),
         ('cname', 'cname', ParseType.principal_name),
         ('realm', 'realm', ParseType.text),
         ('sname', 'sname', ParseType.principal_name),
@@ -1135,7 +1129,7 @@ class KdcReqBody:
 
     def __init__(self, kdc_options, cname, realm, sname, postdated_from, postdated_till, rtime, nonce, etype,
                  addresses, enc_authorization_data, additional_tickets):
-        # type: (KerberosKDCOptions, Optional[PrincipalName], bytes, PrincipalName, Optional[datetime.datetime], datetime.datetime, Optional[datetime.datetime], int, List[KerberosEncryptionType], Optional[List[HostAddress]], Optional[EncryptedData], Optional[List[Ticket]]) -> None  # noqa
+        # type: (int, Optional[PrincipalName], bytes, PrincipalName, Optional[datetime.datetime], datetime.datetime, Optional[datetime.datetime], int, List[KerberosEncryptionType], Optional[List[HostAddress]], Optional[EncryptedData], Optional[List[Ticket]]) -> None  # noqa
         self.kdc_options = kdc_options
         self.cname = cname
         self.realm = realm
@@ -1155,7 +1149,7 @@ class KdcReqBody:
 
         def unpack_kdc_options(value):
             b_data = unpack_asn1_bit_string(value)
-            return KerberosKDCOptions(struct.unpack(">I", b_data)[0])
+            return struct.unpack(">I", b_data)[0]
 
         def unpack_etype(value):
             return [KerberosEncryptionType(unpack_asn1_integer(e)) for e in unpack_asn1_sequence(value)]

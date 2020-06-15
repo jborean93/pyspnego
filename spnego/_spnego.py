@@ -47,8 +47,8 @@ from spnego._kerberos import (
     KerberosV5Msg,
 )
 
-from spnego._ntlm_raw import (
-    messages as ntlm_messages,
+from spnego._ntlm_raw.messages import (
+    NTLMMessage,
 )
 
 
@@ -69,7 +69,7 @@ def pack_mech_type_list(mech_list):  # type: (Union[str, List[str], Tuple[str, .
     return pack_asn1_sequence([pack_asn1_object_identifier(oid) for oid in mech_list])
 
 
-def unpack_token(b_data, mech=None, unwrap=True, encoding='windows-1252'):
+def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
     # type: (bytes, Optional[GSSMech], bool, str) -> any
     """Unpacks a raw GSSAPI/SPNEGO token to a Python object.
 
@@ -83,27 +83,26 @@ def unpack_token(b_data, mech=None, unwrap=True, encoding='windows-1252'):
     Args:
         b_data: The raw byte string to unpack.
         mech: A hint as to what the byte string is for.
-        unwrap: Whether to get the inner token in the InitialContextToken or return the InitialContextToken.
-        encoding: Optional encoding used when unpacking NTLM messages.
+        unwrap: Whether to unwrap raw bytes to a structured message or return the raw tokens bytes.
+        encoding: Optional encoding used when unwrapping NTLM messages.
 
     Returns:
         any: The unpacked SPNEGO, Kerberos, or NTLM token.
     """
     # First check if the message is an NTLM message.
-    if b_data.startswith(b"NTLMSSP\x00\x01"):
-        return ntlm_messages.Negotiate.unpack(b_data, encoding=encoding)
+    if b_data.startswith(b"NTLMSSP\x00"):
+        if unwrap:
+            return NTLMMessage.unpack(b_data, encoding=encoding)
 
-    elif b_data.startswith(b"NTLMSSP\x00\x02"):
-        return ntlm_messages.Challenge.unpack(b_data, encoding=encoding)
-
-    elif b_data.startswith(b"NTLMSSP\x00\x03"):
-        return ntlm_messages.Authenticate.unpack(b_data, encoding=encoding)
+        else:
+            return b_data
 
     if mech and mech.is_kerberos_oid:
         # A Kerberos value inside an InitialContextToken contains 2 bytes which we ignore.
-        b_data = b_data[2:]
+        raw_data = unpack_asn1(b_data[2:])[0]
 
-    raw_data = unpack_asn1(b_data)[0]
+    else:
+        raw_data = unpack_asn1(b_data)[0]
 
     if raw_data.tag_class == TagClass.application and mech and mech.is_kerberos_oid:
         return KerberosV5Msg.unpack(unpack_asn1(raw_data.b_data)[0])
@@ -115,7 +114,8 @@ def unpack_token(b_data, mech=None, unwrap=True, encoding='windows-1252'):
 
         initial_context_token = InitialContextToken.unpack(raw_data.b_data)
 
-        if not unwrap:
+        # unwrap=True is called from pyspnego-parse and we don't want to loose any info in the output.
+        if unwrap:
             return initial_context_token
 
         try:
@@ -138,12 +138,14 @@ def unpack_token(b_data, mech=None, unwrap=True, encoding='windows-1252'):
             return NegTokenResp.unpack(raw_data.b_data)
 
         else:
-            raise ValueError("Unknown NegotiationToken CHOICE %d, only expecting 0 or 1"
-                             % raw_data.tag_number)
+            raise ValueError("Unknown NegotiationToken CHOICE %d, only expecting 0 or 1" % raw_data.tag_number)
 
-    else:
+    elif unwrap:
         # Could also be the ASN.1 Sequence of the Kerberos message.
         return KerberosV5Msg.unpack(raw_data)
+
+    else:
+        return b_data
 
 
 # https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.1 - ContextFlags

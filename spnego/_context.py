@@ -10,6 +10,7 @@ import collections
 from spnego._compat import (
     integer_types,
 
+    Dict,
     List,
     Optional,
     Tuple,
@@ -243,13 +244,21 @@ class GSSMech(Enum):
     def native_labels(cls):  # type: () -> Dict[str, str]
         return {
             GSSMech.ntlm: 'NTLM',
+            GSSMech.ntlm.value: 'NTLM',
             GSSMech.spnego: 'SPNEGO',
+            GSSMech.spnego.value: 'SPNEGO',
             GSSMech.kerberos: 'Kerberos',
+            GSSMech.kerberos.value: 'Kerberos',
             GSSMech._ms_kerberos: 'MS Kerberos',
+            GSSMech._ms_kerberos.value: 'MS Kerberos',
             GSSMech._kerberos_draft: 'Kerberos (draft)',
+            GSSMech._kerberos_draft.value: 'Kerberos (draft)',
             GSSMech._iakerb: 'IAKerberos',
+            GSSMech._iakerb.value: 'IAKerberos',
             GSSMech.kerberos_u2u: 'Kerberos User to User',
-            GSSMech.negoex: "NEGOEX',"
+            GSSMech.kerberos_u2u.value: 'Kerberos User to User',
+            GSSMech.negoex: 'NEGOEX',
+            GSSMech.negoex.value: 'NEGOEX',
         }
 
     @property

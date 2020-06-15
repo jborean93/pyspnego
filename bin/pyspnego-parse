@@ -136,7 +136,7 @@ def _parse_ntlm_target_info(target_info):
         else:
             value = to_text(base64.b16encode(raw_value))
 
-        info.append({'AvId': parse_enum(av_id, scalar=True), 'Value': value})
+        info.append({'AvId': parse_enum(av_id), 'Value': value})
 
     return info
 
@@ -348,7 +348,7 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
 
 def _parse_spnego_init(data, secret=None, encoding=None):
     # type: (NegTokenInit, Optional[str], Optional[str]) -> Dict[str, any]
-    mech_types = [parse_enum(m, scalar=True, enum_type=GSSMech) for m in data.mech_types] \
+    mech_types = [parse_enum(m, enum_type=GSSMech) for m in data.mech_types] \
         if data.mech_types else None
 
     mech_token = None
@@ -375,8 +375,7 @@ def _parse_spnego_init(data, secret=None, encoding=None):
 def _parse_spnego_resp(data, secret=None, encoding=None):
     # type: (NegTokenResp, Optional[str], Optional[str]) -> Dict[str, any]
 
-    supported_mech = parse_enum(data.supported_mech, scalar=True, enum_type=GSSMech) \
-                         if data.supported_mech else None,
+    supported_mech = parse_enum(data.supported_mech, enum_type=GSSMech) if data.supported_mech else None
 
     response_token = None
     if data.response_token:
@@ -485,7 +484,7 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
         mech = GSSMech.from_oid(mech)
 
     try:
-        token = unpack_token(b_data, mech=mech, unwrap=False, encoding=encoding or 'windows-1252')
+        token = unpack_token(b_data, mech=mech, unwrap=True, encoding=encoding)
     except Exception as e:
         return {
             'MessageType': 'Unknown - Failed to parse see Data for more details.',
@@ -495,16 +494,20 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
 
     # SPNEGO messages.
     if isinstance(token, InitialContextToken):
-        msg_type = 'SPNEGO InitiateContextToken'
+        msg_type = 'SPNEGO InitialContextToken'
         data = {
-            'thisMech': parse_enum(token.this_mech, scalar=True, enum_type=GSSMech),
+            'thisMech': parse_enum(token.this_mech, enum_type=GSSMech),
             'innerContextToken': parse_token(token.inner_context_token, mech=token.this_mech, secret=secret,
                                              encoding=encoding),
         }
 
     elif isinstance(token, NegTokenInit):
-        msg_type = 'SPNEGO NegTokenInit'
         data = _parse_spnego_init(token, secret, encoding)
+        if 'negHints' in data:
+            msg_type = 'SPNEGO NegTokenInit2'
+
+        else:
+            msg_type = 'SPNEGO NegTokenInit'
 
     elif isinstance(token, NegTokenResp):
         msg_type = 'SPNEGO NegTokenResp'
@@ -512,7 +515,7 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
 
     # NTLM messages.
     elif isinstance(token, (Negotiate, Challenge, Authenticate)):
-        msg_type = parse_enum(token.MESSAGE_TYPE, scalar=True)
+        msg_type = parse_enum(token.MESSAGE_TYPE)
 
         if isinstance(token, Negotiate):
             data = _parse_ntlm_negotiate(token)
@@ -525,7 +528,7 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
 
     # Kerberos messages.
     elif isinstance(token, KerberosV5Msg):
-        msg_type = parse_enum(token.MESSAGE_TYPE, scalar=True)
+        msg_type = parse_enum(token.MESSAGE_TYPE)
         data = parse_kerberos_token(token, secret, encoding)
 
     else:
