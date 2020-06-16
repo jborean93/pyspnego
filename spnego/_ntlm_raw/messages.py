@@ -20,6 +20,8 @@ from spnego._compat import (
 
     IntEnum,
     IntFlag,
+
+    UTC,
 )
 
 from spnego._text import (
@@ -186,16 +188,6 @@ class MessageType(IntEnum):
             MessageType.challenge: 'CHALLENGE_MESSAGE',
             MessageType.authenticate: 'AUTHENTICATE_MESSAGE',
         }
-
-
-class _UTC(datetime.tzinfo):
-    """ UTC TimeZone. Used with FileTime to convert tz aware datetime to a UTC FILETIME value. """
-
-    def utcoffset(self, dt):
-        return datetime.timedelta(0)
-
-    def dst(self, dt):
-        return datetime.timedelta(0)
 
 
 def _get_payload_offset(b_data, field_offsets):
@@ -712,7 +704,7 @@ class FileTime(datetime.datetime):
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
         # Make sure we are dealing with a timezone aware datetime
-        utc_tz = _UTC()
+        utc_tz = UTC()
         utc_dt = self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz)
 
         # Get the time since UTC EPOCH in microseconds

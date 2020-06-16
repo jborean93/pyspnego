@@ -124,10 +124,10 @@ def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
             this_mech = initial_context_token.this_mech
 
         # We currently only support SPNEGO, or raw Kerberos here.
-        if this_mech and (this_mech == GSSMech.spnego or this_mech.is_kerberos_oid):
+        if this_mech and (this_mech == GSSMech.spnego or (this_mech.is_kerberos_oid and unwrap)):
             return unpack_token(initial_context_token.inner_context_token, mech=this_mech)
 
-        return initial_context_token
+        return b_data
 
     elif raw_data.tag_class == TagClass.context_specific:
         # This is a raw NegotiationToken that is wrapped in a CHOICE or 0 or 1.

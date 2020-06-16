@@ -4,6 +4,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import datetime
 import sys
 
 # TODO: Remove once Python 2.7 is dropped, use only int.
@@ -88,3 +89,14 @@ except ImportError:
         IntEnum,
     )
     IntFlag = IntEnum
+
+
+# TODO: Remove once Python 2.7 is dropped and we can use UTC from datetime instead.
+class UTC(datetime.tzinfo):
+    """ UTC TimeZone. Used with FileTime or a ASN.1 GeneralString to convert tz aware datetime to a UTC value. """
+
+    def utcoffset(self, dt):
+        return datetime.timedelta(0)
+
+    def dst(self, dt):
+        return datetime.timedelta(0)

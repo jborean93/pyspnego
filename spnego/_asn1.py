@@ -19,6 +19,8 @@ from spnego._compat import (
     reraise,
 
     IntEnum,
+
+    UTC,
 )
 
 from spnego._text import (
@@ -219,7 +221,7 @@ def pack_asn1(tag_class, constructed, tag_number, b_data):
         # Set the first 5 bits of the first octet to 1 and encode the tag number in subsequent octets.
         identifier_octets |= 31
         b_asn1_data.append(identifier_octets)
-        b_asn1_data.extend(pack_asn1_octet_number(tag_number))
+        b_asn1_data.extend(_pack_asn1_octet_number(tag_number))
 
     # ASN.1 Length octet for DER encoding is always in the definite form. This form packs the lengths in the following
     # octet structure:
@@ -328,7 +330,7 @@ def pack_asn1_object_identifier(oid, tag=True):  # type: (str, bool) -> bytes
     b_oid.append((oid_split[0] * 40) + oid_split[1])
 
     for val in oid_split[2:]:
-        b_oid.extend(pack_asn1_octet_number(val))
+        b_oid.extend(_pack_asn1_octet_number(val))
 
     b_oid = bytes(b_oid)
     if tag:
@@ -337,7 +339,24 @@ def pack_asn1_object_identifier(oid, tag=True):  # type: (str, bool) -> bytes
     return b_oid
 
 
-def pack_asn1_octet_number(num):  # type: (int) -> bytes
+def pack_asn1_octet_string(b_data, tag=True):  # type: (bytes, bool) -> bytes
+    """ Packs an bytes value into an ASN.1 OCTET STRING byte value with optional universal tagging. """
+    if tag:
+        b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.octet_string, b_data)
+
+    return b_data
+
+
+def pack_asn1_sequence(sequence, tag=True):  # type: (List[bytes, ...], bool) -> bytes
+    """ Packs a list of encoded bytes into an ASN.1 SEQUENCE byte value with optional universal tagging. """
+    b_data = b"".join(sequence)
+    if tag:
+        b_data = pack_asn1(TagClass.universal, True, TypeTagNumber.sequence, b_data)
+
+    return b_data
+
+
+def _pack_asn1_octet_number(num):  # type: (int) -> bytes
     """ Packs an int number into an ASN.1 integer value that spans multiple octets. """
     num_octets = bytearray()
 
@@ -358,23 +377,6 @@ def pack_asn1_octet_number(num):  # type: (int) -> bytes
     num_octets.reverse()
 
     return num_octets
-
-
-def pack_asn1_octet_string(b_data, tag=True):  # type: (bytes, bool) -> bytes
-    """ Packs an bytes value into an ASN.1 OCTET STRING byte value with optional universal tagging. """
-    if tag:
-        b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.octet_string, b_data)
-
-    return b_data
-
-
-def pack_asn1_sequence(sequence, tag=True):  # type: (List[bytes, ...], bool) -> bytes
-    """ Packs a list of encoded bytes into an ASN.1 SEQUENCE byte value with optional universal tagging. """
-    b_data = b"".join(sequence)
-    if tag:
-        b_data = pack_asn1(TagClass.universal, True, TypeTagNumber.sequence, b_data)
-
-    return b_data
 
 
 def unpack_asn1(b_data):  # type: (bytes) -> Tuple[ASN1Value, bytes]
@@ -458,10 +460,17 @@ def unpack_asn1_generalized_time(value):  # type: (Union[bytes, ASN1Value]) -> d
     """ Unpacks an ASN.1 GeneralizedTime value. """
     data = to_text(extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.generalized_time))
 
+    # While ASN.1 can have a timezone encoded, KerberosTime is the only thing we use and it is always in UTC with the
+    # Z prefix. We strip out the Z because Python 2 doesn't support the %z identifier and add the UTC tz to the object.
+    # https://www.rfc-editor.org/rfc/rfc4120#section-5.2.3
+    if data.endswith('Z'):
+        data = data[:-1]
+
     err = None
-    for datetime_format in ['%Y%m%d%H%M%S.%f%z', '%Y%m%d%H%M%S%z']:
+    for datetime_format in ['%Y%m%d%H%M%S.%f', '%Y%m%d%H%M%S']:
         try:
-            return datetime.datetime.strptime(data, datetime_format)
+            dt = datetime.datetime.strptime(data, datetime_format)
+            return dt.replace(tzinfo=UTC())
         except ValueError as e:
             err = e
 
