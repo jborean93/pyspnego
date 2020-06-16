@@ -355,6 +355,8 @@ def _parse_spnego_init(data, secret=None, encoding=None):
     if data.mech_token:
         mech_token = parse_token(data.mech_token, secret=secret, encoding=encoding)
 
+    encoding = encoding if encoding else 'utf-8'
+
     msg = {
         'mechTypes': mech_types,
         'reqFlags': parse_flags(data.req_flags) if data.req_flags is not None else None,

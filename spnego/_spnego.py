@@ -121,7 +121,7 @@ def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
         try:
             this_mech = GSSMech.from_oid(initial_context_token.this_mech)
         except ValueError:
-            this_mech = initial_context_token.this_mech
+            this_mech = None
 
         # We currently only support SPNEGO, or raw Kerberos here.
         if this_mech and (this_mech == GSSMech.spnego or (this_mech.is_kerberos_oid and unwrap)):
@@ -223,7 +223,10 @@ class InitialContextToken:
         https://www.rfc-editor.org/rfc/rfc2743#section-3.1.
     """
 
-    def __init__(self, mech, token):  # type: (str, bytes) -> None
+    def __init__(self, mech, token):  # type: (Union[str, GSSMech], bytes) -> None
+        if isinstance(mech, GSSMech):
+            mech = mech.value
+
         self.this_mech = mech
         self.inner_context_token = token
 
@@ -379,7 +382,7 @@ class NegTokenInit:
             # Can be up to 32 bits in length but RFC 4178 states "Implementations should not expect to receive exactly
             # 32 bits in an encoding of ContextFlags." The spec also documents req flags up to 6 so let's just get the
             # last byte. In reality we shouldn't ever receive this but it's left here for posterity.
-            req_flags = ContextFlags(struct.unpack("B", req_flags[-2:-1])[0])
+            req_flags = ContextFlags(bytearray(req_flags)[-1])
 
         mech_token = get_sequence_value(neg_seq, 2, 'NegTokenInit', 'mechToken', unpack_asn1_octet_string)
 

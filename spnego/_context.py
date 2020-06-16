@@ -212,11 +212,11 @@ class FeatureMissingError(Exception):
             NegotiateOptions.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
                                                  'negotiated.',
 
-            NegotiateOptions.gssapi_iov_wrapping: 'The system is missing the GSSAPI IOV extension headers or NTLM is '
-                                                  'being requested, cannot utilitze wrap_iov and unwrap_iov',
+            NegotiateOptions.wrapping_iov: 'The system is missing the GSSAPI IOV extension headers or NTLM is being '
+                                           'requested, cannot utilitze wrap_iov and unwrap_iov',
 
-            NegotiateOptions.negotiate_winrm_wrapping: 'The system is missing the GSSAPI IOV extension headers '
-                                                       'required for WinRM encryption with Kerberos.',
+            NegotiateOptions.wrapping_winrm: 'The system is missing the GSSAPI IOV extension headers required for '
+                                             'WinRM encryption with Kerberos.',
 
         }.get(self.feature_id, 'Unknown option flag: %d' % self.feature_id)
 

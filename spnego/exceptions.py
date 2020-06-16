@@ -12,7 +12,6 @@ from spnego._compat import (
 
 from spnego._text import (
     text_type,
-    to_native,
 )
 
 try:

@@ -24,6 +24,11 @@ except ImportError:
     HAS_SSPI = False
 
 
+def get_data(name):
+    with open(os.path.join(os.path.dirname(__file__), 'data', name), mode='rb') as fd:
+        return fd.read()
+
+
 @pytest.fixture()
 def ntlm_cred(tmpdir, monkeypatch):
     cleanup = None
