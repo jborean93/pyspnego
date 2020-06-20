@@ -18,6 +18,8 @@ stages:
   - job: Test_Linux
     pool:
       vmImage: ubuntu-18.04
+    variables:
+      test_realm: domain.test
     strategy:
       matrix:
         Python27:
@@ -37,11 +39,7 @@ stages:
         versionSpec: $(python.version)
 
     - script: |
-        sudo apt-get install -y \
-          gcc \
-          gss-ntlmssp \
-          libkrb5-dev \
-          python-dev
+        sudo bash ci/setup.sh $(test_realm)
       displayName: Install system requirements
 
     - script: |
@@ -60,6 +58,7 @@ stages:
       displayName: Lint
 
     - script: |
+        export PYSPNEGO_TEST_REALM=$(test_realm)
         pytest -v --junitxml junit/test-results.xml --cov spnego --cov-report xml --cov-report term-missing
       displayName: Test
 
