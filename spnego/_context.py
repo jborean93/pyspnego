@@ -715,10 +715,10 @@ class ContextProxy:
                     raise ValueError("IOV entry[0] must specify the BufferType as an int")
                 buffer_type = entry[0]
 
-                if not isinstance(entry[1], (bytes, integer_types, bool)):
+                if entry[1] is not None and not isinstance(entry[1], (bytes, integer_types, bool)):
                     raise ValueError("IOV entry[1] must specify the buffer bytes, length of the buffer, or whether "
                                      "it is auto allocated.")
-                data = entry[1]
+                data = entry[1] or b""
 
             elif isinstance(entry, integer_types):
                 buffer_type = entry

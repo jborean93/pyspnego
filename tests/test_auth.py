@@ -13,9 +13,12 @@ import pytest
 import spnego
 import spnego.channel_bindings
 import spnego.gss
+import spnego.iov
 import spnego.sspi
 
 from spnego._context import (
+    IOVWrapResult,
+    IOVUnwrapResult,
     WrapResult,
     UnwrapResult,
 )
@@ -283,6 +286,66 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
     _message_test(c, s)
+
+
+def test_gssapi_kerberos_auth(kerb_cred):
+    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.gethostname(), protocol='kerberos',
+                      options=spnego.NegotiateOptions.use_gssapi)
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+
+    assert not c.complete
+    assert not s.complete
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    _message_test(c, s)
+
+    if not c.iov_available():
+        return
+
+    plaintext = os.urandom(16)
+    c_iov_res = c.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert isinstance(c_iov_res, IOVWrapResult)
+    assert c_iov_res.encrypted
+    assert len(c_iov_res.buffers) == 3
+    assert c_iov_res.buffers[1].data != plaintext
+
+    s_iov_res = s.unwrap_iov(c_iov_res.buffers)
+    assert isinstance(s_iov_res, IOVUnwrapResult)
+    assert s_iov_res.encrypted
+    assert s_iov_res.qop == 0
+    assert len(s_iov_res.buffers) == 3
+    assert s_iov_res.buffers[1].data == plaintext
+
+    plaintext = os.urandom(16)
+    s_iov_res = s.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert isinstance(s_iov_res, IOVWrapResult)
+    assert s_iov_res.encrypted
+    assert len(s_iov_res.buffers) == 3
+    assert s_iov_res.buffers[1].data != plaintext
+
+    c_iov_res = c.unwrap_iov(s_iov_res.buffers)
+    assert isinstance(c_iov_res, IOVUnwrapResult)
+    assert c_iov_res.encrypted
+    assert c_iov_res.qop == 0
+    assert len(c_iov_res.buffers) == 3
+    assert c_iov_res.buffers[1].data == plaintext
 
 
 @pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),

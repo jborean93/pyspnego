@@ -39,7 +39,12 @@ stages:
         versionSpec: $(python.version)
 
     - script: |
-        sudo bash ci/setup.sh $(test_realm)
+        sudo apt-get install -y \
+          gcc \
+          gss-ntlmssp \
+          krb5-{user,kdc,admin-server,multidev} \
+          libkrb5-dev \
+          python-dev
       displayName: Install system requirements
 
     - script: |
@@ -58,7 +63,7 @@ stages:
       displayName: Lint
 
     - script: |
-        export PYSPNEGO_TEST_REALM=$(test_realm)
+        export PYSPNEGO_TEST_KERBEROS=True
         pytest -v --junitxml junit/test-results.xml --cov spnego --cov-report xml --cov-report term-missing
       displayName: Test
 

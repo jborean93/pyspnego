@@ -268,7 +268,7 @@ class NegotiateProxy(ContextProxy):
         return self._context._requires_mech_list_mic
 
     def _convert_iov_buffer(self, iov):
-        pass  # Handled in the underlying context.
+        pass  # Handled in the underlying context.  # pragma: no cover
 
     def _rebuild_context_list(self, mech_list=None, in_token=None):
         # type: (Optional[List[str]], Optional[bytes]) -> List[str]

@@ -16,6 +16,12 @@ from spnego._text import (
     to_text,
 )
 
+HAS_K5TEST = True
+try:
+    from k5test.realm import K5Realm
+except Exception:  # Can fail with more than ImportError on some systems
+    HAS_K5TEST = False
+
 HAS_SSPI = True
 try:
     import win32net
@@ -89,3 +95,21 @@ def ntlm_cred(tmpdir, monkeypatch):
     finally:
         if cleanup:
             cleanup()
+
+
+@pytest.fixture()
+def kerb_cred(monkeypatch):
+    test_kerberos = os.environ.get('PYSPNEGO_TEST_KERBEROS', None)
+    if not test_kerberos or not HAS_K5TEST:
+        pytest.skip("Cannot create Kerberos credential without PYSPNEGO_TEST_REALM being set")
+
+    realm = K5Realm()
+    try:
+        for k, v in realm.env.items():
+            monkeypatch.setenv(to_native(k), to_native(v))
+
+        yield realm
+
+    finally:
+        realm.stop()
+        del realm
