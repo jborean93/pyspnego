@@ -422,7 +422,7 @@ class NTLMProxy(ContextProxy):
 
             if self.channel_bindings:
                 if AvId.channel_bindings not in target_info:
-                    raise BadBindingsError(context_msg="Acceptor bindings specified but non present in initiator "
+                    raise BadBindingsError(context_msg="Acceptor bindings specified but not present in initiator "
                                                        "response")
 
                 expected_bindings = target_info[AvId.channel_bindings]

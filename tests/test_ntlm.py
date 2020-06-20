@@ -9,8 +9,17 @@ import base64
 import os
 import pytest
 import re
+import socket
 
+import spnego
+import spnego.channel_bindings
+import spnego.gss
 import spnego.ntlm as ntlm
+import spnego.sspi
+
+from spnego._context import (
+    FeatureMissingError,
+)
 
 from spnego._text import (
     to_bytes,
@@ -19,9 +28,14 @@ from spnego._text import (
 )
 
 from spnego.exceptions import (
+    BadBindingsError,
+    InvalidTokenError,
     OperationNotAvailableError,
     SpnegoError,
+    UnsupportedQop,
 )
+
+from .conftest import get_data
 
 
 def test_get_credential_file_no_env_var():
@@ -108,3 +122,148 @@ def test_context_no_store(usage):
 
 def test_iov_available():
     assert ntlm.NTLMProxy.iov_available() is False
+
+
+def test_ntlm_invalid_usage():
+    with pytest.raises(ValueError, match="Invalid usage 'test', must be initiate or accept"):
+        ntlm.NTLMProxy('user', 'pass', usage='test')
+
+
+def test_ntlm_invalid_protocol():
+    with pytest.raises(ValueError, match="Invalid protocol 'fake', must be ntlm, kerberos, or negotiate"):
+        ntlm.NTLMProxy('user', 'pass', protocol='fake')
+
+
+def test_ntlm_iov_not_available():
+    expected = "The system is missing the GSSAPI IOV extension headers or NTLM is being requested, cannot utilitze " \
+               "wrap_iov and unwrap_iov"
+    with pytest.raises(FeatureMissingError, match=re.escape(expected)):
+        ntlm.NTLMProxy('user', 'pass', options=spnego.NegotiateOptions.wrapping_iov)
+
+
+def test_ntlm_wrap_qop_invalid():
+    n = ntlm.NTLMProxy('user', 'pass')
+    with pytest.raises(UnsupportedQop, match="Unsupported QoP value 1 specified for NTLM"):
+        n.wrap(b"data", qop=1)
+
+
+def test_ntlm_wrap_no_sign_or_seal():
+    n = ntlm.NTLMProxy('user', 'pass')
+    with pytest.raises(OperationNotAvailableError, match="NTLM wrap without integrity or confidentiality"):
+        n.wrap(b"data")
+
+
+def test_ntlm_wrap_iov_fail():
+    n = ntlm.NTLMProxy('user', 'pass')
+    with pytest.raises(OperationNotAvailableError, match="NTLM does not offer IOV wrapping"):
+        n.wrap_iov([])
+
+
+def test_ntlm_sign_qop_invalid():
+    n = ntlm.NTLMProxy('user', 'pass')
+    with pytest.raises(UnsupportedQop, match="Unsupported QoP value 1 specified for NTLM"):
+        n.sign(b"data", qop=1)
+
+
+def test_ntlm_no_encoding_flags():
+    negotiate = memoryview(bytearray(get_data('ntlm_negotiate')))
+    negotiate[12:16] = b"\x00\x00\x00\x00"
+
+    n = ntlm.NTLMProxy('user', 'pass')
+    with pytest.raises(SpnegoError, match="Neither NEGOTIATE_OEM or NEGOTIATE_UNICODE flags were set, cannot derive "
+                                          "encoding for text fields"):
+        n._step_accept_negotiate(negotiate.tobytes())
+
+
+@pytest.mark.parametrize('client_opt, present', [
+    (spnego.NegotiateOptions.use_ntlm, False),
+    (spnego.NegotiateOptions.use_ntlm, True),
+    (spnego.NegotiateOptions.use_gssapi, False),
+    (spnego.NegotiateOptions.use_gssapi, True),
+    (spnego.NegotiateOptions.use_sspi, False),
+    (spnego.NegotiateOptions.use_sspi, True),
+])
+def test_ntlm_bad_bindings(client_opt, present, ntlm_cred):
+    if client_opt & spnego.NegotiateOptions.use_gssapi:
+        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through GSSAPI')
+
+    elif client_opt & spnego.NegotiateOptions.use_sspi:
+        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through SSPI')
+
+    initiator_cbt = None
+    if present:
+        initiator_cbt = spnego.channel_bindings.GssChannelBindings(application_data=b"tls-host-data:bad")
+
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm',
+                      channel_bindings=initiator_cbt)
+
+    acceptor_cbt = spnego.channel_bindings.GssChannelBindings(application_data=b"tls-host-data:test")
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm',
+                      channel_bindings=acceptor_cbt)
+
+    auth = c.step(s.step(c.step()))
+
+    if present:
+        expected = "Acceptor bindings do not match initiator bindings"
+
+    else:
+        expected = "Acceptor bindings specified but not present in initiator response"
+
+    with pytest.raises(BadBindingsError, match=expected):
+        s.step(auth)
+
+
+def test_ntlm_bad_mic(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = memoryview(bytearray(c.step(s.step(c.step()))))
+    auth[64:80] = b"\x01" * 16
+
+    with pytest.raises(InvalidTokenError, match="Invalid MIC in NTLM authentication message"):
+        s.step(auth.tobytes())
+
+
+def test_ntlm_no_key_exch(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    c._context_req &= ~0x40000000  # NTLMSSP_NEGOTIATE_KEY_EXCH
+
+    auth = c.step(s.step(c.step()))
+    s.step(auth)
+
+    # Make sure EncryptedRandomSessionKeyFields was set to 0 (no KEY_EXCH).
+    assert auth[52:54] == b"\x00\x00"
+
+    plaintext = os.urandom(32)
+
+    c_wrap_result = c.wrap(plaintext)
+    assert c_wrap_result.encrypted
+    assert c_wrap_result.data != plaintext
+
+    s_unwrap_result = s.unwrap(c_wrap_result.data)
+    assert s_unwrap_result.data == plaintext
+    assert s_unwrap_result.encrypted
+
+    plaintext = os.urandom(17)
+
+    s_wrap_result = s.wrap(plaintext)
+    assert s_wrap_result.encrypted
+    assert s_wrap_result.data != plaintext
+
+    c_unwrap_result = c.unwrap(s_wrap_result.data)
+    assert c_unwrap_result.data == plaintext
+    assert c_unwrap_result.encrypted
+
+    plaintext = os.urandom(3)
+    c_sig = c.sign(plaintext)
+    s.verify(plaintext, c_sig)
+
+    plaintext = os.urandom(9)
+    s_sig = s.sign(plaintext)
+    c.verify(plaintext, s_sig)

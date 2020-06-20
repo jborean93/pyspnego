@@ -372,10 +372,10 @@ class ContextProxy:
 
         if options & NegotiateOptions.negotiate_kerberos and (self.protocol == 'negotiate' and
                                                               'kerberos' not in self.available_protocols()):
-            raise FeatureMissingError(ContextReq.negotiate_kerberos)
+            raise FeatureMissingError(NegotiateOptions.negotiate_kerberos)
 
         if options & NegotiateOptions.wrapping_iov and not self.iov_available():
-            raise FeatureMissingError(ContextReq.wrapping_iov)
+            raise FeatureMissingError(NegotiateOptions.wrapping_iov)
 
     @classmethod
     def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[str, ...]

@@ -207,6 +207,42 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
     _message_test(c, s)
 
 
+@pytest.mark.parametrize('client_opt, server_opt', [
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi),
+    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm),
+    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_ntlm),
+    # Cannot test with gssapi as the existing version has a bug with this scenario.
+])
+def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
+    if client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
+        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through GSSAPI')
+
+    elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
+        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through SSPI')
+
+    # Build the initial context and assert the defaults.
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm',
+                      context_req=0)
+    s = spnego.server(None, None, options=server_opt, protocol='ntlm', context_req=0)
+
+    _ntlm_test(c, s)
+
+    # Client sign, server verify
+    plaintext = os.urandom(3)
+
+    c_sig = c.sign(plaintext)
+    s.verify(plaintext, c_sig)
+
+    # Server sign, client verify
+    plaintext = os.urandom(9)
+
+    s_sig = s.sign(plaintext)
+    c.verify(plaintext, s_sig)
+
+
 @pytest.mark.skipif('ntlm' not in spnego.gss.GSSAPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through GSSAPI')
 @pytest.mark.parametrize('client_opt, server_opt, cbt', [
