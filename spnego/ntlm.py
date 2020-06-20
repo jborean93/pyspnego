@@ -409,7 +409,7 @@ class NTLMProxy(ContextProxy):
         credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
         expected_mic = None
 
-        if len(auth.nt_challenge_response) > 24:
+        if auth.nt_challenge_response and len(auth.nt_challenge_response) > 24:
             nt_hash = ntowfv2(credential.username, credential.nt_hash, credential.domain)
 
             nt_challenge = NTClientChallengeV2.unpack(auth.nt_challenge_response[16:])

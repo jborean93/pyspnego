@@ -29,6 +29,7 @@ from spnego._text import (
 
 from spnego.exceptions import (
     BadBindingsError,
+    BadMICError,
     InvalidTokenError,
     OperationNotAvailableError,
     SpnegoError,
@@ -159,6 +160,12 @@ def test_ntlm_wrap_iov_fail():
         n.wrap_iov([])
 
 
+def test_ntlm_unwrap_iov_fail():
+    n = ntlm.NTLMProxy('user', 'pass')
+    with pytest.raises(OperationNotAvailableError, match="NTLM does not offer IOV wrapping"):
+        n.unwrap_iov([])
+
+
 def test_ntlm_sign_qop_invalid():
     n = ntlm.NTLMProxy('user', 'pass')
     with pytest.raises(UnsupportedQop, match="Unsupported QoP value 1 specified for NTLM"):
@@ -265,3 +272,112 @@ def test_ntlm_no_key_exch(ntlm_cred):
     plaintext = os.urandom(9)
     s_sig = s.sign(plaintext)
     c.verify(plaintext, s_sig)
+
+
+def test_ntlm_lm_request(ntlm_cred, monkeypatch):
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '0')
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = memoryview(bytearray(c.step(s.step(c.step()))))
+    auth[20:28] = b"\x00" * 8
+
+    s.step(auth.tobytes())
+
+    assert c.complete
+    assert s.complete
+
+
+def test_ntlm_no_lm_allowed(ntlm_cred, monkeypatch):
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '0')
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '4')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = memoryview(bytearray(c.step(s.step(c.step()))))
+    auth[20:28] = b"\x00" * 8
+
+    with pytest.raises(InvalidTokenError, match="Acceptor settings are set to reject LM responses"):
+        s.step(auth)
+
+
+def test_ntlm_nt_v1_request(ntlm_cred, monkeypatch):
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '0')
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '4')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = c.step(s.step(c.step()))
+
+    s.step(auth)
+
+    assert c.complete
+    assert s.complete
+
+
+def test_ntlm_no_nt_v1_allowed(ntlm_cred, monkeypatch):
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '0')
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    monkeypatch.setenv('LM_COMPAT_LEVEL', '5')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = c.step(s.step(c.step()))
+
+    with pytest.raises(InvalidTokenError, match="Acceptor settings are set to reject NTv1 responses"):
+        s.step(auth)
+
+
+@pytest.mark.parametrize('client_opt', [
+    spnego.NegotiateOptions.use_ntlm,
+    spnego.NegotiateOptions.use_gssapi,
+    spnego.NegotiateOptions.use_sspi,
+])
+def test_ntlm_invalid_password(client_opt, ntlm_cred):
+    if client_opt & spnego.NegotiateOptions.use_gssapi:
+        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through GSSAPI')
+
+    elif client_opt & spnego.NegotiateOptions.use_sspi:
+        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through SSPI')
+
+    c = spnego.client(ntlm_cred[0], u"Invalid", hostname=socket.gethostname(), options=client_opt, protocol='ntlm')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = c.step(s.step(c.step()))
+
+    with pytest.raises(InvalidTokenError, match="Invalid NTLM response from initiator"):
+        s.step(auth)
+
+
+@pytest.mark.parametrize('client_opt', [
+    spnego.NegotiateOptions.use_ntlm,
+    spnego.NegotiateOptions.use_gssapi,
+    spnego.NegotiateOptions.use_sspi,
+])
+def test_ntlm_verify_fail(client_opt, ntlm_cred):
+    if client_opt & spnego.NegotiateOptions.use_gssapi:
+        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through GSSAPI')
+
+    elif client_opt & spnego.NegotiateOptions.use_sspi:
+        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+            pytest.skip('Test requires NTLM to be available through SSPI')
+
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    s.step(c.step(s.step(c.step())))
+
+    c.sign(b"data")
+    sig = c.sign(b"data 2")
+
+    with pytest.raises(BadMICError, match="Invalid Message integrity Check"):
+        s.verify(b"data", sig)
