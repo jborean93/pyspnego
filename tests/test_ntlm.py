@@ -178,9 +178,7 @@ def test_ntlm_no_encoding_flags():
 @pytest.mark.parametrize('client_opt, present', [
     (spnego.NegotiateOptions.use_ntlm, False),
     (spnego.NegotiateOptions.use_ntlm, True),
-    (spnego.NegotiateOptions.use_gssapi, False),
     (spnego.NegotiateOptions.use_gssapi, True),
-    (spnego.NegotiateOptions.use_sspi, False),
     (spnego.NegotiateOptions.use_sspi, True),
 ])
 def test_ntlm_bad_bindings(client_opt, present, ntlm_cred):
