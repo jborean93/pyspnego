@@ -69,7 +69,7 @@ def _message_test(client, server):
     client.verify(plaintext, s_sig)
 
 
-def _ntlm_test(client, server):
+def _ntlm_test(client, server, test_session_key=True):
     assert not client.complete
     assert not server.complete
 
@@ -91,7 +91,9 @@ def _ntlm_test(client, server):
     authenticate = client.step(challenge)
 
     assert isinstance(authenticate, bytes)
-    assert isinstance(client.session_key, bytes)
+    if test_session_key:
+        assert isinstance(client.session_key, bytes)
+
     assert client.complete
     assert not server.complete
 
@@ -99,8 +101,10 @@ def _ntlm_test(client, server):
     auth_response = server.step(authenticate)
 
     assert auth_response is None
-    assert isinstance(client.session_key, bytes)
-    assert isinstance(server.session_key, bytes)
+    if test_session_key:
+        assert isinstance(client.session_key, bytes)
+        assert isinstance(server.session_key, bytes)
+
     assert client.complete
     assert server.complete
 
@@ -224,7 +228,9 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=client_opt, **kwargs)
     s = spnego.server(None, None, options=server_opt, **kwargs)
 
-    _ntlm_test(c, s)
+    # gss-ntlmssp version on CI may be too old to test the session key
+    test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    _ntlm_test(c, s, test_session_key=test_session_key)
     _message_test(c, s)
 
 
@@ -237,7 +243,9 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
                       options=spnego.NegotiateOptions.use_ntlm)
     s = spnego.server(None, None, options=spnego.NegotiateOptions.use_gssapi, protocol='ntlm')
 
-    _ntlm_test(c, s)
+    # gss-ntlmssp version on CI may be too old to test the session key
+    test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    _ntlm_test(c, s, test_session_key=test_session_key)
     _message_test(c, s)
 
 
@@ -267,7 +275,7 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
 
 @pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through SSPI')
-@pytest.mark.parametrize('lm_compat_level', [0, 1, 2, 3])
+@pytest.mark.parametrize('lm_compat_level', [1, 2, 3])
 def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     monkeypatch.setenv('LM_COMPAT_LEVEL', str(lm_compat_level))
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
