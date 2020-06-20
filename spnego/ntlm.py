@@ -602,7 +602,7 @@ class NTLMProxy(ContextProxy):
                                        challenge.server_challenge, client_challenge, no_lm_response=not self._lm)
 
     def _convert_iov_buffer(self, iov):
-        pass  # IOV is not used in this NTLM provider like gss-ntlmssp.
+        pass  # IOV is not used in this NTLM provider like gss-ntlmssp. # pragma: no cover
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
         self._handle_out.reset() if outgoing else self._handle_in.reset()
