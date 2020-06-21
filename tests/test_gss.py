@@ -62,3 +62,10 @@ def test_build_iov_list_invalid_value(kerb_cred):
     expected = "IOV entry must be a IOVBuffer tuple, int, or bytes"
     with pytest.raises(ValueError, match=re.escape(expected)):
         c._build_iov_list([None])
+
+
+def test_no_gssapi_library(monkeypatch):
+    monkeypatch.setattr(spnego.gss, 'HAS_GSSAPI', False)
+
+    with pytest.raises(ImportError, match="GSSAPIProxy requires the Python gssapi library"):
+        spnego.gss.GSSAPIProxy()

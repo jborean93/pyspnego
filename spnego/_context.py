@@ -718,7 +718,7 @@ class ContextProxy:
                 if entry[1] is not None and not isinstance(entry[1], (bytes, integer_types, bool)):
                     raise ValueError("IOV entry[1] must specify the buffer bytes, length of the buffer, or whether "
                                      "it is auto allocated.")
-                data = entry[1] or b""
+                data = entry[1] if entry[1] is not None else b""
 
             elif isinstance(entry, integer_types):
                 buffer_type = entry

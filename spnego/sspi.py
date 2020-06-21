@@ -288,7 +288,7 @@ class SSPIProxy(ContextProxy):
 
         if isinstance(iov_buffer.data, bytes):
             kwargs['buffer'] = iov_buffer.data
-        elif isinstance(iov_buffer.data, int):
+        elif isinstance(iov_buffer.data, int) and not isinstance(iov_buffer.data, bool):
             kwargs['length'] = iov_buffer.data
         else:
             auto_alloc_size = {
