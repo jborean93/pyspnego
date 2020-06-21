@@ -208,7 +208,7 @@ class InvalidTokenError(SpnegoError):
     ERROR_CODE = ErrorCode.invalid_token
 
     _BASE_MESSAGE = "A token was invalid, or the logon was denied"
-    _GSSAPI_CODE = [524288, 589824]  # GSS_S_NO_CONTEXT, GSS_S_DEFECTIVE_TOKEN
+    _GSSAPI_CODE = 589824  # GSS_S_DEFECTIVE_TOKEN
     _SSPI_CODE = [-2146893044, -2146893048]  # SEC_E_LOGON_DENIED, SEC_E_INVALID_TOKEN
 
 

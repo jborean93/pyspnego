@@ -703,7 +703,7 @@ class ContextProxy:
         """
         return False  # pragma: no cover
 
-    def _build_iov_list(self, iov):  # type: (List[Union[Tuple, int, bytes], ...]) -> List
+    def _build_iov_list(self, iov):  # type: (List[Union[Tuple, IOVBuffer, int, bytes], ...]) -> List
         provider_iov = []
 
         for entry in iov:

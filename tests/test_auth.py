@@ -23,6 +23,10 @@ from spnego._context import (
     UnwrapResult,
 )
 
+from spnego.exceptions import (
+    SpnegoError,
+)
+
 
 def _message_test(client, server):
     # Client wrap
@@ -128,6 +132,20 @@ def test_invalid_protocol():
 def test_protocol_not_supported():
     with pytest.raises(ValueError, match="Protocol kerberos is not available"):
         spnego.client(None, None, protocol='kerberos', options=spnego.NegotiateOptions.use_ntlm)
+
+
+def test_negotiate_with_kerberos(kerb_cred):
+    c = spnego.client(kerb_cred.user_princ, None, hostname=kerb_cred.hostname,
+                      options=spnego.NegotiateOptions.use_negotiate)
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_negotiate)
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+
+    s.step(token1)
+
+    # Make sure it reports the right protocol
+    assert s.negotiated_protocol == 'kerberos'
 
 
 @pytest.mark.parametrize('client_opt, server_opt', [
@@ -295,16 +313,25 @@ def test_gssapi_kerberos_auth(kerb_cred):
 
     assert not c.complete
     assert not s.complete
+    assert s.negotiated_protocol is None
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = c.session_key
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = s.session_key
 
     token1 = c.step()
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
+    assert s.negotiated_protocol is None
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
     assert not c.complete
     assert s.complete
+    assert s.negotiated_protocol == 'kerberos'
 
     token3 = c.step(token2)
     assert token3 is None
