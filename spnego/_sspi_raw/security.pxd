@@ -43,6 +43,7 @@ cdef extern from "Security.h":
     cdef unsigned long SECURITY_NATIVE_DREP
     cdef unsigned long SECURITY_NETWORK_DREP
 
+    cdef unsigned long SECPKG_ATTR_NAMES
     cdef unsigned long SECPKG_ATTR_PACKAGE_INFO
     cdef unsigned long SECPKG_ATTR_SIZES
     cdef unsigned long SECPKG_ATTR_SESSION_KEY
@@ -225,11 +226,16 @@ cdef extern from "Security.h":
     ctypedef SecHandle CtxtHandle
     ctypedef PSecHandle PCtxtHandle
 
+    struct _SecPkgContext_Names:
+        SEC_WCHAR *sUserName;
+    ctypedef _SecPkgContext_Names SecPkgContext_Names
+    ctypedef SecPkgContext_Names *PSecPkgContext_Names
+
     struct _SecPkgContext_SessionKey:
         unsigned long SessionKeyLength;
         void *SessionKey;
     ctypedef _SecPkgContext_SessionKey SecPkgContext_SessionKey
-    ctypedef SecPkgContext_SessionKey PSecPkgContext_SessionKey
+    ctypedef SecPkgContext_SessionKey *PSecPkgContext_SessionKey
 
     struct _SecPkgInfoW:
         unsigned long fCapabilities

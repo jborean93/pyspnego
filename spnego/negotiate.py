@@ -88,6 +88,10 @@ class NegotiateProxy(ContextProxy):
         return GSSAPIProxy.iov_available()
 
     @property
+    def client_principal(self):
+        return self._context.client_principal
+
+    @property
     def complete(self):
         return self._complete
 

@@ -87,7 +87,7 @@ def compute_response_v1(flags, nt_hash, lm_hash, server_challenge, client_challe
     """Compute NT and LM Response for NTLMv1.
 
     Computes the NT and LM Response for NTLMv1 messages. The response is dependent on the flags that were negotiated
-    between the client and server.  The anonymous auth is handled by the caller.
+    between the client and server.
 
     The pseudo-code for this function as documented under `NTLM v1 Authentication`_ is::
 
@@ -156,7 +156,7 @@ def compute_response_v2(nt_hash, server_challenge, client_challenge, time, av_pa
     """Compute NT and LM Response for NTLMv2.
 
     Computes the NT and LM Response for NTLMv2 messages. The response is dependent on the flags that were negotiated
-    between the client and server. The anonymous auth is handled by the caller.
+    between the client and server.
 
     The pseudo-code for this function as documented under `NTLM v2 Authentication`_ is::
 

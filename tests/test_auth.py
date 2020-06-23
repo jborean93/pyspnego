@@ -204,6 +204,9 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
     assert not c.complete
     assert s.complete
 
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
     mech_list_resp = c.step(mech_list_mic)
 
     assert mech_list_resp is None
@@ -225,6 +228,10 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
     s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
     _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
     _message_test(c, s)
 
 
@@ -250,6 +257,9 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     s = spnego.server(None, None, options=server_opt, protocol='ntlm', context_req=0)
 
     _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
 
     # Client sign, server verify
     plaintext = os.urandom(3)
@@ -288,6 +298,10 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
     _message_test(c, s)
 
 
@@ -303,6 +317,10 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
     _message_test(c, s)
 
 
@@ -340,6 +358,9 @@ def test_gssapi_kerberos_auth(kerb_cred):
     assert isinstance(c.session_key, bytes)
     assert isinstance(s.session_key, bytes)
     assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princd
 
     _message_test(c, s)
 
@@ -396,6 +417,10 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     s = spnego.server(None, None, options=server_opt, **kwargs)
 
     _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
     _message_test(c, s)
 
 
@@ -409,4 +434,8 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     s = spnego.server(None, None, options=spnego.NegotiateOptions.use_sspi, protocol='ntlm')
 
     _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
     _message_test(c, s)

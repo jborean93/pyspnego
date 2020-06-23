@@ -149,6 +149,11 @@ class SSPIProxy(ContextProxy):
         return _available_protocols()
 
     @property
+    def client_principal(self):
+        if self.usage == 'accept':
+            return query_context_attributes(self._context, SecPkgAttr.names)
+
+    @property
     def complete(self):
         return self._complete
 
@@ -261,7 +266,6 @@ class SSPIProxy(ContextProxy):
                 (ContextReq.sequence_detect, ClientContextReq.sequence_detect),
                 (ContextReq.confidentiality, ClientContextReq.confidentiality),
                 (ContextReq.integrity, ClientContextReq.integrity),
-                # (ContextReq.anonymous, None),
                 (ContextReq.identify, ClientContextReq.identify),
             ]
         else:
@@ -273,7 +277,6 @@ class SSPIProxy(ContextProxy):
                 (ContextReq.sequence_detect, ServerContextReq.sequence_detect),
                 (ContextReq.confidentiality, ServerContextReq.confidentiality),
                 (ContextReq.integrity, ServerContextReq.integrity),
-                # (ContextReq.anonymous, None),
                 (ContextReq.identify, ServerContextReq.identify),
             ]
 

@@ -137,11 +137,11 @@ class ContextReq(IntFlag):
     sequence_detect = 0x00000008
     confidentiality = 0x00000010
     integrity = 0x00000020
-    anonymous = 0x00000040
+    # anonymous = 0x00000040  # TODO: Add support for anonymous auth.
     identify = 0x00002000
     delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
 
-    # mutual_auth | replay_detect | sequence_detect | confidentiality | anonymous
+    # mutual_auth | replay_detect | sequence_detect | confidentiality | integrity
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
 
 
@@ -406,6 +406,20 @@ class ContextProxy:
             bool: Whether the context provider supports IOV wrapping and unwrapping (True) or not (False).
         """
         return True  # pragma: no cover
+
+    @property
+    @abc.abstractmethod
+    def client_principal(self):  # type: () -> Optional[text_type]
+        """The principal that was used authenticated by the acceptor.
+
+        The name of the client principal that was used in the authentication context. This is `None` when
+        `usage='initiate'` or the context has not been completed. The format of the principal name is dependent on the
+        protocol and underlying library that was used to complete the authentication.
+
+        Returns:
+            Optional[text_type]: The client principal name.
+        """
+        pass
 
     @property
     @abc.abstractmethod

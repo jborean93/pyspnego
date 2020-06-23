@@ -21,6 +21,10 @@ from spnego._context import (
     FeatureMissingError,
 )
 
+from spnego._ntlm_raw.messages import (
+    Authenticate,
+)
+
 from spnego._text import (
     to_bytes,
     to_native,
@@ -64,29 +68,35 @@ def test_get_credential_file(tmpdir, monkeypatch):
     assert actual == to_text(tmp_creds)
 
 
-@pytest.mark.parametrize('line, username, domain, lm_hash, nt_hash', [
+@pytest.mark.parametrize('line, username, domain, lm_hash, nt_hash, explicit', [
     ('domain:Username:password', 'username', 'domain',
-     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C'),
+     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C', True),
+    ('domain:Username:password\ndomain:other:pass2', 'Username', 'domain',
+     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C', False),
     ('fake\ndomain:username:password', 'username', 'domain',  # newline or garbage data  in file won't fail
-     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C'),
+     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C', True),
     (':username@DOMAIN.COM:password', 'username@DOMAIN.COM', None,
-     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C'),
+     'E52CAC67419A9A224A3B108F3FA6CB6D', '8846F7EAEE8FB117AD06BDD830B7586C', True),
     ('testuser:1000:278623D830DABE161104594F8C2EF12B:C3C6F4FD8A02A6C1268F1A8074B6E7E0:[U]:LCT-1589398321',
-     'testuser', None, '278623D830DABE161104594F8C2EF12B', 'C3C6F4FD8A02A6C1268F1A8074B6E7E0'),
+     'testuser', None, '278623D830DABE161104594F8C2EF12B', 'C3C6F4FD8A02A6C1268F1A8074B6E7E0', True),
     ('TESTDOM\\testuser:1000:4588C64B89437893AAD3B435B51404EE:65202355FA01AEF26B89B19E00F52679:[U]:LCT-1589398321',
-     'testuser', 'testdom', '4588C64B89437893AAD3B435B51404EE', '65202355FA01AEF26B89B19E00F52679'),
+     'testuser', 'testdom', '4588C64B89437893AAD3B435B51404EE', '65202355FA01AEF26B89B19E00F52679', True),
     ('TESTDOM\\testuser:1000:4588C64B89437893AAD3B435B51404EE:65202355FA01AEF26B89B19E00F52679:[U]:LCT-1589398321',
-     'testuser', 'testdom', '4588C64B89437893AAD3B435B51404EE', '65202355FA01AEF26B89B19E00F52679'),
+     'testuser', 'testdom', '4588C64B89437893AAD3B435B51404EE', '65202355FA01AEF26B89B19E00F52679', True),
     ('testuser@TESTDOM.COM:1000:00000000000000000000000000000000:8ADB9B997580D69E69CAA2BBB68F4697:[U]:LCT-1589398321',
-     'testuser@testdom.com', '', '00000000000000000000000000000000', '8ADB9B997580D69E69CAA2BBB68F4697'),
+     'testuser@testdom.com', None, '00000000000000000000000000000000', '8ADB9B997580D69E69CAA2BBB68F4697', True),
 ])
-def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, tmpdir, monkeypatch):
+def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, explicit, tmpdir, monkeypatch):
     tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
     monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
     with open(tmp_creds, mode='wb') as fd:
         fd.write(to_bytes(line))
 
-    actual = ntlm._NTLMCredential(username, domain)
+    if explicit:
+        actual = ntlm._NTLMCredential(domain, username)
+
+    else:
+        actual = ntlm._NTLMCredential()
 
     assert actual.username == username
     assert actual.domain == domain
@@ -102,7 +112,7 @@ def test_get_credential_from_file_no_matches(tmpdir, monkeypatch):
 
     with pytest.raises(SpnegoError, match="Failed to find any matching credential in NTLM_USER_FILE "
                                           "credential store."):
-        ntlm._NTLMCredential("username", "fake")
+        ntlm._NTLMCredential("fake", "username")
 
 
 @pytest.mark.parametrize('level', [-1, 6])
@@ -381,3 +391,14 @@ def test_ntlm_verify_fail(client_opt, ntlm_cred):
 
     with pytest.raises(BadMICError, match="Invalid Message integrity Check"):
         s.verify(b"data", sig)
+
+
+def test_ntlm_anon_response(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    auth = Authenticate.unpack(c.step(s.step(c.step())))
+    anon_auth = Authenticate(flags=auth.flags, lm_challenge_response=b"\x00", nt_challenge_response=b"").pack()
+
+    with pytest.raises(OperationNotAvailableError, match="Anonymous user authentication not implemented"):
+        s.step(anon_auth)

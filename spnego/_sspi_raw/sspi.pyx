@@ -154,10 +154,12 @@ from spnego._sspi_raw.security cimport (
     SECBUFFER_READONLY,
     SECBUFFER_READONLY_WITH_CHECKSUM,
     SECBUFFER_RESERVED,
+    SecPkgContext_Names,
     SecPkgContext_PackageInfoW,
     SecPkgContext_SessionKey,
     SecPkgContext_Sizes,
     SecPkgInfoW,
+    SECPKG_ATTR_NAMES,
     SECPKG_ATTR_PACKAGE_INFO,
     SECPKG_ATTR_SESSION_KEY,
     SECPKG_ATTR_SIZES,
@@ -280,6 +282,7 @@ class SecBufferType:
 
 
 class SecPkgAttr:
+    names = SECPKG_ATTR_NAMES
     package_info = SECPKG_ATTR_PACKAGE_INFO
     session_key = SECPKG_ATTR_SESSION_KEY
     sizes = SECPKG_ATTR_SIZES
@@ -718,16 +721,33 @@ def make_signature(SecurityContext context not None, unsigned long qop, SecBuffe
 
 
 def query_context_attributes(SecurityContext context not None, unsigned long attribute):
-    if attribute not in [SecPkgAttr.package_info, SecPkgAttr.session_key, SecPkgAttr.sizes]:
-        raise NotImplementedError("Only package_info, session_key, or sizes is implemented")
+    if attribute not in [SecPkgAttr.names, SecPkgAttr.package_info, SecPkgAttr.session_key, SecPkgAttr.sizes]:
+        raise NotImplementedError("Only names, package_info, session_key, or sizes is implemented")
 
-    if attribute == SecPkgAttr.package_info:
+    if attribute == SecPkgAttr.names:
+        return _query_context_names(context)
+
+    elif attribute == SecPkgAttr.package_info:
         return _query_context_package_info(context)
+
     elif attribute == SecPkgAttr.session_key:
         return _query_context_session_key(context)
+
     else:
         return _query_context_sizes(context)
 
+
+def _query_context_names(SecurityContext context not None):
+    cdef SecPkgContext_Names info
+
+    res = QueryContextAttributesW(&context.handle, SecPkgAttr.names, &info)
+    if res != _SEC_E_OK:
+        PyErr_SetFromWindowsErr(res)
+
+    try:
+        return u16_to_text(info.sUserName, -1)
+    finally:
+        FreeContextBuffer(<void*>info.sUserName)
 
 def _query_context_package_info(SecurityContext context not None):
     cdef SecPkgContext_PackageInfoW raw_info

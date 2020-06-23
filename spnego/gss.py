@@ -328,6 +328,12 @@ class GSSAPIProxy(ContextProxy):
         return HAS_IOV
 
     @property
+    def client_principal(self):
+        if self.usage == 'accept':
+            # Looks like a bug in python-gssapi where the value still has the terminating null char.
+            return to_text(self._context.initiator_name).rstrip(u'\x00')
+
+    @property
     def complete(self):
         return self._context.complete
 
@@ -417,7 +423,6 @@ class GSSAPIProxy(ContextProxy):
             (ContextReq.sequence_detect, gssapi.RequirementFlag.out_of_sequence_detection),
             (ContextReq.confidentiality, gssapi.RequirementFlag.confidentiality),
             (ContextReq.integrity, gssapi.RequirementFlag.integrity),
-            (ContextReq.anonymous, gssapi.RequirementFlag.anonymity),
             (ContextReq.identify, getattr(gssapi.RequirementFlag, 'identify', 8192)),  # Only available with DCE ext.
             (ContextReq.delegate_policy, 32768),  # GSS_C_DELEG_POLICY_FLAG, doesn't seem to be in python gssapi.
         ]

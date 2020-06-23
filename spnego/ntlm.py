@@ -91,8 +91,8 @@ def _get_credential_file():  # type: () -> Optional[text_type]
         return user_file_path
 
 
-def _get_credential(store, username=None, domain=None):
-    # type: (text_type, Optional[text_type], Optional[text_type]) -> Tuple[bytes, bytes]
+def _get_credential(store, domain=None, username=None):
+    # type: (text_type, Optional[text_type], Optional[text_type]) -> Tuple[text_type, text_type, bytes, bytes]
     """Look up NTLM credentials from the common flat file.
 
     Retrieves the LM and NT hash for use with authentication or validating a credential from an initiator.
@@ -120,11 +120,11 @@ def _get_credential(store, username=None, domain=None):
 
     Args:
         store: The credential store to lookup the credential from.
-        username: The username to get the credentials for. If omitted then the first entry in the store is used.
         domain: The domain for the user to get the credentials for. Should be `None` for a user in the UPN form.
+        username: The username to get the credentials for. If omitted then the first entry in the store is used.
 
     Returns:
-        Tuple[bytes, bytes]: The LM and NT hash of the user specified.
+        Tuple[text_type, text_type, bytes, bytes]: The domain, username, LM, and NT hash of the user specified.
 
     .. _smbpasswd:
         https://www.samba.org/samba/docs/current/man-html/smbpasswd.5.html
@@ -137,35 +137,39 @@ def _get_credential(store, username=None, domain=None):
 
     domain = domain or u""
 
-    def process_line(b_line):
-        line_split = to_text(b_line).split(':')
+    def store_lines(text):
+        for line in text.splitlines():
+            line_split = line.split(':')
 
-        if len(line_split) == 3:
-            return line_split[0], line_split[1], line_split[2], None, None
+            if len(line_split) == 3:
+                yield line_split[0], line_split[1], line_split[2], None, None
 
-        elif len(line_split) == 6:
-            line_domain, line_user = split_username(line_split[0])
-            lm_hash = base64.b16decode(line_split[2].upper())
-            nt_hash = base64.b16decode(line_split[3].upper())
+            elif len(line_split) == 6:
+                domain_entry, user_entry = split_username(line_split[0])
+                lm_entry = base64.b16decode(line_split[2].upper())
+                nt_entry = base64.b16decode(line_split[3].upper())
 
-            return line_domain or u"", line_user, None, lm_hash, nt_hash
+                yield domain_entry or u"", user_entry, None, lm_entry, nt_entry
 
     with open(store, mode='rb') as fd:
-        for line in fd:
-            line_details = process_line(line)
-            if not line_details:
-                continue
+        cred_text = to_text(fd.read())
 
-            line_domain, line_user, line_passwd, lm_hash, nt_hash = line_details
-
+        for line_domain, line_user, line_password, lm_hash, nt_hash in store_lines(cred_text):
             if not username or (username.upper() == line_user.upper() and domain.upper() == line_domain.upper()):
                 # The Heimdal format uses the password so if the LM or NT hash isn't set generate it ourselves.
                 if not lm_hash:
-                    lm_hash = lmowfv1(line_passwd)
+                    lm_hash = lmowfv1(line_password)
                 if not nt_hash:
-                    nt_hash = ntowfv1(line_passwd)
+                    nt_hash = ntowfv1(line_password)
 
-                return lm_hash, nt_hash
+                # Favour the explicit username/password value, otherwise use what was in the credential file.
+                if not username:
+                    username = line_user
+
+                if not domain:
+                    domain = line_domain or None
+
+                return domain, username, lm_hash, nt_hash
 
         else:
             raise SpnegoError(ErrorCode.failure, context_msg="Failed to find any matching credential in "
@@ -174,18 +178,17 @@ def _get_credential(store, username=None, domain=None):
 
 class _NTLMCredential:
 
-    def __init__(self, username=None, domain=None, password=None):
-        self.username = username
-        self.domain = domain
-
+    def __init__(self, domain=None, username=None, password=None):
         if password:
-            self._store = 'explicit'
+            self.domain = domain
+            self.username = username
             self.lm_hash = lmowfv1(password)
             self.nt_hash = ntowfv1(password)
+            self._store = 'explicit'
 
         else:
             self._store = _get_credential_file()
-            self.lm_hash, self.nt_hash = _get_credential(self._store, self.username, self.domain)
+            self.domain, self.username, self.lm_hash, self.nt_hash = _get_credential(self._store, domain, username)
 
 
 class NTLMProxy(ContextProxy):
@@ -226,7 +229,7 @@ class NTLMProxy(ContextProxy):
 
         if self.usage == 'initiate':
             domain, user = split_username(self.username)
-            self._credential = _NTLMCredential(username=user, domain=domain, password=self.password)
+            self._credential = _NTLMCredential(domain=domain, username=user, password=self.password)
 
             self._lm = lm_compat_level < 2  # type: bool
             self._nt_v1 = lm_compat_level < 3  # type: bool
@@ -267,6 +270,12 @@ class NTLMProxy(ContextProxy):
     @classmethod
     def iov_available(cls):
         return False
+
+    @property
+    def client_principal(self):
+        if self.usage == 'accept' and self.complete:
+            domain_part = self._credential.domain + '\\' if self._credential.domain else ''
+            return to_text('%s%s' % (domain_part, self._credential.username))
 
     @property
     def complete(self):
@@ -404,13 +413,13 @@ class NTLMProxy(ContextProxy):
         # TODO: Add anonymous user support.
         if not auth.user_name or (not auth.nt_challenge_response and (not auth.lm_challenge_response or
                                                                       auth.lm_challenge_response == b"\x00")):
-            raise OperationNotAvailableError(context_msg="Anonymous user authentication")
+            raise OperationNotAvailableError(context_msg="Anonymous user authentication not implemented")
 
-        credential = _NTLMCredential(username=auth.user_name, domain=auth.domain_name)
+        self._credential = _NTLMCredential(domain=auth.domain_name, username=auth.user_name)
         expected_mic = None
 
         if auth.nt_challenge_response and len(auth.nt_challenge_response) > 24:
-            nt_hash = ntowfv2(credential.username, credential.nt_hash, credential.domain)
+            nt_hash = ntowfv2(self._credential.username, self._credential.nt_hash, self._credential.domain)
 
             nt_challenge = NTClientChallengeV2.unpack(auth.nt_challenge_response[16:])
             time = nt_challenge.time_stamp
@@ -445,7 +454,7 @@ class NTLMProxy(ContextProxy):
                 client_challenge = auth.lm_challenge_response[:8]
 
             expected_nt, expected_lm, key_exchange_key = compute_response_v1(
-                auth.flags, credential.nt_hash, credential.lm_hash, server_challenge, client_challenge,
+                auth.flags, self._credential.nt_hash, self._credential.lm_hash, server_challenge, client_challenge,
                 no_lm_response=not self._lm)
 
         auth_success = False
@@ -526,7 +535,6 @@ class NTLMProxy(ContextProxy):
             (ContextReq.sequence_detect, NegotiateFlags.sign),
             (ContextReq.confidentiality, NegotiateFlags.seal),
             (ContextReq.integrity, NegotiateFlags.sign),
-            (ContextReq.anonymous, NegotiateFlags.anonymous),
         ]
 
     @property
@@ -566,10 +574,7 @@ class NTLMProxy(ContextProxy):
         """ Compute the NT and LM responses and the key exchange key. """
         client_challenge = os.urandom(8)
 
-        if self._context_req & NegotiateFlags.anonymous:
-            return b"", b"\x00", b""
-
-        elif self._nt_v2:
+        if self._nt_v2:
             target_info = challenge.target_info.copy() if challenge.target_info else TargetInfo()
 
             if AvId.timestamp in target_info:
