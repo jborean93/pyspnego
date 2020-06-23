@@ -21,7 +21,6 @@ from spnego._context import (
     GSSMech,
     IOVWrapResult,
     IOVUnwrapResult,
-    NegotiateOptions,
     UnwrapResult,
     WrapResult,
     wrap_system_error,
@@ -35,6 +34,7 @@ from spnego._text import (
 
 from spnego.exceptions import (
     GSSError as NativeError,
+    NegotiateOptions,
     SpnegoError,
 )
 

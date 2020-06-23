@@ -17,10 +17,6 @@ import spnego.gss
 import spnego.ntlm as ntlm
 import spnego.sspi
 
-from spnego._context import (
-    FeatureMissingError,
-)
-
 from spnego._ntlm_raw.messages import (
     Authenticate,
 )
@@ -34,6 +30,7 @@ from spnego._text import (
 from spnego.exceptions import (
     BadBindingsError,
     BadMICError,
+    FeatureMissingError,
     InvalidTokenError,
     OperationNotAvailableError,
     SpnegoError,

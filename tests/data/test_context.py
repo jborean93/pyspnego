@@ -6,7 +6,6 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import pytest
-import re
 
 import spnego._context as con
 
@@ -22,20 +21,6 @@ def test_split_username(value, expected_domain, expected_user):
 
     assert actual_domain == expected_domain
     assert actual_user == expected_user
-
-
-@pytest.mark.parametrize('option, expected', [
-    (con.NegotiateOptions.negotiate_kerberos, 'The Python gssapi library is not installed so Kerberos cannot be '
-                                              'negotiated.'),
-    (con.NegotiateOptions.wrapping_iov, 'The system is missing the GSSAPI IOV extension headers or NTLM is being '
-                                        'requested, cannot utilitze wrap_iov and unwrap_iov'),
-    (con.NegotiateOptions.wrapping_winrm, 'The system is missing the GSSAPI IOV extension headers required for '
-                                          'WinRM encryption with Kerberos.'),
-])
-def test_feature_missing_error(option, expected):
-    err = con.FeatureMissingError(option)
-    assert str(err) == expected
-    assert err.message == expected
 
 
 def test_gss_mech_native_labels():

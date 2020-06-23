@@ -29,6 +29,8 @@ from spnego.channel_bindings import (
 )
 
 from spnego.exceptions import (
+    FeatureMissingError,
+    NegotiateOptions,
     SpnegoError,
 )
 
@@ -143,87 +145,6 @@ class ContextReq(IntFlag):
 
     # mutual_auth | replay_detect | sequence_detect | confidentiality | integrity
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
-
-
-class NegotiateOptions(IntFlag):
-    """Flags that the caller can specify what features they require.
-
-    A list of features as bit flags that the caller can specify when creating the security context. These flags can
-    be used on both Windows or Linux but are a no-op on Windows as it should always have the same features available.
-    On Linux the features it can implement depend on a wide range of factors like the system libraries/headers that
-    are installed, what GSSAPI implementation is present, and what Python libraries are available.
-
-    This is a pretty advanced feature and is mostly a way to control the kerberos to ntlm fallback behaviour on Linux.
-
-    These are the currently implemented feature flags:
-
-    negotiate_kerberos:
-        Will make sure that Kerberos is at least available to try for authentication when using the `negotiate`
-        protocol. If Kerberos cannot be used due to the Python gssapi library not being installed then it will raise a
-        :class:`spnego.exceptions.FeatureMissingError`. If Kerberos was available but it cannot get a credential or
-        create a context then it will just fallback to NTLM auth. If you wish to only use Kerberos with no NTLM
-        fallback, set `protocol='kerberos'` when creating the security context.
-
-    session_key:
-        Ensure that the authenticated context will be able to return the session key that was negotiated between the
-        client and the server. Older versions of `gss-ntlmssp`_ do not expose the functions required to retrieve this
-        info so when this feature flag is set then the NTLM fallback process will use a builtin NTLM process and not
-        `gss-ntlmssp`_ if the latter is too old to retrieve the session key.
-
-    wrapping_iov:
-        The GSSAPI IOV methods are extensions to the Kerberos spec and not implemented or exposed on all platforms,
-        macOS is a popular example. If the caller requires the wrap_iov and unwrap_iov methods this will ensure it
-        fails fast before the auth has been set up. Unfortunately there is no fallback for this as if the headers
-        aren't present for GSSAPI then we can't do anything to fix that. This won't fail if `negotiate` was used and
-        NTLM was the chosen protocol as that happens post negotiation.
-
-    wrapping_winrm:
-        To created a wrapped WinRM message the IOV extensions are required when using Kerberos auth. Setting this flag
-        will skip Kerberos when `protocol='negotiate'` if the IOV headers aren't present and just fallback to NTLM.
-
-    .. _gss-ntlmssp:
-        https://github.com/gssapi/gss-ntlmssp
-    """
-    none = 0x00000000
-
-    # Force a specific provider
-    use_sspi = 0x00000001
-    use_gssapi = 0x00000002
-    use_negotiate = 0x00000004
-    use_ntlm = 0x00000008
-
-    negotiate_kerberos = 0x00000010
-    session_key = 0x00000020
-    wrapping_iov = 0x00000040
-    wrapping_winrm = 0x00000080
-
-    # TODO ntlm_require_128_key - requires key_128 to be set.
-
-
-class FeatureMissingError(Exception):
-
-    @property
-    def feature_id(self):
-        return self.args[0]
-
-    @property
-    def message(self):
-        msg = {
-            NegotiateOptions.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
-                                                 'negotiated.',
-
-            NegotiateOptions.wrapping_iov: 'The system is missing the GSSAPI IOV extension headers or NTLM is being '
-                                           'requested, cannot utilitze wrap_iov and unwrap_iov',
-
-            NegotiateOptions.wrapping_winrm: 'The system is missing the GSSAPI IOV extension headers required for '
-                                             'WinRM encryption with Kerberos.',
-
-        }.get(self.feature_id, 'Unknown option flag: %d' % self.feature_id)
-
-        return msg
-
-    def __str__(self):
-        return self.message
 
 
 class GSSMech(Enum):
@@ -419,7 +340,7 @@ class ContextProxy:
         Returns:
             Optional[text_type]: The client principal name.
         """
-        pass
+        pass  # pragma: no cover
 
     @property
     @abc.abstractmethod

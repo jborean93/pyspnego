@@ -8,8 +8,13 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 import pytest
 import re
 
+import spnego
 import spnego.gss
 import spnego.iov
+
+from spnego.exceptions import (
+    FeatureMissingError,
+)
 
 
 def test_build_iov_list(kerb_cred):
@@ -69,3 +74,16 @@ def test_no_gssapi_library(monkeypatch):
 
     with pytest.raises(ImportError, match="GSSAPIProxy requires the Python gssapi library"):
         spnego.gss.GSSAPIProxy()
+
+
+@pytest.mark.skipif(not spnego.gss.HAS_GSSAPI, reason='Requires the gssapi library to be installed for testing')
+def test_gssapi_no_kerberos(monkeypatch):
+    def available_protocols(*args, **kwargs):
+        return ['negotiate', 'ntlm']
+
+    monkeypatch.setattr(spnego.gss, 'HAS_GSSAPI', True)
+    monkeypatch.setattr(spnego.gss, '_available_protocols', available_protocols)
+
+    with pytest.raises(FeatureMissingError, match="The Python gssapi library is not installed so Kerberos cannot be "
+                                                  "negotiated."):
+        spnego.gss.GSSAPIProxy(None, None, options=spnego.NegotiateOptions.negotiate_kerberos)

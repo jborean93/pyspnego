@@ -22,6 +22,20 @@ except NameError:
     WinError = ()
 
 
+@pytest.mark.parametrize('option, expected', [
+    (exceptions.NegotiateOptions.negotiate_kerberos, 'The Python gssapi library is not installed so Kerberos cannot '
+                                                     'be negotiated.'),
+    (exceptions.NegotiateOptions.wrapping_iov, 'The system is missing the GSSAPI IOV extension headers or NTLM is '
+                                               'being requested, cannot utilitze wrap_iov and unwrap_iov'),
+    (exceptions.NegotiateOptions.wrapping_winrm, 'The system is missing the GSSAPI IOV extension headers required '
+                                                 'for WinRM encryption with Kerberos.'),
+])
+def test_feature_missing_error(option, expected):
+    err = exceptions.FeatureMissingError(option)
+    assert str(err) == expected
+    assert err.message == expected
+
+
 def test_spnego_error_no_code_fail():
     expected = "SpnegoError requires either an error_code or base_error"
     with pytest.raises(ValueError, match=re.escape(expected)):
