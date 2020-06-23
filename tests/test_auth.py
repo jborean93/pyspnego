@@ -360,7 +360,7 @@ def test_gssapi_kerberos_auth(kerb_cred):
     assert c.session_key == s.session_key
 
     assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princd
+    assert s.client_principal == kerb_cred.user_princ
 
     _message_test(c, s)
 

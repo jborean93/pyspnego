@@ -169,7 +169,7 @@ def test_make_signature_fail():
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_query_context_attributes_unknown():
-    with pytest.raises(NotImplementedError, match="Only package_info, session_key, or sizes is implemented"):
+    with pytest.raises(NotImplementedError, match="Only names, package_info, session_key, or sizes is implemented"):
         sspi.query_context_attributes(sspi.SecurityContext(), 1024)
 
 
