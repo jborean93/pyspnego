@@ -20,10 +20,6 @@ from spnego._context import (
     GSSMech,
 )
 
-from spnego._ntlm_raw.messages import (
-    NTLMMessage,
-)
-
 from spnego._spnego import (
     NegState,
     NegTokenInit,
@@ -123,8 +119,10 @@ class NegotiateProxy(ContextProxy):
         # Step 1. Process SPNEGO mechs.
         mech_token_in, mech_list_mic, is_spnego = self._step_spnego_input(in_token=in_token)
 
-        # Step 2. Process the inner context tokens.
-        mech_token_out = self._step_spnego_token(in_token=mech_token_in)
+        mech_token_out = None
+        if mech_token_in or self.usage == 'initiate':
+            # Step 2. Process the inner context tokens.
+            mech_token_out = self._step_spnego_token(in_token=mech_token_in)
 
         if is_spnego:
             # Step 3. Process / generate the mechListMIC.

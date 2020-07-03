@@ -75,8 +75,9 @@ def _message_test(client, server):
     s_sig = server.sign(plaintext)
     client.verify(plaintext, s_sig)
 
-    if not client.iov_available or client.negotiated_protocol == 'ntlm':
-        return
+    for c in [client, server]:
+        if not c.iov_available() or c.negotiated_protocol == 'ntlm':
+            return
 
     plaintext = os.urandom(16)
     c_iov_res = client.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
