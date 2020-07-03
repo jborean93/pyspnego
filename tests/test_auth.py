@@ -75,6 +75,37 @@ def _message_test(client, server):
     s_sig = server.sign(plaintext)
     client.verify(plaintext, s_sig)
 
+    if not client.iov_available or client.negotiated_protocol == 'ntlm':
+        return
+
+    plaintext = os.urandom(16)
+    c_iov_res = client.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert isinstance(c_iov_res, IOVWrapResult)
+    assert c_iov_res.encrypted
+    assert len(c_iov_res.buffers) == 3
+    assert c_iov_res.buffers[1].data != plaintext
+
+    s_iov_res = server.unwrap_iov(c_iov_res.buffers)
+    assert isinstance(s_iov_res, IOVUnwrapResult)
+    assert s_iov_res.encrypted
+    assert s_iov_res.qop == 0
+    assert len(s_iov_res.buffers) == 3
+    assert s_iov_res.buffers[1].data == plaintext
+
+    plaintext = os.urandom(16)
+    s_iov_res = server.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert isinstance(s_iov_res, IOVWrapResult)
+    assert s_iov_res.encrypted
+    assert len(s_iov_res.buffers) == 3
+    assert s_iov_res.buffers[1].data != plaintext
+
+    c_iov_res = client.unwrap_iov(s_iov_res.buffers)
+    assert isinstance(c_iov_res, IOVUnwrapResult)
+    assert c_iov_res.encrypted
+    assert c_iov_res.qop == 0
+    assert len(c_iov_res.buffers) == 3
+    assert c_iov_res.buffers[1].data == plaintext
+
 
 def _ntlm_test(client, server, test_session_key=True):
     assert not client.complete
@@ -134,6 +165,8 @@ def test_protocol_not_supported():
         spnego.client(None, None, protocol='kerberos', options=spnego.NegotiateOptions.use_ntlm)
 
 
+# Negotiate scenarios
+
 def test_negotiate_with_kerberos(kerb_cred):
     c = spnego.client(kerb_cred.user_princ, None, hostname=kerb_cred.hostname,
                       options=spnego.NegotiateOptions.use_negotiate)
@@ -146,6 +179,11 @@ def test_negotiate_with_kerberos(kerb_cred):
 
     # Make sure it reports the right protocol
     assert s.negotiated_protocol == 'kerberos'
+    assert c.context_attr & spnego.ContextReq.mutual_auth
+    assert s.context_attr & spnego.ContextReq.mutual_auth
+    assert c.session_key == s.session_key
+
+    _message_test(c, s)
 
 
 @pytest.mark.parametrize('client_opt, server_opt', [
@@ -217,6 +255,35 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
 
     _message_test(c, s)
 
+
+def test_negotiate_with_raw_ntlm(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm')
+    s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
+
+    negotiate = c.step()
+    assert negotiate.startswith(b"NTLMSSP\x00\x01")
+    assert not c.complete
+    assert not s.complete
+
+    challenge = s.step(negotiate)
+    assert challenge.startswith(b"NTLMSSP\x00\x02")
+    assert not c.complete
+    assert not s.complete
+
+    authenticate = c.step(challenge)
+    assert authenticate.startswith(b"NTLMSSP\x00\x03")
+    assert c.complete
+    assert not s.complete
+
+    final = s.step(authenticate)
+    assert final is None
+    assert c.complete
+    assert s.complete
+
+    _message_test(c, s)
+
+
+# NTLM scenarios
 
 @pytest.mark.parametrize('lm_compat_level', [None, 0, 1, 2])
 def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
@@ -324,78 +391,6 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     _message_test(c, s)
 
 
-def test_gssapi_kerberos_auth(kerb_cred):
-    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.gethostname(), protocol='kerberos',
-                      options=spnego.NegotiateOptions.use_gssapi)
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
-
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol is None
-
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = c.session_key
-
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = s.session_key
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol is None
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == 'kerberos'
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
-
-    if not c.iov_available():
-        return
-
-    plaintext = os.urandom(16)
-    c_iov_res = c.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
-    assert isinstance(c_iov_res, IOVWrapResult)
-    assert c_iov_res.encrypted
-    assert len(c_iov_res.buffers) == 3
-    assert c_iov_res.buffers[1].data != plaintext
-
-    s_iov_res = s.unwrap_iov(c_iov_res.buffers)
-    assert isinstance(s_iov_res, IOVUnwrapResult)
-    assert s_iov_res.encrypted
-    assert s_iov_res.qop == 0
-    assert len(s_iov_res.buffers) == 3
-    assert s_iov_res.buffers[1].data == plaintext
-
-    plaintext = os.urandom(16)
-    s_iov_res = s.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
-    assert isinstance(s_iov_res, IOVWrapResult)
-    assert s_iov_res.encrypted
-    assert len(s_iov_res.buffers) == 3
-    assert s_iov_res.buffers[1].data != plaintext
-
-    c_iov_res = c.unwrap_iov(s_iov_res.buffers)
-    assert isinstance(c_iov_res, IOVUnwrapResult)
-    assert c_iov_res.encrypted
-    assert c_iov_res.qop == 0
-    assert len(c_iov_res.buffers) == 3
-    assert c_iov_res.buffers[1].data == plaintext
-
-
 @pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through SSPI')
 @pytest.mark.parametrize('client_opt, server_opt, cbt', [
@@ -437,5 +432,48 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 
     assert c.client_principal is None
     assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
+
+# Kerberos scenarios
+
+def test_gssapi_kerberos_auth(kerb_cred):
+    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.gethostname(), protocol='kerberos',
+                      options=spnego.NegotiateOptions.use_gssapi)
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = c.session_key
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = s.session_key
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == 'kerberos'
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
 
     _message_test(c, s)

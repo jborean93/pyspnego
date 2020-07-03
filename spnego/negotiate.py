@@ -133,12 +133,13 @@ class NegotiateProxy(ContextProxy):
             # Step 4. Generate the output SPNEGO token.
             out_token = self._step_spnego_output(out_token=mech_token_out, out_mic=out_mic)
 
-            if self.complete:
-                # Remove the leftover contexts if there are still others remaining.
-                self._context_list = collections.OrderedDict([(self._chosen_mech, (self._context, None))])
-
         else:
             out_token = mech_token_out
+            self._complete = self._context.complete
+
+        if self.complete:
+            # Remove the leftover contexts if there are still others remaining.
+            self._context_list = collections.OrderedDict([(self._chosen_mech, (self._context, None))])
 
         log.debug("SPNEGO step output: %s" % to_text(base64.b64encode(out_token or b"")))
 
