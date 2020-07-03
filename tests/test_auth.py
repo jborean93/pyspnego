@@ -168,20 +168,32 @@ def test_protocol_not_supported():
 # Negotiate scenarios
 
 def test_negotiate_with_kerberos(kerb_cred):
-    c = spnego.client(kerb_cred.user_princ, None, hostname=kerb_cred.hostname,
+    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(),
                       options=spnego.NegotiateOptions.use_negotiate)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
     token1 = c.step()
     assert isinstance(token1, bytes)
 
-    s.step(token1)
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+
+    token3 = c.step(token2)
+    assert token3 is None
 
     # Make sure it reports the right protocol
+    assert c.negotiated_protocol == 'kerberos'
     assert s.negotiated_protocol == 'kerberos'
+
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
     assert c.context_attr & spnego.ContextReq.mutual_auth
     assert s.context_attr & spnego.ContextReq.mutual_auth
-    assert c.session_key == s.session_key
 
     _message_test(c, s)
 
@@ -439,7 +451,7 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 # Kerberos scenarios
 
 def test_gssapi_kerberos_auth(kerb_cred):
-    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.gethostname(), protocol='kerberos',
+    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol='kerberos',
                       options=spnego.NegotiateOptions.use_gssapi)
     s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
 

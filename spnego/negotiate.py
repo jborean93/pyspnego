@@ -325,10 +325,10 @@ class NegotiateProxy(ContextProxy):
             'options': self.options,
             '_is_wrapped': True,
         }
-        gssapi_protocols = set(GSSAPIProxy.available_protocols(options=self.options))
-        all_protocols = gssapi_protocols.copy()
-        all_protocols.update({'ntlm'})
-        all_protocols.discard('negotiate')
+        gssapi_protocols = [p for p in GSSAPIProxy.available_protocols(options=self.options) if p != 'negotiate']
+        all_protocols = gssapi_protocols[:]
+        if 'ntlm' not in all_protocols:
+            all_protocols.append('ntlm')
 
         self._context_list = collections.OrderedDict()
         mech_list = []
