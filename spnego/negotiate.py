@@ -155,8 +155,18 @@ class NegotiateProxy(ContextProxy):
 
                 # This is the first token of the exchange, we should build our context list based on the mechs the
                 # opposite end supports.
-                self._mech_list = self._rebuild_context_list(mech_types=in_token.mech_types)
-                self._init_sent = True
+                mech_list = self._rebuild_context_list(mech_types=in_token.mech_types)
+
+                if self.usage == 'initiate':
+                    # If initiate processes a NegTokenInit2 token that's just used as a hint, use the actually
+                    # supported mechs as the true mech list.
+                    self._mech_list = mech_list
+
+                else:
+                    # If accept processes a NegTokenInit token we treat that as an actual init is sent so it does not
+                    # send it's own and uses the initiate mech list as the true mech list.
+                    self._init_send = True
+                    self._mech_list = in_token.mech_types
 
             elif isinstance(in_token, NegTokenResp):
                 mech_list_mic = in_token.mech_list_mic
@@ -344,8 +354,7 @@ class NegotiateProxy(ContextProxy):
             self._context_list[mech] = (context, first_token)
             mech_list.append(mech.value)
 
-        # If mech_types was explicitly passed in we need to return that value, otherwise return what we generated.
-        return mech_types if mech_types else mech_list
+        return mech_list
 
     def _reset_ntlm_crypto_state(self, outgoing=True):
         return self._context._reset_ntlm_crypto_state(outgoing=outgoing)
