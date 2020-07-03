@@ -2,6 +2,7 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from __future__ import (absolute_import, division, print_function)
+
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
@@ -33,6 +34,7 @@ from spnego._text import (
 )
 
 from spnego.exceptions import (
+    BadMechanismError,
     InvalidTokenError,
 )
 
@@ -43,7 +45,6 @@ from spnego.gss import (
 from spnego.ntlm import (
     NTLMProxy,
 )
-
 
 log = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ class NegotiateProxy(ContextProxy):
                 else:
                     # If accept processes a NegTokenInit token we treat that as an actual init is sent so it does not
                     # send it's own and uses the initiate mech list as the true mech list.
-                    self._init_send = True
+                    self._init_sent = True
                     self._mech_list = in_token.mech_types
 
             elif isinstance(in_token, NegTokenResp):
@@ -338,6 +339,7 @@ class NegotiateProxy(ContextProxy):
 
         self._context_list = collections.OrderedDict()
         mech_list = []
+        last_err = None
         for protocol in all_protocols:
             mech = getattr(GSSMech, protocol)
             if mech_types and mech.value not in mech_types:
@@ -348,11 +350,15 @@ class NegotiateProxy(ContextProxy):
                 context = proxy_obj(protocol=protocol, **context_kwargs)
                 first_token = context.step() if self.usage == 'initiate' else None
             except Exception as e:
+                last_err = e
                 log.debug("Failed to create gssapi context for SPNEGO protocol %s: %s", protocol, to_text(e))
                 continue
 
             self._context_list[mech] = (context, first_token)
             mech_list.append(mech.value)
+
+        if not mech_list:
+            raise BadMechanismError(context_msg="Unable to negotiate common mechanism", base_error=last_err)
 
         return mech_list
 

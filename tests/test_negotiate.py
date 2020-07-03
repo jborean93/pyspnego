@@ -14,10 +14,12 @@ from spnego._context import (
 
 from spnego._spnego import (
     NegState,
+    NegTokenInit,
     NegTokenResp,
 )
 
 from spnego.exceptions import (
+    BadMechanismError,
     InvalidTokenError,
 )
 
@@ -30,6 +32,13 @@ def test_token_rejected(ntlm_cred):
 
     with pytest.raises(InvalidTokenError, match="Received SPNEGO rejection with no token error message"):
         c.step(token_resp)
+
+
+def test_token_no_common_mechs(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=spnego.NegotiateOptions.use_negotiate)
+
+    with pytest.raises(BadMechanismError, match="Unable to negotiate common mechanism"):
+        c.step(NegTokenInit(mech_types=["1.2.3.4"]).pack())
 
 
 def test_token_acceptor_first(ntlm_cred):
