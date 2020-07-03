@@ -760,7 +760,7 @@ class KerberosV5Msg:
         self.sequence = sequence
 
     @staticmethod
-    def unpack(value):  # type: (bytes) -> KerberosV5Msg
+    def unpack(value):  # type: (Union[bytes, ASN1Value]) -> KerberosV5Msg
         msg_sequence = unpack_asn1_tagged_sequence(value)
         return KerberosV5Msg(msg_sequence)
 

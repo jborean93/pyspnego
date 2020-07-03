@@ -126,7 +126,7 @@ def test_invalid_protocol():
         spnego.client(None, None, protocol='fake')
 
     with pytest.raises(ValueError, match=expected):
-        spnego.server(None, None, protocol='fake')
+        spnego.server(protocol='fake')
 
 
 def test_protocol_not_supported():
@@ -137,7 +137,7 @@ def test_protocol_not_supported():
 def test_negotiate_with_kerberos(kerb_cred):
     c = spnego.client(kerb_cred.user_princ, None, hostname=kerb_cred.hostname,
                       options=spnego.NegotiateOptions.use_negotiate)
-    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_negotiate)
+    s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
     token1 = c.step()
     assert isinstance(token1, bytes)
@@ -175,7 +175,7 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
 
     # Build the initial context and assert the defaults.
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=client_opt)
-    s = spnego.server(None, None, protocol='negotiate', options=server_opt)
+    s = spnego.server(protocol='negotiate', options=server_opt)
 
     assert not c.complete
     assert not s.complete
@@ -225,7 +225,7 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
 
     # Build the initial context and assert the defaults.
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
-    s = spnego.server(None, None, protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
+    s = spnego.server(protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
     _ntlm_test(c, s)
 
@@ -254,7 +254,7 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     # Build the initial context and assert the defaults.
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm',
                       context_req=0)
-    s = spnego.server(None, None, options=server_opt, protocol='ntlm', context_req=0)
+    s = spnego.server(options=server_opt, protocol='ntlm', context_req=0)
 
     _ntlm_test(c, s)
 
@@ -293,7 +293,7 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
         kwargs['channel_bindings'] = spnego.channel_bindings.GssChannelBindings(application_data=b'test_data:\x00\x01')
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=client_opt, **kwargs)
-    s = spnego.server(None, None, options=server_opt, **kwargs)
+    s = spnego.server(options=server_opt, **kwargs)
 
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
@@ -312,7 +312,7 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     monkeypatch.setenv('LM_COMPAT_LEVEL', str(lm_compat_level))
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
                       options=spnego.NegotiateOptions.use_ntlm)
-    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_gssapi, protocol='ntlm')
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='ntlm')
 
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
@@ -327,7 +327,7 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 def test_gssapi_kerberos_auth(kerb_cred):
     c = spnego.client(kerb_cred.user_princ, None, hostname=socket.gethostname(), protocol='kerberos',
                       options=spnego.NegotiateOptions.use_gssapi)
-    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
 
     assert not c.complete
     assert not s.complete
@@ -414,7 +414,7 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     if cbt:
         kwargs['channel_bindings'] = spnego.channel_bindings.GssChannelBindings(application_data=b'test_data:\x00\x01')
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, **kwargs)
-    s = spnego.server(None, None, options=server_opt, **kwargs)
+    s = spnego.server(options=server_opt, **kwargs)
 
     _ntlm_test(c, s)
 
@@ -431,7 +431,7 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     monkeypatch.setenv('LM_COMPAT_LEVEL', str(lm_compat_level))
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
                       options=spnego.NegotiateOptions.use_ntlm)
-    s = spnego.server(None, None, options=spnego.NegotiateOptions.use_sspi, protocol='ntlm')
+    s = spnego.server(options=spnego.NegotiateOptions.use_sspi, protocol='ntlm')
 
     _ntlm_test(c, s)
 

@@ -60,13 +60,13 @@ def _new_context(username, password, hostname, service, channel_bindings, contex
     return proxy(username, password, hostname, service, channel_bindings, context_req, usage, proto, options)
 
 
-def client(username, password, hostname='unspecified', service='host', channel_bindings=None,
+def client(username=None, password=None, hostname='unspecified', service='host', channel_bindings=None,
            context_req=ContextReq.default, protocol='negotiate', options=0):
     return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options,
                         'initiate')
 
 
-def server(username, password, hostname='unspecified', service='host', channel_bindings=None,
-           context_req=ContextReq.default, protocol='negotiate', options=0):
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options,
+def server(hostname='unspecified', service='host', channel_bindings=None, context_req=ContextReq.default,
+           protocol='negotiate', options=0):
+    return _new_context(None, None, hostname, service, channel_bindings, context_req, protocol, options,
                         'accept')

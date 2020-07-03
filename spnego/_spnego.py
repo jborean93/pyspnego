@@ -306,7 +306,7 @@ class NegTokenInit:
         mech_list_mic: The message integrity code (MIC) token.
 
     Attributes:
-        mech_types (List): See args.
+        mech_types (List[str]): See args.
         req_flags (ContextFlags): See args.
         mech_token (bytes): See args.
         hint_name (bytes): See args.
