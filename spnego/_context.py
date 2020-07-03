@@ -234,26 +234,23 @@ class ContextProxy:
         hostname: The principal part of the SPN. This is required for Kerberos auth to build the SPN.
         service: The service part of the SPN. This is required for Kerberos auth to build the SPN.
         channel_bindings: The optional :class:`spnego.channel_bindings.GssChannelBindings` for the context.
-        delegate: Grants the acceptor the rights to act as a proxy and initiate further contexts on behalf of the
-            initiator. This only works for Kerberos (or Kerberos through SPNEGO) authentication.
-        mutual_auth: The initiator will also authenticate the acceptor. Only valid for an initiator.
-        replay_detect: Detect replayed messaged from :meth:`wrap` and :meth:`sign`.
-        sequence_detect: Detect messages received out of sequence.
-        confidentiality: Whether the context can encrypt messages with :meth:`wrap`. Only valid for an initiator.
-        integrity: Whether messages can be signed with :meth:`sign` or :meth:`wrap`.
+        context_req: The :class:`spnego.ContextReq` flags to use when setting up the context.
         usage: The usage of the context, `initiate` for a client and `accept` for a server.
         protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, or `negotiate`. Not all providers
             support all three protocols as that is handled by :class:`SPNEGOContext`.
+        options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
+        _is_wrapped: Whether the context proxy is wrapped by another context proxy.
 
     Attributes:
-        username (text_type): The username.
-        password (text_type): The password for username.
-        hostname (text_type): The principal part of the SPN.
-        service (text_type): The service part of the SPN.
-        context_req (ContextReq): The context requirements flags as an int value specific to the context provider.
         usage (str): The usage of the context, `initiate` for a client and `accept` for a server.
         protocol (text_type): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
+        username (text_type): The username.
+        password (text_type): The password for username.
+        spn (text_type): The service principal name of the service to connect to.
+        channel_bindings (spnego.channel_bindings.GssChannelBindings): Optional channel bindings to provide with the
+            context.
         options (NegotiateOptions): The user specified negotiation options.
+        context_req (ContextReq): The context requirements flags as an int value specific to the context provider.
     """
 
     def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol, options,
@@ -299,7 +296,7 @@ class ContextProxy:
             raise FeatureMissingError(NegotiateOptions.wrapping_iov)
 
     @classmethod
-    def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[str, ...]
+    def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[str]
         """A list of protocols that the provider can offer.
 
         Returns a list of protocols the underlying provider can implement. Currently only kerberos, negotiate, or ntlm
@@ -310,7 +307,7 @@ class ContextProxy:
             options: The context requirements of :class:`NegotiationOptions` that state what the client requires.
 
         Returns:
-            List[text_type, ...]: The list of protocols that the context can use.
+            List[str]: The list of protocols that the context can use.
         """
         return ['kerberos', 'negotiate', 'ntlm']  # pragma: no cover
 

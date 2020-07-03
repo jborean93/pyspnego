@@ -37,8 +37,6 @@ Defines the buffer inside a list that is passed to :meth:`wrap_iov()`. A list of
 On SSPI only a buffer of the type `header`, `trailer`, or `padding` can be auto allocated. On GSSAPI all buffers can be
 auto allocated when `data=True` but the behaviour behind this is dependent on the mech it is run for.
 
-TODO: examples
-
 Attributes:
     type (BufferType): The type of the IOV buffer.
     data (Union[bytes, int, bool]): On the output from the `*_iov` functions this is the bytes buffer or `None` if the

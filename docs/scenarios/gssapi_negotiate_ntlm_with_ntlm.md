@@ -1,0 +1,258 @@
+## Distro
+
+Fedora 31
+
+
+## GSSAPI Impl
+
+Kerberos 5 release 1.18.1 with gss-ntlmssp 0.9.0
+
+
+## Connection Info:
+
+Connecting to host using FQDN but an invalid SPN. Using explicit credentials with the SPNEGO OID.
+
+
+## Notes
+
+* GSSAPI will automatically fallback to NTLM if it's unable to get a credential for Kerberos (SPN was invalid)
+* No error message is reported saying the SPN is invalid, just auto fallback
+* The mechTypes of the SPNEGO token contains just NTLMSSP as expected
+* The server responds with the SPNEGO token that wraps the NTLM challenge
+* The NTLM authenticate message from the client still includes the MIC in the NTLM token but also
+    * The mechListMIC on the SPNEGO part is defined
+    * `negState: ACCEPT_INCOMPLETE (1)` is set even though the context is established
+* In a pure NTLM exchange there's no reply from the server after the authenticate message but with SPNEGO it replies with
+    * `negState: ACCEPT_COMPLETE (0)`
+    * No response token back
+    * `mechListMIC` is defined and presumable the client validates to ensure it is correct
+
+Differences between Kerberos and NTLM in SPNEGO
+
+* Kerberos does not set `mechListMIC` where NTLM does, maybe because it's only done over 1 message which includes the `mechTypes` list.
+
+Will need to read [RFC 4178 Section 5.](https://www.rfc-editor.org/rfc/rfc4178.html#section-5) a bit closer to figure
+out when and how `mechListMIC` is calculated.
+
+
+## Tokens
+
+```yaml
+MessageType: SPNEGO InitialContextToken
+Data:
+  thisMech: SPNEGO (1.3.6.1.5.5.2)
+  innerContextToken:
+    MessageType: SPNEGO NegTokenInit
+    Data:
+      mechTypes:
+      - NTLM (1.3.6.1.4.1.311.2.2.10)
+      reqFlags:
+      mechToken:
+        MessageType: NEGOTIATE_MESSAGE (1)
+        Data:
+          NegotiateFlags:
+            raw: 3758654007
+            flags:
+            - NTLMSSP_NEGOTIATE_56 (2147483648)
+            - NTLMSSP_NEGOTIATE_KEY_EXCH (1073741824)
+            - NTLMSSP_NEGOTIATE_128 (536870912)
+            - NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY (524288)
+            - NTLMSSP_NEGOTIATE_ALWAYS_SIGN (32768)
+            - NTLMSSP_NEGOTIATE_NTLM (512)
+            - NTLMSSP_NEGOTIATE_SEAL (32)
+            - NTLMSSP_NEGOTIATE_SIGN (16)
+            - NTLMSSP_REQUEST_TARGET (4)
+            - NTLMSSP_NEGOTIATE_OEM (2)
+            - NTLMSSP_NEGOTIATE_UNICODE (1)
+          DomainNameFields:
+            Len: 0
+            MaxLen: 0
+            BufferOffset: 0
+          WorkstationFields:
+            Len: 0
+            MaxLen: 0
+            BufferOffset: 0
+          Version:
+          Payload:
+            DomainName:
+            Workstation:
+        RawData: 4E544C4D5353500001000000378208E000000000000000000000000000000000
+      mechListMIC:
+    RawData: A0363034A00E300C060A2B06010401823702020AA22204204E544C4D5353500001000000378208E000000000000000000000000000000000
+RawData: 604006062B0601050502A0363034A00E300C060A2B06010401823702020AA22204204E544C4D5353500001000000378208E000000000000000000000000000000000
+```
+
+```yaml
+MessageType: SPNEGO NegTokenResp
+Data:
+  negState: accept-incomplete (1)
+  supportedMech: NTLM (1.3.6.1.4.1.311.2.2.10)
+  responseToken:
+    MessageType: CHALLENGE_MESSAGE (2)
+    Data:
+      TargetNameFields:
+        Len: 12
+        MaxLen: 12
+        BufferOffset: 56
+      NegotiateFlags:
+        raw: 3800662581
+        flags:
+        - NTLMSSP_NEGOTIATE_56 (2147483648)
+        - NTLMSSP_NEGOTIATE_KEY_EXCH (1073741824)
+        - NTLMSSP_NEGOTIATE_128 (536870912)
+        - NTLMSSP_NEGOTIATE_VERSION (33554432)
+        - NTLMSSP_NEGOTIATE_TARGET_INFO (8388608)
+        - NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY (524288)
+        - NTLMSSP_TARGET_TYPE_DOMAIN (65536)
+        - NTLMSSP_NEGOTIATE_ALWAYS_SIGN (32768)
+        - NTLMSSP_NEGOTIATE_NTLM (512)
+        - NTLMSSP_NEGOTIATE_SEAL (32)
+        - NTLMSSP_NEGOTIATE_SIGN (16)
+        - NTLMSSP_REQUEST_TARGET (4)
+        - NTLMSSP_NEGOTIATE_UNICODE (1)
+      ServerChallenge: 8FD9D6108FAB584E
+      Reserved: '0000000000000000'
+      TargetInfoFields:
+        Len: 138
+        MaxLen: 138
+        BufferOffset: 68
+      Version:
+        Major: 10
+        Minor: 0
+        Build: 14393
+        Reserved: '000000'
+        NTLMRevision: 15
+      Payload:
+        TargetName: DOMAIN
+        TargetInfo:
+        - AvId: MSV_AV_NB_DOMAIN_NAME (2)
+          Value: DOMAIN
+        - AvId: MSV_AV_NB_COMPUTER_NAME (1)
+          Value: DC01
+        - AvId: MSV_AV_DNS_DOMAIN_NAME (4)
+          Value: domain.local
+        - AvId: MSV_AV_DNS_COMPUTER_NAME (3)
+          Value: DC01.domain.local
+        - AvId: MSV_AV_DNS_TREE_NAME (5)
+          Value: domain.local
+        - AvId: MSV_AV_TIMESTAMP (7)
+          Value: '2020-04-30T01:29:30.8203214Z'
+        - AvId: MSV_AV_EOL (0)
+          Value:
+    RawData: 4E544C4D53535000020000000C000C0038000000358289E28FD9D6108FAB584E00000000000000008A008A00440000000A0039380000000F44004F004D00410049004E0002000C0044004F004D00410049004E000100080044004300300031000400180064006F006D00610069006E002E006C006F00630061006C000300220044004300300031002E0064006F006D00610069006E002E006C006F00630061006C000500180064006F006D00610069006E002E006C006F00630061006C0007000800CE24D9CB8E1ED60100000000
+  mechListMIC:
+RawData: A181EA3081E7A0030A0101A10C060A2B06010401823702020AA281D10481CE4E544C4D53535000020000000C000C0038000000358289E28FD9D6108FAB584E00000000000000008A008A00440000000A0039380000000F44004F004D00410049004E0002000C0044004F004D00410049004E000100080044004300300031000400180064006F006D00610069006E002E006C006F00630061006C000300220044004300300031002E0064006F006D00610069006E002E006C006F00630061006C000500180064006F006D00610069006E002E006C006F00630061006C0007000800CE24D9CB8E1ED60100000000
+```
+
+```yaml
+MessageType: SPNEGO NegTokenResp
+Data:
+  negState: accept-incomplete (1)
+  supportedMech:
+  responseToken:
+    MessageType: AUTHENTICATE_MESSAGE (3)
+    Data:
+      LmChallengeResponseFields:
+        Len: 0
+        MaxLen: 0
+        BufferOffset: 88
+      NtChallengeResponseFields:
+        Len: 226
+        MaxLen: 226
+        BufferOffset: 88
+      DomainNameFields:
+        Len: 0
+        MaxLen: 0
+        BufferOffset: 0
+      UserNameFields:
+        Len: 54
+        MaxLen: 54
+        BufferOffset: 314
+      WorkstationFields:
+        Len: 26
+        MaxLen: 26
+        BufferOffset: 368
+      EncryptedRandomSessionKeyFields:
+        Len: 16
+        MaxLen: 16
+        BufferOffset: 394
+      NegotiateFlags:
+        raw: 3800662581
+        flags:
+        - NTLMSSP_NEGOTIATE_56 (2147483648)
+        - NTLMSSP_NEGOTIATE_KEY_EXCH (1073741824)
+        - NTLMSSP_NEGOTIATE_128 (536870912)
+        - NTLMSSP_NEGOTIATE_VERSION (33554432)
+        - NTLMSSP_NEGOTIATE_TARGET_INFO (8388608)
+        - NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY (524288)
+        - NTLMSSP_TARGET_TYPE_DOMAIN (65536)
+        - NTLMSSP_NEGOTIATE_ALWAYS_SIGN (32768)
+        - NTLMSSP_NEGOTIATE_NTLM (512)
+        - NTLMSSP_NEGOTIATE_SEAL (32)
+        - NTLMSSP_NEGOTIATE_SIGN (16)
+        - NTLMSSP_REQUEST_TARGET (4)
+        - NTLMSSP_NEGOTIATE_UNICODE (1)
+      Version:
+        Major: 6
+        Minor: 2
+        Build: 0
+        Reserved: '000000'
+        NTLMRevision: 15
+      MIC: 6F0D4927864BC3CB9CA7DC86C2589C39
+      Payload:
+        LmChallengeResponse:
+        NtChallengeResponse:
+          ResponseType: NTLMv2
+          NTProofStr: C7DD497FA75911AF821616F1E7642763
+          ClientChallenge:
+            RespType: 1
+            HiRespType: 1
+            Reserved1: 0
+            Reserved2: 0
+            TimeStamp: '2020-04-30T01:29:30.8203214Z'
+            ChallengeFromClient: DA0BDE87F9D1C301
+            Reserved3: 0
+            AvPairs:
+            - AvId: MSV_AV_NB_COMPUTER_NAME (1)
+              Value: DC01
+            - AvId: MSV_AV_NB_DOMAIN_NAME (2)
+              Value: DOMAIN
+            - AvId: MSV_AV_DNS_COMPUTER_NAME (3)
+              Value: DC01.domain.local
+            - AvId: MSV_AV_DNS_DOMAIN_NAME (4)
+              Value: domain.local
+            - AvId: MSV_AV_DNS_TREE_NAME (5)
+              Value: domain.local
+            - AvId: MSV_AV_FLAGS (6)
+              Value:
+                raw: 2
+                flags:
+                - MIC_PROVIDED (2)
+            - AvId: MSV_AV_TIMESTAMP (7)
+              Value: '2020-04-30T01:29:30.8203214Z'
+            - AvId: MSV_AV_TARGET_NAME (9)
+              Value: test
+            - AvId: MSV_AV_CHANNEL_BINDINGS (10)
+              Value: '00000000000000000000000000000000'
+            - AvId: MSV_AV_EOL (0)
+              Value:
+            Reserved4: 0
+        DomainName:
+        UserName: vagrant-domain@DOMAIN.LOCAL
+        Workstation: JBOREAN-LINUX
+        EncryptedRandomSessionKey: F451F93F20470A1939A380C09FE4AEED
+      SessionKey: 3DF3B0EF6C5D823F0F75885B6270FD1D
+    RawData: 4E544C4D53535000030000000000000058000000E200E200580000000000000000000000360036003A0100001A001A0070010000100010008A010000358289E2060200000000000F6F0D4927864BC3CB9CA7DC86C2589C39C7DD497FA75911AF821616F1E76427630101000000000000CE24D9CB8E1ED601DA0BDE87F9D1C3010000000001000800440043003000310002000C0044004F004D00410049004E000300220044004300300031002E0064006F006D00610069006E002E006C006F00630061006C000400180064006F006D00610069006E002E006C006F00630061006C000500180064006F006D00610069006E002E006C006F00630061006C00060004000200000007000800CE24D9CB8E1ED6010900080074006500730074000A001000000000000000000000000000000000000000000000000000760061006700720061006E0074002D0064006F006D00610069006E00400044004F004D00410049004E002E004C004F00430041004C004A0042004F005200450041004E002D004C0049004E0055005800F451F93F20470A1939A380C09FE4AEED
+  mechListMIC: 0100000041EDFFBEC271373700000000
+RawData: A18201BF308201BBA0030A0101A282019E0482019A4E544C4D53535000030000000000000058000000E200E200580000000000000000000000360036003A0100001A001A0070010000100010008A010000358289E2060200000000000F6F0D4927864BC3CB9CA7DC86C2589C39C7DD497FA75911AF821616F1E76427630101000000000000CE24D9CB8E1ED601DA0BDE87F9D1C3010000000001000800440043003000310002000C0044004F004D00410049004E000300220044004300300031002E0064006F006D00610069006E002E006C006F00630061006C000400180064006F006D00610069006E002E006C006F00630061006C000500180064006F006D00610069006E002E006C006F00630061006C00060004000200000007000800CE24D9CB8E1ED6010900080074006500730074000A001000000000000000000000000000000000000000000000000000760061006700720061006E0074002D0064006F006D00610069006E00400044004F004D00410049004E002E004C004F00430041004C004A0042004F005200450041004E002D004C0049004E0055005800F451F93F20470A1939A380C09FE4AEEDA31204100100000041EDFFBEC271373700000000
+```
+
+```yaml
+MessageType: SPNEGO NegTokenResp
+Data:
+  negState: accept-complete (0)
+  supportedMech:
+  responseToken:
+  mechListMIC: 010000002A5E5500123F381800000000
+RawData: A11B3019A0030A0100A3120410010000002A5E5500123F381800000000
+```

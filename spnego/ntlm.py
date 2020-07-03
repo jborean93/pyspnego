@@ -192,6 +192,10 @@ class _NTLMCredential:
 
 
 class NTLMProxy(ContextProxy):
+    """A context wrapper for a Python managed NTLM context.
+
+    This is a context that can be used on Linux to generate NTLM without any system dependencies.
+    """
 
     def __init__(self, username, password, hostname=None, service=None, channel_bindings=None,
                  context_req=ContextReq.default, usage='initiate', protocol='ntlm', options=0, _is_wrapped=False):

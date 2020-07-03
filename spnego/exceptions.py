@@ -27,7 +27,7 @@ except NameError:
 
 
 class NegotiateOptions(IntFlag):
-    """Flags that the caller can specify what features they require.
+    """Flags that the caller can use to control the negotiation behaviour.
 
     A list of features as bit flags that the caller can specify when creating the security context. These flags can
     be used on both Windows or Linux but are a no-op on Windows as it should always have the same features available.
@@ -37,6 +37,18 @@ class NegotiateOptions(IntFlag):
     This is a pretty advanced feature and is mostly a way to control the kerberos to ntlm fallback behaviour on Linux.
 
     These are the currently implemented feature flags:
+
+    use_sspi:
+        Ensures the context proxy used is :class:`spnego.sspi.SSPIProxy`.
+
+    use_gssapi:
+        Ensures the context proxy used is :class:`spnego.gss.GSSAPIProxy`.
+
+    use_negotiate:
+        Ensures the context proxy used is :class:`spnego.negotiate.NegotiateProxy`.
+
+    use_ntlm:
+        Ensures the context proxy used is :class:`spnego.ntlm.NTLMProxy`.
 
     negotiate_kerberos:
         Will make sure that Kerberos is at least available to try for authentication when using the `negotiate`

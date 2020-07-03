@@ -384,7 +384,7 @@ def _parse_spnego_resp(data, secret=None, encoding=None):
         response_token = parse_token(data.response_token, secret=secret, encoding=encoding)
 
     msg = {
-        'negState': parse_enum(data.neg_state) if data.neg_state else None,
+        'negState': parse_enum(data.neg_state) if data.neg_state is not None else None,
         'supportedMech': supported_mech,
         'responseToken': response_token,
         'mechListMIC': to_text(base64.b16encode(data.mech_list_mic)) if data.mech_list_mic is not None else None,

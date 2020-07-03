@@ -100,8 +100,6 @@ class SSPIProxy(ContextProxy):
     This proxy class for SSPI exposes this library into a common interface for SPNEGO authentication. This context
     uses compiled C code to interface directly into the SSPI functions on Windows to provide a native SPNEGO
     implementation.
-
-    Args:
     """
 
     def __init__(self, username=None, password=None, hostname=None, service=None, channel_bindings=None,

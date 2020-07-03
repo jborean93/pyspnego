@@ -26,8 +26,7 @@ Connecting to host using FQDN with an invalid. Using cached credentials from `NT
 ## Tokens
 
 ```yaml
-MessageType: NtlmNegotiate (1)
-Signature: "NTLMSSP\0"
+MessageType: NEGOTIATE_MESSAGE (1)
 Data:
   NegotiateFlags:
     raw: 1074303489
@@ -54,8 +53,7 @@ RawData: 4E544C4D535350000100000001920840080008001800000000000000000000005400450
 ```
 
 ```yaml
-MessageType: NtlmChallenge (2)
-Signature: "NTLMSSP\0"
+MessageType: CHALLENGE_MESSAGE (2)
 Data:
   TargetNameFields:
     Len: 12
@@ -106,8 +104,7 @@ RawData: 4E544C4D53535000020000000C000C0038000000058289423124420FFA4EAC700000000
 ```
 
 ```yaml
-MessageType: NtlmAuthenticate (3)
-Signature: "NTLMSSP\0"
+MessageType: AUTHENTICATE_MESSAGE (3)
 Data:
   LmChallengeResponseFields:
     Len: 24
