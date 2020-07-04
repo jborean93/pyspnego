@@ -1,5 +1,5 @@
 # Changelog
 
-## 0.0.1 - TBD
+## 0.1.0b1 - 2020-07-04
 
-Initial release of pyspnego.
+First beta release of pyspnego.

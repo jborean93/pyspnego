@@ -215,9 +215,9 @@ stages:
       displayName: Twine Authenticate
       condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/v'))
       inputs:
-        pythonUploadServiceConnection: pypitest
+        pythonUploadServiceConnection: pypi
 
     - script: |
-        python -m twine upload -r pypitest --config-file $(PYPIRC_PATH) wheels/*
+        python -m twine upload -r pypi --config-file $(PYPIRC_PATH) wheels/*
       condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/v'))
       displayName: Publish artifact to Pypi
