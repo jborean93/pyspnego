@@ -1310,6 +1310,26 @@ def test_version_get_current():
     assert len(actual.pack()) == 8
 
 
+@pytest.mark.parametrize('version, major, minor, build', [
+    ('0.1.0.dev1', 0, 1, 0),
+    ('0.1.0b1', 0, 1, 0),
+    ('0.1.10b1', 0, 1, 10),
+    ('0.1.0a1', 0, 1, 0),
+    ('0.1.0', 0, 1, 0),
+    ('0', 0, 0, 0),
+    ('1', 1, 0, 0),
+    ('1.2', 1, 2, 0),
+    ('1..', 1, 0, 0),
+])
+def test_version_get_current_formats(version, major, minor, build, monkeypatch):
+    monkeypatch.setattr(messages, 'pyspnego_version', version)
+
+    actual = messages.Version.get_current()
+    assert actual.major == major
+    assert actual.minor == minor
+    assert actual.build == build
+
+
 def test_version_eq():
     assert messages.Version.get_current() != messages.Version()
     assert messages.Version() == b"\x00" * 7 + b"\x0F"

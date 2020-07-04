@@ -171,49 +171,53 @@ stages:
       continueOnError: true
       timeoutInMinutes: 3
 
-#- stage: Build
-#  jobs:
-#
-#  - job: Build
-#    pool:
-#      vmImage: $(image.name)
-#    strategy:
-#      matrix:
-#        Linux:
-#          image.name: ubuntu-18.04
-#          python.version: 3.8
-#          python.arch: x64
-#          wheel.args: --universal
-#        Windows-38-x86:
-#          image.name: windows-2019
-#          python.version: 3.8
-#          python.arch: x86
-#          wheel.args: ''
-#        Windows-38-x64:
-#          image.name: windows-2019
-#          python.version: 3.8
-#          python.arch: x64
-#          wheel.args: ''
-#
-#    steps:
-#    - task: UsePythonVersion@0
-#      inputs:
-#        versionSpec: $(python.version)
-#        architecture: $(python.arch)
-#
-#    - script: |
-#        python -m pip install cython twine wheel -c tests/constraints.txt
-#      displayName: Install build requirements
-#
-#    - script: |
-#        python setup.py bdist_wheel $(wheel.args)
-#      displayName: Build wheel
-#
-#    - task: TwineAuthenticate@1
-#      displayName: Twine Authenticate
-#      inputs:
-#        artifactFeed: jborean93/jborean93
-#
-#    - script: |
-#        python -m twine upload -r jborean93 --config-file $(PYPIRC_PATH) dist/*.whl
-#      displayName: Upload wheel to Azure Artifacts
+    - script: |
+        python setup.py bdist_wheel
+      displayName: Create wheels for Windows
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: dist
+        artifactName: wheels
+
+- stage: Publish
+  jobs:
+
+  - job: Publish
+    pool:
+      vmImage: ubuntu-18.04
+
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: 3.8
+
+    - script: |
+        python -m pip install twine wheel -c tests/constraints.txt
+      displayName: Install build requirements
+
+    - script: |
+        python setup.py bdist_wheel --universal
+        python setup.py sdist
+      displayName: Build universal wheel and sdist
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: dist
+        artifactName: wheels
+
+    - task: DownloadBuildArtifacts@0
+      inputs:
+        artifactName: wheels
+        downloadPath: $(Build.SourcesDirectory)
+
+    - task: TwineAuthenticate@1
+      displayName: Twine Authenticate
+      condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/v'))
+      inputs:
+        pythonUploadServiceConnection: pypitest
+
+    - script: |
+        python -m twine upload -r pypitest --config-file $(PYPIRC_PATH) wheels/*
+      condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/v'))
+      displayName: Publish artifact to Pypi
