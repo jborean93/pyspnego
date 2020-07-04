@@ -178,7 +178,7 @@ stages:
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: dist
-        artifactName: wheels
+        artifactName: dist
 
 - stage: Publish
   jobs:
@@ -198,12 +198,13 @@ stages:
 
     - script: |
         python setup.py bdist_wheel --universal
+        python setup.py sdist
       displayName: Build wheel
 
     - task: DownloadBuildArtifacts@0
       inputs:
-        artifactName: wheels
-        downloadPath: dist
+        artifactName: dist
+        downloadPath: $(Build.SourcesDirectory)
 
     - script: ls -al dist
       displayName: See what packages are in dist
