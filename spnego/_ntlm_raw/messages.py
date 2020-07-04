@@ -7,6 +7,7 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 import collections
 import datetime
 import io
+import re
 import struct
 
 from spnego._compat import (
@@ -1105,10 +1106,18 @@ class Version:
     @staticmethod
     def get_current():  # type: () -> Version
         """ Generates an NTLM Version structure based on the pyspnego package version. """
-        v = [v for v in pyspnego_version.split('.', 3) if v]
-        v += [0] * (3 - len(v))
+        versions = []
+        for v in pyspnego_version.split('.', 3):
+            if not v:
+                continue
 
-        return Version(major=int(v[0]), minor=int(v[1]), build=int(v[2]))
+            match = re.match(r'^(\d+)', v)
+            if match:
+                versions.append(int(match.group(1)))
+
+        versions += [0] * (3 - len(versions))
+
+        return Version(major=int(versions[0]), minor=int(versions[1]), build=int(versions[2]))
 
     @staticmethod
     def unpack(b_data):  # type: (bytes) -> Version

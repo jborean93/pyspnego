@@ -178,7 +178,7 @@ stages:
     - task: PublishBuildArtifacts@1
       inputs:
         pathToPublish: dist
-        artifactName: dist
+        artifactName: wheels
 
 - stage: Publish
   jobs:
@@ -199,21 +199,25 @@ stages:
     - script: |
         python setup.py bdist_wheel --universal
         python setup.py sdist
-      displayName: Build wheel
+      displayName: Build universal wheel and sdist
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: dist
+        artifactName: wheels
 
     - task: DownloadBuildArtifacts@0
       inputs:
-        artifactName: dist
+        artifactName: wheels
         downloadPath: $(Build.SourcesDirectory)
 
-    - script: ls -al dist
-      displayName: See what packages are in dist
+    - task: TwineAuthenticate@1
+      displayName: Twine Authenticate
+      condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/v'))
+      inputs:
+        pythonUploadServiceConnection: pypitest
 
-#    - task: TwineAuthenticate@1
-#      displayName: Twine Authenticate
-#      inputs:
-#        artifactFeed: jborean93/jborean93
-#
-#    - script: |
-#        python -m twine upload -r jborean93 --config-file $(PYPIRC_PATH) dist/*.whl
-#      displayName: Upload wheel to Azure Artifacts
+    - script: |
+        python -m twine upload -r pypitest --config-file $(PYPIRC_PATH) wheels/*
+      condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/v'))
+      displayName: Publish artifact to Pypi
