@@ -171,44 +171,43 @@ stages:
       continueOnError: true
       timeoutInMinutes: 3
 
-#- stage: Build
-#  jobs:
-#
-#  - job: Build
-#    pool:
-#      vmImage: $(image.name)
-#    strategy:
-#      matrix:
-#        Linux:
-#          image.name: ubuntu-18.04
-#          python.version: 3.8
-#          python.arch: x64
-#          wheel.args: --universal
-#        Windows-38-x86:
-#          image.name: windows-2019
-#          python.version: 3.8
-#          python.arch: x86
-#          wheel.args: ''
-#        Windows-38-x64:
-#          image.name: windows-2019
-#          python.version: 3.8
-#          python.arch: x64
-#          wheel.args: ''
-#
-#    steps:
-#    - task: UsePythonVersion@0
-#      inputs:
-#        versionSpec: $(python.version)
-#        architecture: $(python.arch)
-#
-#    - script: |
-#        python -m pip install cython twine wheel -c tests/constraints.txt
-#      displayName: Install build requirements
-#
-#    - script: |
-#        python setup.py bdist_wheel $(wheel.args)
-#      displayName: Build wheel
-#
+    - script: |
+        python setup.py bdist_wheel
+      displayName: Create wheels for Windows
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: dist
+        artifactName: wheels
+
+- stage: Publish
+  jobs:
+
+  - job: Publish
+    pool:
+      vmImage: ubuntu-18.04
+
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: 3.8
+
+    - script: |
+        python -m pip install twine wheel -c tests/constraints.txt
+      displayName: Install build requirements
+
+    - script: |
+        python setup.py bdist_wheel --universal
+      displayName: Build wheel
+
+    - task: DownloadBuildArtifacts@0
+      inputs:
+        artifactName: wheels
+        downloadPath: dist
+
+    - script: ls -al dist
+      displayName: See what packages are in dist
+
 #    - task: TwineAuthenticate@1
 #      displayName: Twine Authenticate
 #      inputs:
