@@ -397,9 +397,10 @@ cdef class SecurityContext:
     def __cinit__(SecurityContext self):
         self.context_attr = 0
         self.expiry = 0
+        self.init = 0
 
     def __dealloc__(SecurityContext self):
-        if self.expiry:
+        if self.init:
             DeleteSecurityContext(&self.handle)
 
 
@@ -619,10 +620,11 @@ cdef class WinNTAuthIdentity(_AuthIdentityBase):
 
 
 def accept_security_context(Credential credential not None, SecurityContext context not None,
-    SecBufferDesc input_buffer not None, unsigned long context_req=0,
-    unsigned long target_data_rep=SECURITY_NATIVE_DREP, SecBufferDesc output_buffer=None):
+    SecBufferDesc input_buffer=None, unsigned long context_req=0, unsigned long target_data_rep=SECURITY_NATIVE_DREP,
+    SecBufferDesc output_buffer=None):
 
-    cdef PCtxtHandle input_context = &context.handle if context.expiry else NULL
+    cdef PCtxtHandle input_context = &context.handle if context.init else NULL
+    cdef PSecBufferDesc input = input_buffer.__c_value__() if input_buffer else NULL
     cdef PSecBufferDesc output = output_buffer.__c_value__() if output_buffer else NULL
     cdef SECURITY_INTEGER expiry
 
@@ -631,8 +633,8 @@ def accept_security_context(Credential credential not None, SecurityContext cont
             context_req |= ISC_REQ_ALLOCATE_MEMORY
             (<SecBuffer>buffer).sys_alloc = 1
 
-    res = AcceptSecurityContext(&credential.handle, input_context, input_buffer.__c_value__(), context_req,
-        target_data_rep, &context.handle, output, &context.context_attr, &expiry)
+    res = AcceptSecurityContext(&credential.handle, input_context, input, context_req, target_data_rep,
+        &context.handle, output, &context.context_attr, &expiry)
 
     if res in [_SEC_I_COMPLETE_AND_CONTINUE, _SEC_I_COMPLETE_NEEDED]:
         res = CompleteAuthToken(&context.handle, output)
@@ -641,6 +643,7 @@ def accept_security_context(Credential credential not None, SecurityContext cont
         PyErr_SetFromWindowsErr(res)
 
     context.expiry = (<unsigned long long>expiry.HighPart << 32) | expiry.LowPart
+    context.init = 1
 
     return res
 
@@ -687,7 +690,7 @@ def initialize_security_context(Credential credential not None, SecurityContext 
     unicode target_name not None, unsigned long context_req=0, SecBufferDesc input_buffer=None,
     unsigned long target_data_rep=SECURITY_NATIVE_DREP, SecBufferDesc output_buffer=None):
 
-    cdef PCtxtHandle input_context = &context.handle if context.expiry else NULL
+    cdef PCtxtHandle input_context = &context.handle if context.init else NULL
     cdef WideChar w_target_name = WideChar.from_text(target_name)
     cdef PSecBufferDesc input = input_buffer.__c_value__() if input_buffer else NULL
     cdef PSecBufferDesc output = output_buffer.__c_value__() if output_buffer else NULL
@@ -708,6 +711,7 @@ def initialize_security_context(Credential credential not None, SecurityContext 
         PyErr_SetFromWindowsErr(res)
 
     context.expiry = (<unsigned long long>expiry.HighPart << 32) | expiry.LowPart
+    context.init = 1
 
     return res
 

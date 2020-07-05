@@ -27,6 +27,7 @@ cdef class SecurityContext:
     cdef CtxtHandle handle
     cdef readonly unsigned long context_attr
     cdef readonly unsigned long long expiry
+    cdef unsigned long init
 
 
 cdef class SecBufferDesc:
