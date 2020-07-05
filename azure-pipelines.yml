@@ -172,6 +172,7 @@ stages:
       timeoutInMinutes: 3
 
     - script: |
+        python setup.py clean --all build_ext --force --inplace 
         python setup.py bdist_wheel
       displayName: Create wheels for Windows
 
