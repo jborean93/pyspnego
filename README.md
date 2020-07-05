@@ -88,8 +88,4 @@ See [the examples section](docs/examples) for examples on how to use the authent
 ## Backlog
 
 * Add support for anonymous authentication
-* Once the format of `pyspnego-parse` has been finalised, redo the `scenarios` folder against the newer standards
-* Test against `smbprotocol`
-* Test against `requests-credssp`
-* Test against `pypsrp`
 * See if `pywinrm` wants to use this
