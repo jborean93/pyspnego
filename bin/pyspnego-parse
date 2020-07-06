@@ -435,13 +435,13 @@ def parse_args():
 
     data.add_argument('-t', '--token',
                       dest='token',
-                      help='Raw base64 encoded token as a command line argument.')
+                      help='Raw base64 encoded or hex string token as a command line argument.')
 
     data.add_argument('-f', '--file',
                       default='',
                       dest='file',
-                      help='Path to file that contains raw bytes or base64 string of token to parse, Defaults to '
-                           'reading from stdin.')
+                      help='Path to file that contains raw bytes, base64, or hex string of token to parse, Defaults '
+                           'to reading from stdin if neither -t or -f is specified.')
 
     parser.add_argument('--encoding',
                         dest='encoding',
@@ -454,13 +454,15 @@ def parse_args():
                         default='json',
                         dest='output_format',
                         type=lambda s: s.lower(),
-                        help='Set the output format of the token, default is (json).')
+                        help='Set the output format of the token, default is (json). Using yaml requires the '
+                             'ruamel.yaml Python library to be installed ''pip install pyspnego[yaml]''.')
 
     parser.add_argument('--secret', '--password',
                         dest='secret',
                         default=None,
                         help='Optional info that is the secret information for a protocol that can be used to decrypt '
-                             'encrypted fields and/or derive the unique session key in the exchange.')
+                             'encrypted fields and/or derive the unique session key in the exchange. This is '
+                             'currently only supported by NTLM tokens to generate the session key.')
 
     if argcomplete:
         argcomplete.autocomplete(parser)

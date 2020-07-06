@@ -77,7 +77,10 @@ setup(
         ],
         'kerberos:sys_platform=="win32"': [],
         'kerberos:sys_platform!="win32"': [
-            'gssapi>=1.5.0'
+            'gssapi>=1.5.0',
+        ],
+        'yaml': [
+            'ruamel.yaml',
         ],
     },
     author='Jordan Borean',

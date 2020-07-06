@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0b3 - TBD
+
+* Expanded `pyspnego-parse` help messages a bit more
+* Added the `yaml` extras group to install `ruamel.yaml` which is an optional feature for `pyspengo-parse`
+
+
 ## 0.1.0b2 - 2020-07-05
 
 * Fix context has been set up check on Windows initiator when running against localhost
