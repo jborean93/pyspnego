@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0b3 - TBD
+## 0.1.0rc1 - 2020-07-07
 
 * Expanded `pyspnego-parse` help messages a bit more
 * Added the `yaml` extras group to install `ruamel.yaml` which is an optional feature for `pyspengo-parse`
