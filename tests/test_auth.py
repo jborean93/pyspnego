@@ -170,8 +170,7 @@ def test_protocol_not_supported():
 
 def test_negotiate_with_kerberos(kerb_cred):
     c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(),
-                      options=spnego.NegotiateOptions.use_negotiate,
-                      context_req=spnego.ContextReq.delegate | spnego.ContextReq.default)
+                      options=spnego.NegotiateOptions.use_negotiate)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
     token1 = c.step()
@@ -226,7 +225,8 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
             pytest.skip('Test requires NTLM to be available through SSPI')
 
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=client_opt)
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=client_opt,
+                      context_req=spnego.ContextReq.delegate | spnego.ContextReq.default)
     s = spnego.server(protocol='negotiate', options=server_opt)
 
     assert not c.complete
