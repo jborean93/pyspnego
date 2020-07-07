@@ -3,6 +3,7 @@
 ## 0.1.0rc2 - TBD
 
 * Ensure any explicit Kerberos credentials have the `forwardable` flags set when `ContextReq.delegate` is requested
+* Fix protocol check to use the options passed in by the caller
 
 
 ## 0.1.0rc1 - 2020-07-07

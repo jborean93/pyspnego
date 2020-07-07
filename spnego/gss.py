@@ -203,8 +203,9 @@ def _get_gssapi_credential(mech, usage, username=None, password=None, context_re
         # GSSAPI offers no way to specify custom flags like forwardable. We use a temp conf file to ensure an explicit
         # cred with the delegate flag will actually be forwardable.
         forwardable = False
-        if context_req and context_req & ContextReq.delegate and \
-                mech.dotted_form in [GSSMech.kerberos.value, GSSMech.spnego.value]:
+        forwardable_mechs = [gssapi.OID.from_int_seq(GSSMech.kerberos.value),
+                             gssapi.OID.from_int_seq(GSSMech.spnego.value)]
+        if context_req and context_req & ContextReq.delegate and mech in forwardable_mechs:
             forwardable = True
 
         with _krb5_conf(forwardable=forwardable):

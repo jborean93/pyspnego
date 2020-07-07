@@ -264,7 +264,7 @@ class ContextProxy:
         if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
             raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
 
-        if self.protocol not in self.available_protocols():
+        if self.protocol not in self.available_protocols(options=options):
             raise ValueError("Protocol %s is not available" % self.protocol)
 
         self.username = to_text(username, nonstring='passthru')
