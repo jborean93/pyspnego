@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0rc2 - TBD
+
+* Ensure any explicit Kerberos credentials have the `forwardable` flags set when `ContextReq.delegate` is requested
+
+
 ## 0.1.0rc1 - 2020-07-07
 
 * Expanded `pyspnego-parse` help messages a bit more

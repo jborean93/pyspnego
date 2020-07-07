@@ -170,7 +170,8 @@ def test_protocol_not_supported():
 
 def test_negotiate_with_kerberos(kerb_cred):
     c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(),
-                      options=spnego.NegotiateOptions.use_negotiate)
+                      options=spnego.NegotiateOptions.use_negotiate,
+                      context_req=spnego.ContextReq.delegate | spnego.ContextReq.default)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
     token1 = c.step()

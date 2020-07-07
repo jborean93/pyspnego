@@ -5,10 +5,14 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
+import contextlib
 import logging
+import os
 import sys
+import tempfile
 
 from spnego._compat import (
+    Generator,
     List,
     Optional,
     Tuple,
@@ -120,7 +124,39 @@ def _create_iov_result(iov):  # type: (IOV) -> Tuple[IOVBuffer, ...]
     return tuple(buffers)
 
 
-def _get_gssapi_credential(mech, usage, username=None, password=None):
+@contextlib.contextmanager
+def _env_path(name, value, default_value):  # type: (str, str, str) -> Generator[None, None, None]
+    """ Adds a value to a PATH-like env var and preserve the existing value if present. """
+    orig_value = os.environ.get(name, None)
+    os.environ[name] = '%s:%s' % (value, orig_value or default_value)
+    try:
+        yield
+
+    finally:
+        if orig_value:
+            os.environ[name] = orig_value
+
+        else:
+            del os.environ[name]
+
+
+@contextlib.contextmanager
+def _krb5_conf(forwardable=False):  # type: (bool) -> Generator[None, None, None]
+    """ Runs with a custom krb5.conf file that extends the existing config if present. """
+    if forwardable:
+        with tempfile.NamedTemporaryFile() as temp_cfg:
+            temp_cfg.write(b"[libdefaults]\nforwardable = true\n")
+            temp_cfg.flush()
+
+            with _env_path('KRB5_CONFIG', temp_cfg.name, '/etc/krb5.conf'):
+                yield
+
+            return
+
+    yield
+
+
+def _get_gssapi_credential(mech, usage, username=None, password=None, context_req=None):
     # type: (gssapi.OID, str, Optional[text_type], Optional[text_type]) -> gssapi.creds.Credentials
     """Gets a set of credential(s).
 
@@ -164,7 +200,16 @@ def _get_gssapi_credential(mech, usage, username=None, password=None):
         # NOTE: MIT krb5 < 1.14 would store this cred in the global cache but later versions used a private cache in
         # memory. There's not much we can do about this but document this behaviour and hope people upgrade to a newer
         # version.
-        cred = acquire_cred_with_password(username, to_bytes(password), usage=usage, mechs=[mech])
+        # GSSAPI offers no way to specify custom flags like forwardable. We use a temp conf file to ensure an explicit
+        # cred with the delegate flag will actually be forwardable.
+        forwardable = False
+        if context_req and context_req & ContextReq.delegate and \
+                mech.dotted_form in [GSSMech.kerberos.value, GSSMech.spnego.value]:
+            forwardable = True
+
+        with _krb5_conf(forwardable=forwardable):
+            cred = acquire_cred_with_password(username, to_bytes(password), usage=usage, mechs=[mech])
+
         return cred.creds
 
     cred = gssapi.Credentials(name=username, usage=usage, mechs=[mech])
@@ -294,7 +339,8 @@ class GSSAPIProxy(ContextProxy):
 
         cred = None
         try:
-            cred = _get_gssapi_credential(mech, self.usage, username=username, password=password)
+            cred = _get_gssapi_credential(mech, self.usage, username=username, password=password,
+                                          context_req=context_req)
         except GSSError as gss_err:
             reraise(SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential"))
 

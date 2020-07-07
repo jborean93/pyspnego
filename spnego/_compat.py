@@ -19,6 +19,7 @@ try:
     from typing import (
         Callable,
         Dict,
+        Generator,
         List,
         Optional,
         Set,
@@ -29,6 +30,7 @@ try:
 except ImportError:
     Callable = any
     Dict = any
+    Generator = any
     List = any
     Optional = any
     Set = any
