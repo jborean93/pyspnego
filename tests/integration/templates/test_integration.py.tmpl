@@ -1,0 +1,288 @@
+import base64
+import collections
+import getpass
+import os
+import pytest
+import socket
+import spnego
+import spnego.channel_bindings
+import spnego.iov
+import ssl
+import struct
+import subprocess
+import uuid
+
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+
+try:
+    from urllib.request import urlopen, Request
+    from urllib.error import HTTPError
+except ImportError:
+    from urllib import urlencode
+    from urllib2 import urlopen, Request, HTTPError
+
+
+USERNAME = '{{ domain_upn }}'
+PASSWORD = '{{ domain_password }}'
+HOST_FQDN = '%s.{{ domain_name }}' % socket.gethostname()
+SMB_SERVER = '{{ groups["win_children"][1] }}.{{ domain_name }}'
+SMB_SHARE = 'share'
+
+IS_SYSTEM = False
+if os.name == 'nt':
+    current_user = getpass.getuser()
+    IS_SYSTEM = current_user == '%s$' % socket.gethostname()
+
+
+SMBHeader = collections.namedtuple('SMBHeader', ['status', 'command', 'session_id', 'data'])
+SMBNegotiateResponse = collections.namedtuple('SMBNegotiateResponse', ['dialect', 'buffer'])
+SMBSessionResponse = collections.namedtuple('SMBSessionResponse', ['flags', 'buffer'])
+
+
+def get_cbt_data(server):
+    cert_pem = ssl.get_server_certificate((server, 5986))
+    b_cert = ssl.PEM_cert_to_DER_cert(cert_pem)
+    cert = x509.load_der_x509_certificate(b_cert, default_backend())
+
+    hash_algorithm = cert.signature_hash_algorithm
+
+    if hash_algorithm.name in ['md5', 'sha1']:
+        digest = hashes.Hash(hashes.SHA256(), default_backend())
+    else:
+        digest = hashes.Hash(hash_algorithm, default_backend())
+
+    digest.update(b_cert)
+    b_cert_hash = digest.finalize()
+
+    b_app_data = b"tls-server-end-point:" + b_cert_hash
+
+    return spnego.channel_bindings.GssChannelBindings(application_data=b_app_data)
+
+
+def smb_send(socket, data):
+    payload = struct.pack(">I", len(data)) + data
+
+    socket.send(payload)
+
+    payload_len = struct.unpack(">I", socket.recv(4))[0]
+    return smb_unpack_header(socket.recv(payload_len))
+
+
+def smb_header(command, message_id, data, session_id=0, tree_id=0):
+    header = b"\xFESMB"  # ProtocolId
+    header += struct.pack("<H", 64)  # StructureSize
+    header += struct.pack("<H", 1)  # CreditCharge
+    header += b"\x00\x00\x00\x00"  # Status
+    header += struct.pack("<H", command)  # Command
+    header += struct.pack("<H", 1)  # CreditRequest
+    header += struct.pack("<I", 0)  # Flags
+    header += struct.pack("<I", 0)  # NextCommand
+    header += struct.pack("<Q", message_id)  # MessageId
+    header += b"\x00\x00\x00\x00"  # Reserved
+    header += struct.pack("<I", tree_id)  # TreeId
+    header += struct.pack("<Q", session_id)  # SessionId
+    header += b"\x00" * 16  # Signature
+    header += data
+
+    return header
+
+
+def smb_unpack_header(data):
+    status = struct.unpack("<I", data[8:12])[0]
+    command = struct.unpack("<H", data[12:14])[0]
+    session_id = struct.unpack("<Q", data[40:48])[0]
+    data = data[64:]
+
+    if command == 0:
+        data = smb_unpack_negotiate(data)
+
+    elif command == 1:
+        data = smb_unpack_session(data)
+
+    return SMBHeader(status=status, command=command, session_id=session_id, data=data)
+
+
+def smb_negotiate_request():
+    request = struct.pack("<H", 36)  # StructureSize
+    request += struct.pack("<H", 1)  # DialectCount
+    request += struct.pack("<H", 1)  # SecurityMode - SMB2_NEGOTIATE_SIGNING_ENABLED
+    request += b"\x00\x00"  # Reserved
+    request += struct.pack("<I", 0x00000040)  # Capabilities - SMB2_GLOBAL_CAP_ENCRYPTION
+    request += uuid.uuid4().bytes  # ClientGuid
+    request += b"\x00\x00\x00\x00\x00\x00\x00\x00"
+    request += struct.pack("<H", 0x0302)  # Dialects - [SMB 3.0.2]
+
+    return request
+
+
+def smb_unpack_negotiate(data):
+    dialect_revision = struct.unpack("<H", data[4:6])[0]
+    buffer_offset = struct.unpack("<H", data[56:58])[0] - 64
+    buffer_length = struct.unpack("<H", data[58:60])[0]
+    if buffer_length:
+        buffer = data[buffer_offset:buffer_offset + buffer_length]
+
+    else:
+        buffer = None
+
+    return SMBNegotiateResponse(dialect=dialect_revision, buffer=buffer)
+
+
+def smb_session_setup(token):
+    setup = struct.pack("<H", 25)  # StructureSize
+    setup += b"\x00"  # Flags
+    setup += struct.pack("B", 0x01)  # SecurityMode - SMB2_NEGOTIATE_SIGNING_ENABLED
+    setup += b"\x00\x00\x00\x00"  # Capabilities
+    setup += b"\x00\x00\x00\x00"  # Channel
+    setup += struct.pack("<H", 64 + 24)  # SecurityBufferOffset
+    setup += struct.pack("<H", len(token))  # SecurityBufferLength
+    setup += b"\x00\x00\x00\x00\x00\x00\x00\x00"  # PreviousSessionId
+    setup += token  # Buffer
+
+    return setup
+
+
+def smb_unpack_session(data):
+    flags = struct.unpack("<H", data[2:4])[0]
+    buffer_offset = struct.unpack("<H", data[4:6])[0] - 64
+    buffer_length = struct.unpack("<H", data[6:8])[0]
+    if buffer_length:
+        buffer = data[buffer_offset:buffer_offset + buffer_length]
+
+    else:
+        buffer = None
+
+    return SMBSessionResponse(flags=flags, buffer=buffer)
+
+
+@pytest.mark.parametrize('service', ['HTTP', 'cifs'])
+def test_kerberos_authentication(service, monkeypatch):
+    if os.name != 'nt':
+        monkeypatch.setenv('KRB5_KTNAME', '/etc/%s.keytab' % service)
+
+    else:
+        if not IS_SYSTEM:
+            pytest.skip("Cannot run Kerberos server tests when not running as SYSTEM")
+
+    c = spnego.client(USERNAME, PASSWORD, hostname=HOST_FQDN, service=service)
+    s = spnego.server()
+
+    in_token = None
+    while not c.complete:
+        out_token = c.step(in_token)
+        if not out_token:
+            break
+
+        in_token = s.step(out_token)
+
+    if os.name == 'nt':
+        # SSPI will report the user in the Netlogon form, use PowerShell to convert the UPN to the Netlogon user.
+        pwsh_command = base64.b64encode('''
+$username = '{0}'
+([Security.Principal.NTAccount]$username).Translate(
+    [Security.Principal.SecurityIdentifier]
+).Translate([Security.Principal.NTAccount]).Value
+'''.format(USERNAME).encode('utf-16-le')).decode()
+        expected_username = subprocess.Popen(['powershell', '-EncodedCommand', pwsh_command],
+                                             stdout=subprocess.PIPE).communicate()[0].strip().decode()
+
+    else:
+        expected_username = USERNAME
+
+    assert s.client_principal == expected_username
+    assert s.session_key == c.session_key
+    assert c.negotiated_protocol == 'kerberos'
+    assert s.negotiated_protocol == 'kerberos'
+
+    plaintext = os.urandom(16)
+    c_iov_res = c.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert c_iov_res.encrypted
+    assert len(c_iov_res.buffers) == 3
+    assert c_iov_res.buffers[1].data != plaintext
+
+    s_iov_res = s.unwrap_iov(c_iov_res.buffers)
+    assert s_iov_res.encrypted
+    assert s_iov_res.qop == 0
+    assert len(s_iov_res.buffers) == 3
+    assert s_iov_res.buffers[1].data == plaintext
+
+    plaintext = os.urandom(16)
+    s_iov_res = s.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert s_iov_res.encrypted
+    assert len(s_iov_res.buffers) == 3
+    assert s_iov_res.buffers[1].data != plaintext
+
+    c_iov_res = c.unwrap_iov(s_iov_res.buffers)
+    assert c_iov_res.encrypted
+    assert c_iov_res.qop == 0
+    assert len(c_iov_res.buffers) == 3
+    assert c_iov_res.buffers[1].data == plaintext
+
+
+def test_winrm_no_delegate():
+    cbt_data = get_cbt_data(SMB_SERVER)
+    if os.name != 'nt' or IS_SYSTEM:
+        c = spnego.client(USERNAME, PASSWORD, hostname=SMB_SERVER, service='HTTP', channel_bindings=cbt_data)
+
+    else:
+        c = spnego.client(hostname=SMB_SERVER, service='HTTP', channel_bindings=cbt_data)
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    headers = {
+        'Authorization': 'Negotiate %s' % base64.b64encode(c.step()).decode(),
+        'Content-Type': 'application/soap+xml;charset=UTF-8',
+    }
+    req = Request('https://%s:5986/wsman' % SMB_SERVER, headers=headers, method='POST')
+    resp = urlopen(req, context=ctx)
+
+
+def test_winrm_delegate():
+    a = ''
+
+
+def test_smb_auth():
+    mid = 0
+
+    s = socket.create_connection((SMB_SERVER, 445), timeout=10)
+    try:
+        negotiate_request = smb_header(0x0000, mid, smb_negotiate_request())
+        mid += 1
+
+        negotiate_response = smb_send(s, negotiate_request)
+        if negotiate_response.status != 0:
+            raise Exception("SMB Exception: 0x{:02X}".format(negotiate_response.status))
+
+        if os.name != 'nt' or IS_SYSTEM:
+            c = spnego.client(USERNAME, PASSWORD, hostname=SMB_SERVER, service='cifs')
+
+        else:
+            c = spnego.client(hostname=SMB_SERVER, service='cifs')
+
+        out_token = c.step(negotiate_response.data.buffer)
+
+        session_request = smb_header(0x0001, mid, smb_session_setup(out_token))
+        mid += 1
+        session_response = smb_send(s, session_request)
+        if session_response.status != 0:
+            raise Exception("SMB Exception: 0x{:02X}".format(session_response.status))
+
+        out_token = c.step(session_response.data.buffer)
+
+        assert out_token is None
+        assert c.complete
+        assert c.negotiated_protocol == 'kerberos'
+        assert isinstance(c.session_key, bytes)
+
+        # SMB2 LOGOFF
+        logoff_response = smb_send(s, smb_header(0x0002, mid, b"\x04\x00\x00\x00",
+                                                 session_id=session_response.session_id))
+        if logoff_response.status != 0:
+            raise Exception("SMB Exception: 0x{:02X}".format(logoff_response.status))
+
+    finally:
+        s.close()

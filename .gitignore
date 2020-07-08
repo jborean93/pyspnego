@@ -120,3 +120,8 @@ ENV/
 
 # vim
 *.swp
+
+# Integration test files
+tests/integration/*.keytab
+tests/integration/.vagrant
+tests/integration/*.swp
