@@ -258,7 +258,7 @@ class SSPIProxy(ContextProxy):
         if self.usage == 'initiate':
             return [
                 (ContextReq.delegate, ClientContextReq.delegate),
-                #(ContextReq.delegate_policy, ClientContextReq.delegate),
+                # (ContextReq.delegate_policy, ClientContextReq.delegate),
                 (ContextReq.mutual_auth, ClientContextReq.mutual_auth),
                 (ContextReq.replay_detect, ClientContextReq.replay_detect),
                 (ContextReq.sequence_detect, ClientContextReq.sequence_detect),
@@ -269,7 +269,7 @@ class SSPIProxy(ContextProxy):
         else:
             return [
                 (ContextReq.delegate, ServerContextReq.delegate),
-                #(ContextReq.delegate_policy, ServerContextReq.delegate),
+                # (ContextReq.delegate_policy, ServerContextReq.delegate),
                 (ContextReq.mutual_auth, ServerContextReq.mutual_auth),
                 (ContextReq.replay_detect, ServerContextReq.replay_detect),
                 (ContextReq.sequence_detect, ServerContextReq.sequence_detect),
