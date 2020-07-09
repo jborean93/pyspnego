@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.1.0 - 2020-07-08
+## 0.1.0 - TBD
 
 Initial release of pyspnego
+
+### 0.1.0rc3 - 2020-07-09
+
+* Remove `ContextReq.delegate_policy` because [python-gssapi](https://github.com/pythongssapi/python-gssapi) does not support flags that they do not define
 
 ### 0.1.0rc2 - 2020-07-07
 

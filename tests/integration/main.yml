@@ -84,7 +84,7 @@
       description: Kerberos principal for Linux {{ item }} keytab
       password: '{{ domain_password }}'
       password_never_expires: yes
-      updated_password: on_create
+      update_password: on_create
       attributes:
         msDS-SupportedEncryptionTypes: 16  # AES256_CTS_HMAC_SHA1_96
       state: present
@@ -134,6 +134,21 @@
       state: domain
     register: domain_join_result
 
+  - name: trust hosts for delegation in AD
+    win_shell: |
+      $computerName = '{{ inventory_hostname }}'
+      $actual = (Get-ADComputer -Identity $computerName -Property TrustedForDelegation).TrustedForDelegation
+      if ($actual) {
+          $false
+      } else {
+          Set-ADComputer -Identity $computerName -TrustedForDelegation $true
+          $true
+      }
+    when: inventory_hostname == 'SERVER2019'  # We only want to have this hosted with delegation for testing
+    register: delegate_actual
+    changed_when: delegate_actual.stdout | trim | bool
+    delegate_to: '{{ groups["win_controller"][0] }}'
+
   - name: reboot host to finalise domain join
     win_reboot:
     when: domain_join_result.reboot_required
@@ -148,7 +163,7 @@
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
 
-- name: set up Python interpreters on test Windows hoset
+- name: set up Python interpreters on test Windows host
   hosts: SERVER2012R2
   gather_facts: no
   tasks:
@@ -190,31 +205,17 @@
       product_id: '{245A2BD7-1E51-448C-810D-356286B18BA8}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
-  - name: set fact of installed Python paths
-    set_fact:
-      python_exes:
-      - C:\Program Files\Python27
-      - C:\Program Files (x86)\Python27-32
-      - C:\Program Files\Python35
-      - C:\Program Files (x86)\Python35-32
-      - C:\Program Files\Python36
-      - C:\Program Files (x86)\Python36-32
-      - C:\Program Files\Python37
-      - C:\Program Files (x86)\Python37-32
-      - C:\Program Files\Python38
-      - C:\Program Files (x86)\Python38-32
-
   - name: ensure virtualenv package is installed for each Python install
     win_command: '"{{ item }}\python.exe" -m pip install virtualenv'
     args:
       creates: '{{ item }}\Scripts\virtualenv.exe'
-    with_items: '{{ python_exes }}'
+    with_items: '{{ python_interpreters }}'
 
   - name: create virtualenv for each Python install
-    win_command: '"{{ item }}\python.exe" -m virtualenv C:\temp\venv\{{ item | win_basename }}'
+    win_command: '"{{ item }}\python.exe" -m virtualenv "{{ python_venv_path }}\{{ item | win_basename }}"'
     args:
-      creates: C:\temp\venv\{{ item | win_basename }}
-    with_items: '{{ python_exes }}'
+      creates: '{{ python_venv_path }}\{{ item | win_basename }}'
+    with_items: '{{ python_interpreters }}'
 
   - name: download wheel artifacts
     win_get_url:
@@ -228,11 +229,20 @@
 
   - name: install pyspnego wheel into virtualenv
     win_shell: |
-      &'C:\temp\venv\{{ item | win_basename }}\Scripts\pip.exe' install --no-index --find-links=C:/temp/wheels --no-deps pyspnego
-      &'C:\temp\venv\{{ item | win_basename }}\Scripts\pip.exe' install --find-links=C:/temp/wheels pyspnego pytest
+      &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install --no-index --find-links=C:/temp/wheels --no-deps pyspnego
+      &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install --find-links=C:/temp/wheels pyspnego pytest requests
     args:
-      creates: C:\temp\venv\{{ item | win_basename }}\Lib\site-packages\spnego
-    with_items: '{{ python_exes }}'
+      creates: '{{ python_venv_path }}\{{ item | win_basename }}\Lib\site-packages\spnego'
+    with_items: '{{ python_interpreters }}'
+
+  - name: template out test integration file
+    win_template:
+      src: test_integration.py.tmpl
+      dest: C:\temp\test_integration.py
+      block_start_string: '{!!'
+      block_end_string: '!!}'
+    tags:
+    - template
 
 - name: set up WinRM config and SMB shares on Windows hosts
   hosts: windows
@@ -250,23 +260,11 @@
     register: cbt_res
     changed_when: cbt_res.stdout | trim | bool
 
-  - name: create testing folder
-    win_file:
-      path: C:\temp\share
-      state: directory
-
-  - name: create test file in share
-    win_lineinfile:
-      path: C:\temp\share\test.txt
-      line: test line
-      create: yes
+  - name: allow SMB traffic in
+    win_firewall_rule:
+      name: File and Printer Sharing (SMB-In)
       state: present
-
-  - name: set up share
-    win_share:
-      path: C:\temp\share
-      name: share
-      state: present
+      enabled: yes
 
 - name: set up Linux host
   hosts: linux_children
@@ -357,11 +355,20 @@
       name:
       - gssapi
       - pytest
+      - requests
       - wheel
       - '{{ wheel_artifact.files[0].path }}'
-      virtualenv: ~/venv/{{ item | basename }}
+      virtualenv: '{{ python_venv_path }}/{{ item | basename }}'
       virtualenv_python: '{{ item }}'
     become: no
-    with_items:
-    - /usr/bin/python2
-    - /usr/bin/python3
+    with_items: '{{ python_interpreters }}'
+
+  - name: template out test integration file
+    template:
+      src: test_integration.py.tmpl
+      dest: ~/test_integration.py
+      block_start_string: '{!!'
+      block_end_string: '!!}'
+    tags:
+    - template
+    become: no

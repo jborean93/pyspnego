@@ -141,7 +141,8 @@ class ContextReq(IntFlag):
     integrity = 0x00000020
     # anonymous = 0x00000040  # TODO: Add support for anonymous auth.
     identify = 0x00002000
-    delegate_policy = 0x00080000  # Only valid for GSSAPI, same as delegate on Windows.
+    # TODO: Add support when gssapi fixes https://github.com/pythongssapi/python-gssapi/issues/217
+    # delegate_policy = 0x00080000
 
     # mutual_auth | replay_detect | sequence_detect | confidentiality | integrity
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
