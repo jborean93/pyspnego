@@ -26,6 +26,7 @@ from spnego._context import (
     IOVWrapResult,
     IOVUnwrapResult,
     UnwrapResult,
+    WinRMWrapResult,
     WrapResult,
     wrap_system_error,
 )
@@ -315,6 +316,26 @@ def _gss_ntlmssp_reset_crypto(context, outgoing=True):  # type: (gssapi.Security
     set_sec_context_option(reset_crypto, context=context, value=value)
 
 
+def _gss_sasl_description(mech):  # type: (gssapi.OID) -> Optional[bytes]
+    """ Attempts to get the SASL description of the mech specified. """
+    try:
+        res = _gss_sasl_description.result
+        return res[mech.dotted_form]
+
+    except (AttributeError, KeyError):
+        res = getattr(_gss_sasl_description, 'result', {})
+
+    try:
+        sasl_desc = gssapi.raw.inquire_saslname_for_mech(mech).mech_description
+    except Exception as e:
+        log.debug("gss_inquire_saslname_for_mech(%s) failed: %s" % (mech.dotted_form, str(e)))
+        sasl_desc = None
+
+    res[mech.dotted_form] = sasl_desc
+    _gss_sasl_description.result = res
+    return _gss_sasl_description(mech)
+
+
 class GSSAPIProxy(ContextProxy):
     """GSSAPI proxy class for GSSAPI on Linux.
 
@@ -437,6 +458,22 @@ class GSSAPIProxy(ContextProxy):
 
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted)
 
+    def wrap_winrm(self, data):
+        if self.negotiated_protocol == 'ntlm':
+            # NTLM does not support IOV wrapping, luckily the header is a fixed size so we can split at that.
+            wrap_result = self.wrap(data).data
+            header = wrap_result[:16]
+            enc_data = wrap_result[16:]
+            padding = b""
+
+        else:
+            iov = self.wrap_iov([BufferType.header, data, BufferType.padding]).buffers
+            header = iov[0].data
+            enc_data = iov[1].data
+            padding = iov[2].data or b""
+
+        return WinRMWrapResult(header=header, data=enc_data + padding, padding_length=len(padding))
+
     @wrap_system_error(NativeError, "Unwrapping data")
     def unwrap(self, data):
         res = gssapi.raw.unwrap(self._context, data)
@@ -452,6 +489,23 @@ class GSSAPIProxy(ContextProxy):
         res = unwrap_iov(self._context, iov_buffer)
 
         return IOVUnwrapResult(buffers=_create_iov_result(iov_buffer), encrypted=res.encrypted, qop=res.qop)
+
+    def unwrap_winrm(self, header, data):
+        # This is an extremely weird setup, we need to use gss_unwrap for NTLM but for Kerberos it depends on the
+        # underlying provider that is used. I know that MIT krb5 works with unwrap_iov of a specific buffer type
+        # so we use the description to check if we have that provider. This isn't perfect but the description has to
+        # match exactly for us to go with that route. In most cases gss_unwrap() works for all providers except when
+        # RC4 encryption is used hence why we have the MIT krb5 check.
+        # https://github.com/heimdal/heimdal/issues/739
+        sasl_desc = _gss_sasl_description(self._context.mech)
+
+        # https://github.com/krb5/krb5/blob/f2e28f13156785851819fc74cae52100e0521690/src/lib/gssapi/krb5/gssapi_krb5.c#L686
+        if sasl_desc and sasl_desc == b'Kerberos 5 GSS-API Mechanism':
+            iov = self.unwrap_iov([(IOVBufferType.header, header), data, IOVBufferType.data])
+            return iov[1].data
+
+        else:
+            return self.unwrap(header + data).data
 
     @wrap_system_error(NativeError, "Signing message")
     def sign(self, data, qop=None):

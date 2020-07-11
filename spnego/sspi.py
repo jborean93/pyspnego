@@ -24,6 +24,7 @@ from spnego._context import (
     IOVUnwrapResult,
     split_username,
     UnwrapResult,
+    WinRMWrapResult,
     WrapResult,
     wrap_system_error,
 )
@@ -202,7 +203,6 @@ class SSPIProxy(ContextProxy):
 
         return out_token
 
-    @wrap_system_error(NativeError, "Wrapping data")
     def wrap(self, data, encrypt=True, qop=None):
         res = self.wrap_iov([BufferType.header, data, BufferType.padding], encrypt=encrypt, qop=qop)
         return WrapResult(data=b"".join([r.data for r in res.buffers if r.data]), encrypted=res.encrypted)
@@ -220,7 +220,13 @@ class SSPIProxy(ContextProxy):
 
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypt)
 
-    @wrap_system_error(NativeError, "Unwrapping data")
+    def wrap_winrm(self, data):
+        iov = self.wrap_iov([BufferType.header, data, BufferType.padding]).buffers
+        enc_data = iov[1].data
+        padding = iov[2].data or b""
+
+        return WinRMWrapResult(header=iov[0].data, data=enc_data + padding, padding_length=len(padding))
+
     def unwrap(self, data):
         res = self.unwrap_iov([(BufferType.stream, data), BufferType.data])
         return UnwrapResult(data=res.buffers[1].data, encrypted=res.encrypted, qop=res.qop)
@@ -232,6 +238,10 @@ class SSPIProxy(ContextProxy):
         encrypted = qop & SSPIQoP.wrap_no_encrypt == 0
 
         return IOVUnwrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted, qop=qop)
+
+    def unwrap_winrm(self, header, data):
+        iov = self.unwrap_iov([(BufferType.header, header), data, BufferType.padding]).buffers
+        return iov[1].data
 
     @wrap_system_error(NativeError, "Signing message")
     def sign(self, data, qop=None):

@@ -19,6 +19,7 @@ import spnego.sspi
 from spnego._context import (
     IOVWrapResult,
     IOVUnwrapResult,
+    WinRMWrapResult,
     WrapResult,
     UnwrapResult,
 )
@@ -75,9 +76,33 @@ def _message_test(client, server):
     s_sig = server.sign(plaintext)
     client.verify(plaintext, s_sig)
 
-    for c in [client, server]:
-        if not c.iov_available() or c.negotiated_protocol == 'ntlm':
-            return
+    # Can only continue if using NTLM or IOV is available
+    if client.negotiated_protocol != 'ntlm' or not client.iov_available():
+        return
+
+    plaintext = os.urandom(16)
+    c_winrm_result = client.wrap_winrm(plaintext)
+    assert isinstance(c_winrm_result, WinRMWrapResult)
+    assert isinstance(c_winrm_result.header, bytes)
+    assert isinstance(c_winrm_result.data, bytes)
+    assert isinstance(c_winrm_result.padding_length, int)
+
+    s_winrm_result = server.unwrap_winrm(c_winrm_result.header, c_winrm_result.data)
+    assert s_winrm_result == plaintext
+
+    plaintext = os.urandom(16)
+    s_winrm_result = server.wrap_winrm(plaintext)
+    assert isinstance(s_winrm_result, WinRMWrapResult)
+    assert isinstance(s_winrm_result.header, bytes)
+    assert isinstance(s_winrm_result.data, bytes)
+    assert isinstance(s_winrm_result.padding_length, int)
+
+    c_winrm_result = client.unwrap_winrm(s_winrm_result.header, s_winrm_result.data)
+    assert c_winrm_result == plaintext
+
+    # Can only continue if using Kerberos auth and IOV is available
+    if client.negotiated_protocol == 'ntlm' or not client.iov_available():
+        return
 
     plaintext = os.urandom(16)
     c_iov_res = client.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])

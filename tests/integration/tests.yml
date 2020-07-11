@@ -22,12 +22,12 @@
     become_user: SYSTEM
 
 - name: run integration tests on Linux
-  hosts: CENTOS8
+  hosts: linux_children
   gather_facts: no
   tags:
   - linux
 
   tasks:
   - name: run integration tests
-    command: '"{{ python_venv_path }}/{{ item | basename }}/bin/python" -m pytest ~/test_integration.py -v'
+    command: '"{{ python_venv_path }}/{{ item | basename }}/bin/python" -m pytest ~/test_integration.py -v --forked'
     with_items: '{{ python_interpreters }}'

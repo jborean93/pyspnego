@@ -110,6 +110,15 @@ Attributes:
     encrypted (bool): Whether the buffer data was encrypted (True) or not (False).
 """
 
+WinRMWrapResult = collections.namedtuple('WinRMWrapResult', ['header', 'data', 'padding_length'])
+"""Result of the `wrap_winrm()` function.
+
+Attributes:
+    header (bytes): The header of the wrapped result.
+    data (bytes): The wrapped data included any padding.
+    padding_length (int): The length of the bytes added to the data for padding.
+"""
+
 UnwrapResult = collections.namedtuple('UnwrapResult', ['data', 'encrypted', 'qop'])
 """Result of the `unwrap()` function.
 
@@ -495,6 +504,20 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
+    def wrap_winrm(self, data):  # type: (bytes) -> WinRMWrapResult
+        """Wrap/Encrypt data for use with WinRM.
+
+        This method wraps/encrypts bytes for use with WinRM message encryption.
+
+        Args:
+            data: The data to wrap.
+
+        Returns:
+            WinRMWrapResult: The wrapped result for use with WinRM message encryption.
+        """
+        pass  # pragma: no cover
+
+    @abc.abstractmethod
     def unwrap(self, data):  # type: (bytes) -> UnwrapResult
         """Unwrap a message.
 
@@ -544,6 +567,22 @@ class ContextProxy:
 
         .. _DecryptMessage:
             https://docs.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general
+        """
+        pass  # pragma: no cover
+
+    @abc.abstractmethod
+    def unwrap_winrm(self, header, data):  # type: (bytes, bytes) -> bytes
+        """Unwrap/Decrypt a WinRM message.
+
+        This method unwraps/decrypts a WinRM message. It handles the complexities of unwrapping the data and dealing
+        with the various system library calls.
+
+        Args:
+            header: The header portion of the WinRM wrapped result.
+            data: The data portion of the WinRM wrapped result.
+
+        Returns:
+            bytes: The unwrapped message.
         """
         pass  # pragma: no cover
 

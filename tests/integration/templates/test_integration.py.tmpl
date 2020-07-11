@@ -15,6 +15,7 @@ import spnego.iov
 import ssl
 import struct
 import subprocess
+import tempfile
 import uuid
 import warnings
 
@@ -31,6 +32,7 @@ HOSTNAME = socket.gethostname()
 HOST_FQDN = '%s.{{ domain_name }}' % HOSTNAME
 WIN_SERVER_UNTRUSTED = '{{ groups["win_children"][0] }}.{{ domain_name }}'  # Not trusted for delegation in AD
 WIN_SERVER_TRUSTED = '{{ groups["win_children"][1] }}.{{ domain_name }}'  # Trusted for delegation in AD
+KERBEROS_PROVIDER = '{{ krb_provider }}'
 
 IS_SYSTEM = False
 if os.name == 'nt':
@@ -361,21 +363,13 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
     boundary = 'Encrypted Boundary'
 
     if http.endpoint.startswith('http://'):
-        buffer = [
-            spnego.iov.BufferType.header,
-            content,
-            spnego.iov.BufferType.padding,
-        ]
-        enc_buffer = http.context.wrap_iov(buffer).buffers
-        header = enc_buffer[0].data
-        wrapped_content = enc_buffer[1].data
-        padding = enc_buffer[2].data or b""
+        header, wrapped_content, padding = http.context.wrap_winrm(content)
         protocol = 'application/HTTP-SPNEGO-session-encrypted'
 
         content = '\r\n'.join([
             '--%s' % boundary,
             'Content-Type: %s' % protocol,
-            'OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%s' % (len(content) + len(padding),),
+            'OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%s' % (len(content) + len(padding)),
             '--%s' % boundary,
             'Content-Type: application/octet-stream',
             '',
@@ -418,22 +412,40 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
                 payload = payload[1:]
             enc_content = payload.replace(b"Content-Type: application/octet-stream\r\n", b"")
 
-            header_len = struct.unpack("<i", enc_content[:4])[0]
-            enc_header = enc_content[4:4 + header_len]
-            wrapped_data = enc_content[4 + header_len:]
-
-            buffer = [
-                spnego.iov.IOVBuffer(spnego.iov.BufferType.header, enc_header),
-                wrapped_data,
-                spnego.iov.BufferType.data,
-            ]
-            dec_buffer = http.context.unwrap_iov(buffer).buffers
-            unwrapped_data = dec_buffer[1].data
-
+            unwrapped_data = http.context.unwrap_winrm(enc_content[4:])
             assert len(unwrapped_data) == expected_length
             content += unwrapped_data
 
     return ET.fromstring(content)
+
+
+@pytest.fixture
+def kinit():
+    # We only need to call kinit when testing against Heimdal due to it not respecting the forwardable flag for
+    # delegation with gss_acquire_cred_with_password.
+    if KERBEROS_PROVIDER != 'Heimdal':
+        yield False
+        return
+
+    cache_env_var = 'KRB5CCNAME'
+    with tempfile.NamedTemporaryFile() as ccache:
+        ccache_path = 'FILE:%s' % ccache.name
+        os.environ[cache_env_var] = ccache_path
+
+        try:
+            # Use a temp password with kinit to store the credential in the temp cache.
+            with tempfile.NamedTemporaryFile() as temp_pass:
+                temp_pass.write(PASSWORD.encode())
+                temp_pass.flush()
+
+                cmd = ['/usr/lib/heimdal/bin/kinit', '-f', '--password-file=%s' % temp_pass.name, USERNAME]
+                p = subprocess.Popen(cmd, env={cache_env_var: ccache_path})
+                p.communicate()
+
+            yield True
+
+        finally:
+            del os.environ[cache_env_var]
 
 
 @pytest.mark.parametrize('service', ['HTTP', 'cifs'])
@@ -500,6 +512,33 @@ $username = '{0}'
     assert c_iov_res.buffers[1].data == plaintext
 
 
+@pytest.mark.skipif(KERBEROS_PROVIDER != 'MIT', reason="Cannot test on Windows and Heimdal does not work")
+def test_winrm_rc4_wrapping(monkeypatch):
+    context_kwargs = {
+        'hostname': WIN_SERVER_TRUSTED,
+        'service': 'HTTP',
+    }
+    if os.name != 'nt' or IS_SYSTEM:
+        context_kwargs['username'] = USERNAME
+        context_kwargs['password'] = PASSWORD
+
+    with tempfile.NamedTemporaryFile() as temp_cfg:
+        if KERBEROS_PROVIDER == 'Heimdal':
+            temp_cfg.write(b'''[libdefaults]
+default_etypes = arcfour-hmac-md5''')
+
+        else:
+            temp_cfg.write(b'''[libdefaults]
+default_tkt_enctypes = arcfour-hmac-md5
+default_tgs_enctypes = arcfour-hmac-md5''')
+
+        temp_cfg.flush()
+
+        monkeypatch.setenv('KRB5_CONFIG', '%s:/etc/krb5.conf' % temp_cfg.name)
+        c = spnego.client(**context_kwargs)
+        winrm_run(c, WIN_SERVER_TRUSTED, 'hostname.exe')
+
+
 def test_winrm_no_delegate():
     context_kwargs = {
         'hostname': WIN_SERVER_TRUSTED,
@@ -522,13 +561,13 @@ def test_winrm_no_delegate():
     assert 'Access is denied' in stderr
 
 
-def test_winrm_delegate():
+def test_winrm_delegate(kinit):
     context_kwargs = {
         'hostname': WIN_SERVER_TRUSTED,
         'service': 'HTTP',
         'context_req': spnego.ContextReq.default | spnego.ContextReq.delegate,
     }
-    if os.name != 'nt' or IS_SYSTEM:
+    if not kinit and (os.name != 'nt' or IS_SYSTEM):
         context_kwargs['username'] = USERNAME
         context_kwargs['password'] = PASSWORD
 
@@ -545,16 +584,18 @@ def test_winrm_delegate():
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows always sets ok as delegate so nothing to test there')
-def test_winrm_ok_as_delegate():
+def test_winrm_ok_as_delegate(kinit):
     # In the environment setup, this host is not trusted for delegation in AD. This test shows that this flag isn't
     # used for GSSAPI unless set by the krb5.conf file.
     context_kwargs = {
-        'username': USERNAME,
-        'password': PASSWORD,
         'hostname': WIN_SERVER_UNTRUSTED,
         'service': 'HTTP',
         'context_req': spnego.ContextReq.default | spnego.ContextReq.delegate,
     }
+    if not kinit:
+        context_kwargs['username'] = USERNAME
+        context_kwargs['password'] = PASSWORD
+
     c = spnego.client(**context_kwargs)
 
     pwsh_script = base64.b64encode(u'''$ErrorActionPreference = 'Stop'

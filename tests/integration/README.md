@@ -18,6 +18,10 @@ ansible-playbook main.yml -vv
 ansible-playbook tests.yml -vv
 ```
 
+When running `main.yml` it will prompt for the Azure Pipelines artifacts URL to use as the compiled source of pyspnego.
+This URL can be gotten by clicking on the published artifacts of a CI run and getting the URL for the `wheels
+artifact.
+
 The following tags are set for `main.yml`
 
 * `template`: Re-template the test files to the test hosts

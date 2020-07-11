@@ -20,6 +20,7 @@ from spnego._context import (
     ContextReq,
     split_username,
     UnwrapResult,
+    WinRMWrapResult,
     WrapResult,
 )
 
@@ -507,6 +508,10 @@ class NTLMProxy(ContextProxy):
         # fail here.
         raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
 
+    def wrap_winrm(self, data):
+        enc_data = self.wrap(data).data
+        return WinRMWrapResult(header=enc_data[:16], data=enc_data[16:], padding_length=0)
+
     def unwrap(self, data):
         signature = data[:16]
         msg = self._handle_in.update(data[16:])
@@ -516,6 +521,12 @@ class NTLMProxy(ContextProxy):
 
     def unwrap_iov(self, iov):
         raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
+
+    def unwrap_winrm(self, header, data):
+        msg = self._handle_in.update(data)
+        self.verify(msg, header)
+
+        return msg
 
     def sign(self, data, qop=None):
         if qop:

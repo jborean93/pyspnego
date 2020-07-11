@@ -30,14 +30,29 @@ all:
         - C:\Program Files\Python38
         - C:\Program Files (x86)\Python38-32
         python_venv_path: C:\temp\venv
+        krb_provider: SSPI
 
     linux:
       children:
         linux_children:
           hosts:
-            CENTOS8:
+            CENTOS8-MIT:
               ansible_host: 192.168.65.13
               vagrant_box: centos/8
+              krb_packages:
+              - gssntlmssp
+              - krb5-devel
+              - krb5-workstation
+              krb_provider: MIT
+            CENTOS8-HEIMDAL:
+              ansible_host: 192.168.65.14
+              vagrant_box: centos/8
+              krb_packages:
+              - heimdal-devel
+              - heimdal-libs
+              - heimdal-path
+              - heimdal-workstation
+              krb_provider: Heimdal
       vars:
         ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no
         python_interpreters:

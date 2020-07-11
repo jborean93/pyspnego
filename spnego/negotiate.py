@@ -284,11 +284,17 @@ class NegotiateProxy(ContextProxy):
     def wrap_iov(self, iov, encrypt=True, qop=None):
         return self._context.wrap_iov(iov, encrypt=encrypt, qop=qop)
 
+    def wrap_winrm(self, data):
+        return self._context.wrap_winrm(data)
+
     def unwrap(self, data):
         return self._context.unwrap(data)
 
     def unwrap_iov(self, iov):
         return self._context.unwrap_iov(iov)
+
+    def unwrap_winrm(self, header, data):
+        return self._context.unwrap_winrm(header, data)
 
     def sign(self, data, qop=None):
         return self._context.sign(data, qop=qop)
