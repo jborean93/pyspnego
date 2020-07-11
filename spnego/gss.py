@@ -492,16 +492,23 @@ class GSSAPIProxy(ContextProxy):
 
     def unwrap_winrm(self, header, data):
         # This is an extremely weird setup, we need to use gss_unwrap for NTLM but for Kerberos it depends on the
-        # underlying provider that is used. I know that MIT krb5 works with unwrap_iov of a specific buffer type
-        # so we use the description to check if we have that provider. This isn't perfect but the description has to
-        # match exactly for us to go with that route. In most cases gss_unwrap() works for all providers except when
-        # RC4 encryption is used hence why we have the MIT krb5 check.
+        # underlying provider that is used. Right now the proper IOV buffers required to work on both AES and RC4
+        # encrypted only works for MIT KRB5 whereas Heimdal fails. It currently mandates a padding buffer of a
+        # variable size which we cannot achieve in the way that WinRM encrypts the data. This is fixed in the source
+        # code but until it is widely distributed we just need to use a way that is known to just work with AES. To
+        # ensure that MIT works on both RC4 and AES we check the description which differs between the 2 implemtations.
+        # It's not perfect but I don't know of another way to achieve this until more time has passed.
         # https://github.com/heimdal/heimdal/issues/739
         sasl_desc = _gss_sasl_description(self._context.mech)
 
         # https://github.com/krb5/krb5/blob/f2e28f13156785851819fc74cae52100e0521690/src/lib/gssapi/krb5/gssapi_krb5.c#L686
         if sasl_desc and sasl_desc == b'Kerberos 5 GSS-API Mechanism':
-            iov = self.unwrap_iov([(IOVBufferType.header, header), data, IOVBufferType.data]).buffers
+            # TODO: Should done when self.negotiated_protocol == 'kerberos', above explains why this can't be done yet.
+            iov = self.unwrap_iov([
+                (IOVBufferType.header, False, header),
+                data,
+                IOVBufferType.data
+            ]).buffers
             return iov[1].data
 
         else:
