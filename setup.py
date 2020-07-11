@@ -86,7 +86,7 @@ setup(
     author='Jordan Borean',
     author_email='jborean93@gmail.com',
     url='https://github.com/jborean93/pyspnego',
-    description='Windows Negotiate Authentication Client',
+    description='Windows Negotiate Authentication Client and Server',
     long_description=long_description,
     long_description_content_type='text/markdown',
     keywords='windows spnego negotiate ntlm kerberos sspi gssapi auth',
