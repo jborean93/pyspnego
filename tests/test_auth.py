@@ -76,8 +76,8 @@ def _message_test(client, server):
     s_sig = server.sign(plaintext)
     client.verify(plaintext, s_sig)
 
-    # Can only continue if using NTLM or IOV is available
-    if client.negotiated_protocol != 'ntlm' or not client.iov_available():
+    # Can only continue if we are not testing Kerberos, or we are testing Kerberos and GSSAPI is available.
+    if client.negotiated_protocol == 'kerberos' and not client.iov_available():
         return
 
     plaintext = os.urandom(16)

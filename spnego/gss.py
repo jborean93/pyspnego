@@ -501,7 +501,7 @@ class GSSAPIProxy(ContextProxy):
 
         # https://github.com/krb5/krb5/blob/f2e28f13156785851819fc74cae52100e0521690/src/lib/gssapi/krb5/gssapi_krb5.c#L686
         if sasl_desc and sasl_desc == b'Kerberos 5 GSS-API Mechanism':
-            iov = self.unwrap_iov([(IOVBufferType.header, header), data, IOVBufferType.data])
+            iov = self.unwrap_iov([(IOVBufferType.header, header), data, IOVBufferType.data]).buffers
             return iov[1].data
 
         else:

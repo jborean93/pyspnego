@@ -363,18 +363,18 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
     boundary = 'Encrypted Boundary'
 
     if http.endpoint.startswith('http://'):
-        header, wrapped_content, padding = http.context.wrap_winrm(content)
+        header, wrapped_content, padding_len = http.context.wrap_winrm(content)
         protocol = 'application/HTTP-SPNEGO-session-encrypted'
 
         content = '\r\n'.join([
             '--%s' % boundary,
             'Content-Type: %s' % protocol,
-            'OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%s' % (len(content) + len(padding)),
+            'OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%s' % (len(content) + padding_len,),
             '--%s' % boundary,
             'Content-Type: application/octet-stream',
             '',
         ])
-        content = content.encode() + struct.pack("<i", len(header)) + header + wrapped_content + padding + \
+        content = content.encode() + struct.pack("<i", len(header)) + header + wrapped_content + \
             b'--%s--\r\n' % boundary.encode()
         content_type = 'multipart/encrypted;protocol="%s";boundary="%s"' % (protocol, boundary)
 
@@ -412,7 +412,10 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
                 payload = payload[1:]
             enc_content = payload.replace(b"Content-Type: application/octet-stream\r\n", b"")
 
-            unwrapped_data = http.context.unwrap_winrm(enc_content[4:])
+            enc_header_len = struct.unpack("<I", enc_content[:4])[0]
+            enc_header = enc_content[4:enc_header_len + 4]
+            enc_data = enc_content[4 + enc_header_len:]
+            unwrapped_data = http.context.unwrap_winrm(enc_header, enc_data)
             assert len(unwrapped_data) == expected_length
             content += unwrapped_data
 

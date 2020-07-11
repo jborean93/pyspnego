@@ -41,8 +41,8 @@ pip install gssapi --no-cache-dir
 ## Debugging Heimdal KRb5
 
 ```bash
-dnf install texinfo  # need makeinfo
-# autoreconf -f -i
+dnf install flex perl-JSON texinfo
+autoreconf -f -i
 ./configure CFLAGS=-g --prefix=/opt/heimdal-7.7.0/ --disable-otp
 make CFLAGS=-g
 sudo make install
