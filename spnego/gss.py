@@ -505,7 +505,7 @@ class GSSAPIProxy(ContextProxy):
         if sasl_desc and sasl_desc == b'Kerberos 5 GSS-API Mechanism':
             # TODO: Should done when self.negotiated_protocol == 'kerberos', above explains why this can't be done yet.
             iov = self.unwrap_iov([
-                (IOVBufferType.header, False, header),
+                (IOVBufferType.header, header),
                 data,
                 IOVBufferType.data
             ]).buffers
