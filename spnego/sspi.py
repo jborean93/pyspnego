@@ -265,28 +265,24 @@ class SSPIProxy(ContextProxy):
     @property
     def _context_attr_map(self):
         # The flags values slightly differ for a initiate and accept context.
-        if self.usage == 'initiate':
-            return [
-                (ContextReq.delegate, ClientContextReq.delegate),
-                # (ContextReq.delegate_policy, ClientContextReq.delegate),
-                (ContextReq.mutual_auth, ClientContextReq.mutual_auth),
-                (ContextReq.replay_detect, ClientContextReq.replay_detect),
-                (ContextReq.sequence_detect, ClientContextReq.sequence_detect),
-                (ContextReq.confidentiality, ClientContextReq.confidentiality),
-                (ContextReq.integrity, ClientContextReq.integrity),
-                (ContextReq.identify, ClientContextReq.identify),
-            ]
-        else:
-            return [
-                (ContextReq.delegate, ServerContextReq.delegate),
-                # (ContextReq.delegate_policy, ServerContextReq.delegate),
-                (ContextReq.mutual_auth, ServerContextReq.mutual_auth),
-                (ContextReq.replay_detect, ServerContextReq.replay_detect),
-                (ContextReq.sequence_detect, ServerContextReq.sequence_detect),
-                (ContextReq.confidentiality, ServerContextReq.confidentiality),
-                (ContextReq.integrity, ServerContextReq.integrity),
-                (ContextReq.identify, ServerContextReq.identify),
-            ]
+        sspi_req = ClientContextReq if self.usage == 'initiate' else ServerContextReq
+
+        attr_map = [
+            # SSPI does not differ between delegate and delegate_policy, it always respects delegate_policy.
+            (ContextReq.delegate, 'delegate'),
+            (ContextReq.delegate_policy, 'delegate'),
+            (ContextReq.mutual_auth, 'mutual_auth'),
+            (ContextReq.replay_detect, 'replay_detect'),
+            (ContextReq.sequence_detect, 'sequence_detect'),
+            (ContextReq.confidentiality, 'confidentiality'),
+            (ContextReq.integrity, 'integrity'),
+            (ContextReq.identify, 'identify'),
+        ]
+        attrs = []
+        for spnego_flag, gssapi_name in attr_map:
+            attrs.append((spnego_flag, getattr(sspi_req, gssapi_name)))
+
+        return attrs
 
     @property
     def _seq_num(self):

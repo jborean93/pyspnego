@@ -524,16 +524,26 @@ class GSSAPIProxy(ContextProxy):
 
     @property
     def _context_attr_map(self):
-        return [
-            (ContextReq.delegate, gssapi.RequirementFlag.delegate_to_peer),
-            (ContextReq.mutual_auth, gssapi.RequirementFlag.mutual_authentication),
-            (ContextReq.replay_detect, gssapi.RequirementFlag.replay_detection),
-            (ContextReq.sequence_detect, gssapi.RequirementFlag.out_of_sequence_detection),
-            (ContextReq.confidentiality, gssapi.RequirementFlag.confidentiality),
-            (ContextReq.integrity, gssapi.RequirementFlag.integrity),
-            (ContextReq.identify, getattr(gssapi.RequirementFlag, 'identify', 8192)),  # Only available with DCE ext.
-            # (ContextReq.delegate_policy, 32768),  # GSS_C_DELEG_POLICY_FLAG, doesn't seem to be in python gssapi.
+        attr_map = [
+            (ContextReq.delegate, 'delegate_to_peer'),
+            (ContextReq.mutual_auth, 'mutual_authentication'),
+            (ContextReq.replay_detect, 'replay_detection'),
+            (ContextReq.sequence_detect, 'out_of_sequence_detection'),
+            (ContextReq.confidentiality, 'confidentiality'),
+            (ContextReq.integrity, 'integrity'),
+
+            # Only present when the DCE extensions are installed.
+            (ContextReq.identify, 'identify'),
+
+            # Only present with newer versions of python-gssapi https://github.com/pythongssapi/python-gssapi/pull/218.
+            (ContextReq.delegate_policy, 'ok_as_delegate'),
         ]
+        attrs = []
+        for spnego_flag, gssapi_name in attr_map:
+            if hasattr(gssapi.RequirementFlag, gssapi_name):
+                attrs.append((spnego_flag, getattr(gssapi.RequirementFlag, gssapi_name)))
+
+        return attrs
 
     @property
     def _requires_mech_list_mic(self):

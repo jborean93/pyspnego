@@ -623,7 +623,7 @@ def test_winrm_cbt(option):
         if option == spnego.NegotiateOptions.use_negotiate:
             pytest.skip("The Python negotiate provider is not for use in Windows")
 
-    elif KERBEROS_PROVIDER == 'MIT'':
+    elif KERBEROS_PROVIDER == 'MIT':
         # There's a bug in MIT Negotiate where it doesn't pass along the channel bindings. This has been fixed but
         # is not present in any released version yet so just use Kerberos for this test.
         protocol = 'kerberos'

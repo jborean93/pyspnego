@@ -5,6 +5,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import collections
 import os
 import pytest
 import re
@@ -16,6 +17,29 @@ import spnego.iov
 from spnego.exceptions import (
     FeatureMissingError,
 )
+
+
+def test_gss_sasl_description_fail(mocker, monkeypatch):
+    gssapi = pytest.importorskip('gssapi')
+    SASLResult = collections.namedtuple('SASLResult', ['mech_description'])
+
+    mock_inquire_sasl = mocker.MagicMock()
+    mock_inquire_sasl.side_effect = [Exception, SASLResult(b'result')]
+    monkeypatch.setattr(gssapi.raw, 'inquire_saslname_for_mech', mock_inquire_sasl)
+
+    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3'))
+    assert actual is None
+
+    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3'))
+    assert actual is None
+
+    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3.4'))
+    assert actual == b'result'
+
+    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3.4'))
+    assert actual == b'result'
+
+    assert mock_inquire_sasl.call_count == 2
 
 
 def test_build_iov_list(kerb_cred):

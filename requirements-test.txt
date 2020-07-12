@@ -4,4 +4,5 @@ k5test ; sys_platform != 'win32'
 pycodestyle
 pytest
 pytest-cov
+pytest-mock
 pywin32 ; sys_platform == 'win32'
