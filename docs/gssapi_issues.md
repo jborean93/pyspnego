@@ -22,6 +22,7 @@ This is an evolving document and I'm trying to keep this updated as I figure out
 
 * [Channel bindings on MIT Negotiate](#channel-bindings-on-mit-negotiate)
 * [Delegation with explicit credentials](#delegation-with-explicit-credentials)
+* [Explicit Kerberos pass is stored in the credential cache](#explicit-kerberos-pass-is-stored-in-the-credential-cache)
 * [RC4 unwrapping on Heimdal](#rc4-unwrapping-on-heimdal)
 
 
@@ -73,8 +74,8 @@ cannot be used in a delegation scenario. The only workaround is to call `kinit`,
 explicitly state that the credential can be forwarded/delegated. In pyspnego this means that no password should be set
 when creating the context.
 
-I have not tested this but it looks like [this PR](https://github.com/heimdal/heimdal/pull/738) will fix the problem
-in Heimdal.
+This problem has been fixed by [this PR](https://github.com/heimdal/heimdal/pull/738) and looks like it will be
+backported to the 7 series of releases so I expect this to no longer be an issue once Heimdal 7.8 comes out.
 
 ### Code
 
@@ -102,6 +103,32 @@ Jul 10 01:54:48 2020  Jul 10 11:54:48 2020  IA     krbtgt/SPNEGO.TEST@SPNEGO.TES
 ```
 
 The flags should contain `F` to indicate the credential is forwardable.
+
+
+## Explicit Kerberos pass is stored in the credential cache
+
+### Versions affected
+
+| Distribution | MIT Version | Heimdal Version |
+|-|-|-|
+| N/A | <1.14 | N/A |
+
+### Description
+
+When using an explicit credential with Kerberos authentication the system call `gss_acquire_cred_with_password` is
+used. On MIT versions less than `1.14`, it will store those credentials in the system cache which is available to other
+processes for that user. This can be considered an issue as it exposes the Kerberos ticket to other processes allowing
+it to use the credentials provided by the script. Newer versions store this in a memory specific cache for that
+process.
+
+While this problem has been fixed since 1.14 older hosts are still affected by this problem. What they can do to
+workaround this problem and have the credentials be "private" is
+
+* Update the MIT krb5 version to at least 1.14
+* Set the env var `KRB5CCNAME` to a temp file accessible only by that user and delete once finished
+
+The latter env var is used to specify a custom credential cache when MIT goes to store the credential. By having it as
+a process specific temp file it will stop it from storing it in the default credential cache.
 
 
 ## RC4 unwrapping on Heimdal
