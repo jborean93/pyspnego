@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.1.0 - TBD
+## 0.1.0 - 2020-07-22
 
 Initial release of pyspnego
 
-### 0.1.0rc4 - TBD
+### 0.1.0rc4 - 2020-07-11
 
 * Added the `wrap_winrm` and `unwrap_winrm` methods to a context to cover the complexity of WinRM wrapping
 * Re-added `ContextReq.delegate_policy` and just make it optional based on the python-gssapi version installed
