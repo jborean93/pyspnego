@@ -16,7 +16,7 @@ schedules:
   displayName: Weekly CI build
   branches:
     include:
-    - master
+    - main
   always: true
 
 stages:
