@@ -11,6 +11,14 @@ trigger:
     - LICENSE
     - README.md
 
+schedules:
+- cron: 0 14 * * 0
+  displayName: Weekly CI build
+  branches:
+    include:
+    - master
+  always: true
+
 stages:
 - stage: Test
   jobs:
@@ -83,7 +91,7 @@ stages:
         bash <(curl -s https://codecov.io/bash)
       displayName: Upload to codecov.io
       continueOnError: true
-      timeoutInMinutes: 3
+      timeoutInMinutes: 5
 
   - job: Test_Windows
     pool:
@@ -169,7 +177,7 @@ stages:
         codecov.exe -f coverage.xml
       displayName: Upload to codecov.io
       continueOnError: true
-      timeoutInMinutes: 3
+      timeoutInMinutes: 5
 
     - script: |
         python setup.py clean --all build_ext --force --inplace 
