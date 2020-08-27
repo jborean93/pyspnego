@@ -1,2 +1,3 @@
 include LICENSE
 include CHANGELOG.md
+include spnego/_sspi_raw *.pyx *.pxd
