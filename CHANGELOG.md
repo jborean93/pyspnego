@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 - 2020-09-01
+
+* Include the cython files in the built sdist
+
 ## 0.1.0 - 2020-07-22
 
 Initial release of pyspnego
