@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 - TBD
+## 0.1.2 - 2020-10-01
 
 * Fix up WinRM wrapping on SSPI
 
