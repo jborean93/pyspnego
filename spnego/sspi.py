@@ -221,11 +221,10 @@ class SSPIProxy(ContextProxy):
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypt)
 
     def wrap_winrm(self, data):
-        iov = self.wrap_iov([BufferType.header, data, BufferType.padding]).buffers
+        iov = self.wrap_iov([BufferType.header, data]).buffers
         enc_data = iov[1].data
-        padding = iov[2].data or b""
 
-        return WinRMWrapResult(header=iov[0].data, data=enc_data + padding, padding_length=len(padding))
+        return WinRMWrapResult(header=iov[0].data, data=enc_data, padding_length=0)
 
     def unwrap(self, data):
         res = self.unwrap_iov([(BufferType.stream, data), BufferType.data])
@@ -240,7 +239,7 @@ class SSPIProxy(ContextProxy):
         return IOVUnwrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted, qop=qop)
 
     def unwrap_winrm(self, header, data):
-        iov = self.unwrap_iov([(BufferType.header, header), data, BufferType.padding]).buffers
+        iov = self.unwrap_iov([(BufferType.header, header), data]).buffers
         return iov[1].data
 
     @wrap_system_error(NativeError, "Signing message")

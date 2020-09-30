@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 - TBD
+
+* Fix up WinRM wrapping on SSPI
+
 ## 0.1.1 - 2020-09-01
 
 * Include the cython files in the built sdist
