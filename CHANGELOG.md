@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.3 - TBD
+## 0.1.3 - 2020-10-29
 
 * Added Python 3.9 to CI and build Windows wheel for this versoin
 
