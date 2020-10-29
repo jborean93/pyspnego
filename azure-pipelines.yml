@@ -134,7 +134,7 @@ stages:
           python.version: 3.9
           python.arch: x86
         Python39-x64:
-            python.version: 3.9
+          python.version: 3.9
           python.arch: x64
 
     steps:
