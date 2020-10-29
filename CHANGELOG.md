@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 - TBD
+
+* Added Python 3.9 to CI and build Windows wheel for this versoin
+
 ## 0.1.2 - 2020-10-01
 
 * Fix up WinRM wrapping on SSPI
