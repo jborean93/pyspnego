@@ -14,6 +14,7 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 import base64
 import collections
 import datetime
+import enum
 import struct
 
 from spnego._asn1 import (
@@ -31,25 +32,20 @@ from spnego._asn1 import (
     unpack_asn1_tagged_sequence,
 )
 
-from spnego._compat import (
+from spnego._text import (
+    to_text,
+)
+
+from typing import (
     Dict,
     List,
     Optional,
     Union,
-
-    add_metaclass,
-
-    IntEnum,
-    IntFlag,
-)
-
-from spnego._text import (
-    text_type,
-    to_text,
 )
 
 
-def _enum_labels(value, enum_type=None):  # type: (Union[int, IntEnum, IntFlag], Optional[type]) -> Dict[int, str]
+def _enum_labels(value, enum_type=None):
+    # type: (Union[int, enum.IntEnum, enum.IntFlag], Optional[type]) -> Dict[int, str]
     """ Gets the human friendly labels of a known enum and what value they map to. """
     def get_labels(v):
         return getattr(v, 'native_labels', lambda: {})()
@@ -57,8 +53,8 @@ def _enum_labels(value, enum_type=None):  # type: (Union[int, IntEnum, IntFlag],
     return get_labels(enum_type) if enum_type else get_labels(value)
 
 
-def parse_enum(value, enum_type=None):  # type: (Union[int, IntEnum], Optional[type]) -> str
-    """ Parses an IntEnum into a human representative object of that enum. """
+def parse_enum(value, enum_type=None):  # type: (Union[int, enum.IntEnum], Optional[type]) -> str
+    """ Parses an enum.IntEnum into a human representative object of that enum. """
     enum_name = 'UNKNOWN'
 
     labels = _enum_labels(value, enum_type)
@@ -103,13 +99,13 @@ def parse_kerberos_token(token, secret=None, encoding=None):
     def parse_default(value):  # type: (any) -> any
         return value
 
-    def parse_datetime(value):  # type: (datetime.datetime) -> text_type
+    def parse_datetime(value):  # type: (datetime.datetime) -> str
         return to_text(value.isoformat())
 
-    def parse_text(value):  # type: (bytes) -> text_type
+    def parse_text(value):  # type: (bytes) -> str
         return to_text(value, encoding=encoding, errors='replace')
 
-    def parse_bytes(value):  # type: (bytes) -> text_type
+    def parse_bytes(value):  # type: (bytes) -> str
         return to_text(base64.b16encode(value))
 
     def parse_principal_name(value):  # type: (PrincipalName) -> Dict[str, any]
@@ -224,7 +220,7 @@ Attributes:
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1 - ap-options
-class KerberosAPOptions(IntFlag):
+class KerberosAPOptions(enum.IntFlag):
     mutual_required = 0x00000020
     use_session_key = 0x00000040
     reserved = 0x00000080
@@ -239,7 +235,7 @@ class KerberosAPOptions(IntFlag):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1 - KDCOptions
-class KerberosKDCOptions:  # TODO: Use IntEnum when we've dropped py27
+class KerberosKDCOptions(enum.IntFlag):
     reserved = 0x80000000
     forwardable = 0x40000000
     forwarded = 0x20000000
@@ -312,7 +308,7 @@ class KerberosKDCOptions:  # TODO: Use IntEnum when we've dropped py27
 
 
 # https://ldapwiki.com/wiki/Kerberos%20Encryption%20Types - etypes
-class KerberosEncryptionType(IntEnum):
+class KerberosEncryptionType(enum.IntEnum):
     des_cbc_crc = 0x0001
     des_cbc_md4 = 0x0002
     des_cbc_md5 = 0x0003
@@ -349,7 +345,7 @@ class KerberosEncryptionType(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-7.5.9
-class KerberosErrorCode(IntEnum):
+class KerberosErrorCode(enum.IntEnum):
     none = 0
     name_exp = 1
     service_exp = 2
@@ -494,7 +490,7 @@ class KerberosErrorCode(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.10
-class KerberosMessageType(IntEnum):
+class KerberosMessageType(enum.IntEnum):
     as_req = 10
     as_rep = 11
     tgs_req = 12
@@ -517,7 +513,7 @@ class KerberosMessageType(IntEnum):
 
 
 # https://www.iana.org/assignments/kerberos-parameters/kerberos-parameters.xhtml
-class KerberosPADataType(IntEnum):
+class KerberosPADataType(enum.IntEnum):
     tgs_req = 1
     enc_timestamp = 2
     pw_salt = 3
@@ -661,7 +657,7 @@ class KerberosPADataType(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-6.2
-class KerberosPrincipalNameType(IntEnum):
+class KerberosPrincipalNameType(enum.IntEnum):
     unknown = 0
     principal = 1
     srv_inst = 2
@@ -688,7 +684,7 @@ class KerberosPrincipalNameType(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-7.5.3
-class KerberosHostAddressType(IntEnum):
+class KerberosHostAddressType(enum.IntEnum):
     ipv4 = 2
     directional = 3
     chaos_net = 5
@@ -714,7 +710,7 @@ class KerberosHostAddressType(IntEnum):
         }
 
 
-class ParseType(IntEnum):
+class ParseType(enum.IntEnum):
     default = 0
     enum = 1
     flags = 2
@@ -750,8 +746,7 @@ class _KerberosMsgType(type):
         return super(_KerberosMsgType, new_cls).__call__(sequence)
 
 
-@add_metaclass(_KerberosMsgType)
-class KerberosV5Msg:
+class KerberosV5Msg(metaclass=_KerberosMsgType):
 
     PVNO = 5
 
@@ -915,12 +910,7 @@ class KrbApReq(KerberosV5Msg):
 
     def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
         raw_ap_options = get_sequence_value(sequence, 2, 'AP-REQ', 'ap-options', unpack_asn1_bit_string)
-        ap_options = struct.unpack("<I", raw_ap_options)[0]
-
-        try:
-            ap_options = KerberosAPOptions(ap_options)
-        except ValueError:
-            pass
+        ap_options = KerberosAPOptions(struct.unpack("<I", raw_ap_options)[0])
 
         self.ap_options = ap_options
         self.ticket = get_sequence_value(sequence, 3, 'AP-REQ', 'ticket', Ticket.unpack)
@@ -928,7 +918,7 @@ class KrbApReq(KerberosV5Msg):
 
 
 class KrbApRep(KerberosV5Msg):
-    """The KRB_AP_REP message.
+    """The KRB_AP_REP message.c.n
 
     The KRB_AP_REP is a response to an application request `KRB_AP_REQ`.
 

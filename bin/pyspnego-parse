@@ -23,11 +23,6 @@ import re
 import struct
 import sys
 
-from spnego._compat import (
-    Dict,
-    Optional,
-)
-
 from spnego._context import (
     GSSMech,
 )
@@ -59,7 +54,6 @@ from spnego._ntlm_raw.messages import (
 
 from spnego._text import (
     to_bytes,
-    to_native,
     to_text,
 )
 
@@ -68,6 +62,11 @@ from spnego._spnego import (
     NegTokenInit,
     NegTokenResp,
     unpack_token,
+)
+
+from typing import (
+    Dict,
+    Optional,
 )
 
 try:
@@ -403,7 +402,7 @@ def main():
             file_path = os.path.abspath(os.path.expanduser(os.path.expandvars(args.file)))
             b_file_path = to_bytes(file_path)
             if not os.path.exists(b_file_path):
-                raise ValueError("Cannot find file at path '%s'" % to_native(b_file_path))
+                raise ValueError("Cannot find file at path '%s'" % to_text(b_file_path))
 
             with open(b_file_path, mode='rb') as fd:
                 b_data = fd.read()
@@ -492,7 +491,7 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
     except Exception as e:
         return {
             'MessageType': 'Unknown - Failed to parse see Data for more details.',
-            'Data': 'Failed to parse token: %s' % to_native(e),
+            'Data': 'Failed to parse token: %s' % to_text(e),
             'RawData': to_text(base64.b16encode(b_data)),
         }
 

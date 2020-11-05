@@ -8,14 +8,6 @@ import base64
 import io
 import logging
 import struct
-import sys
-
-from spnego._compat import (
-    List,
-    Tuple,
-
-    reraise,
-)
 
 from spnego._context import (
     ContextProxy,
@@ -35,14 +27,17 @@ from spnego.iov import (
 )
 
 from spnego._text import (
-    text_type,
-    to_native,
     to_text,
 )
 
 from spnego.exceptions import (
     SpnegoError,
     WinError as NativeError,
+)
+
+from typing import (
+    List,
+    Tuple,
 )
 
 log = logging.getLogger(__name__)
@@ -71,13 +66,13 @@ try:
         verify_signature,
         WinNTAuthIdentity,
     )
-except ImportError:
-    SSPI_IMP_ERR = sys.exc_info()
+except ImportError as e:
+    SSPI_IMP_ERR = str(e)
     HAS_SSPI = False
-    log.debug("SSPI bindings not available, cannot use any SSPIProxy protocols: %s" % str(SSPI_IMP_ERR[1]))
+    log.debug("SSPI bindings not available, cannot use any SSPIProxy protocols: %s" % e)
 
 
-def _available_protocols():  # type: () -> List[text_type, ...]
+def _available_protocols():  # type: () -> List[str, ...]
     """ Return a list of protocols that SSPIProxy can offer. """
     if HAS_SSPI:
         return ['kerberos', 'negotiate', 'ntlm']
@@ -107,7 +102,7 @@ class SSPIProxy(ContextProxy):
                  context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0):
 
         if not HAS_SSPI:
-            reraise(ImportError("SSPIProxy requires the SSPI Cython extension to be compiled"), SSPI_IMP_ERR)
+            raise ImportError("SSPIProxy requires the SSPI Cython extension to be compiled: %s" % SSPI_IMP_ERR)
 
         super(SSPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                         protocol, options, False)
@@ -141,7 +136,7 @@ class SSPIProxy(ContextProxy):
         try:
             self._credential = acquire_credentials_handle(**credential_kwargs)
         except NativeError as win_err:
-            reraise(SpnegoError(base_error=win_err, context_msg="Getting SSPI credential"))
+            raise SpnegoError(base_error=win_err, context_msg="Getting SSPI credential") from win_err
 
     @classmethod
     def available_protocols(cls, options=None):
@@ -161,7 +156,7 @@ class SSPIProxy(ContextProxy):
         # FIXME: Try and replicate GSSAPI. Will return None for acceptor until the first token is returned. Negotiate
         # for both iniator and acceptor until the context is established.
         package_info = query_context_attributes(self._context, SecPkgAttr.package_info)
-        return to_native(package_info.name).lower()
+        return to_text(package_info.name).lower()
 
     @property
     @wrap_system_error(NativeError, "Retrieving session key")

@@ -10,7 +10,6 @@ import sys
 import pytest
 
 from spnego._text import (
-    to_native,
     to_text,
 )
 
@@ -93,7 +92,7 @@ def test_sec_buffer_str():
     (None, None, u""),
     (u"", u"", u""),
     (u"user" + to_text(b"\xF0\x9D\x84\x9E"), u"domain" + to_text(b"\xF0\x9D\x84\x9E"),
-     to_native(u"domain{0}\\user{0}".format(to_text(b"\xF0\x9D\x84\x9E"))))
+     to_text(u"domain{0}\\user{0}".format(to_text(b"\xF0\x9D\x84\x9E"))))
 ])
 def test_win_nt_auth_identity(username, domain, expected):
     identity = sspi.WinNTAuthIdentity(username, domain, u"password")
@@ -109,7 +108,7 @@ def test_win_nt_auth_identity_set_username():
     test_user = u"user" + to_text(b"\xF0\x9D\x84\x9E")
     identity.username = test_user
     assert identity.username == test_user
-    assert str(identity) == to_native(test_user)
+    assert str(identity) == to_text(test_user)
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
@@ -119,7 +118,7 @@ def test_win_nt_auth_identity_set_domain():
     test_domain = u"domain" + to_text(b"\xF0\x9D\x84\x9E")
     identity.domain = test_domain
     assert identity.domain == test_domain
-    assert str(identity) == to_native(test_domain) + "\\"
+    assert str(identity) == to_text(test_domain) + "\\"
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')

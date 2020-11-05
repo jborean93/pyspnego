@@ -4,17 +4,6 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
-import sys
-
-PY2 = sys.version_info[0] == 2
-
-if PY2:
-    binary_type = str
-    text_type = unicode
-else:
-    binary_type = bytes
-    text_type = str
-
 
 def _obj_str(obj, default):
     # First try to get the str() then repr() before falling back to the default value.
@@ -30,9 +19,9 @@ def _obj_str(obj, default):
 
 
 def to_bytes(obj, encoding='utf-8', errors='strict', nonstring='str'):
-    if isinstance(obj, binary_type):
+    if isinstance(obj, bytes):
         return obj
-    elif isinstance(obj, text_type):
+    elif isinstance(obj, str):
         return obj.encode(encoding, errors)
 
     if nonstring == 'str':
@@ -46,9 +35,9 @@ def to_bytes(obj, encoding='utf-8', errors='strict', nonstring='str'):
 
 
 def to_text(obj, encoding='utf-8', errors='strict', nonstring='str'):
-    if isinstance(obj, text_type):
+    if isinstance(obj, str):
         return obj
-    elif isinstance(obj, binary_type):
+    elif isinstance(obj, bytes):
         return obj.decode(encoding, errors)
 
     if nonstring == 'str':
@@ -64,9 +53,3 @@ def to_text(obj, encoding='utf-8', errors='strict', nonstring='str'):
         return u''
     else:
         raise ValueError("Invalid nonstring value '%s', expecting repr, passthru, or empty" % nonstring)
-
-
-if PY2:
-    to_native = to_bytes
-else:
-    to_native = to_text

@@ -23,7 +23,6 @@ from spnego._ntlm_raw.messages import (
 
 from spnego._text import (
     to_bytes,
-    to_native,
     to_text,
 )
 
@@ -48,7 +47,7 @@ def test_get_credential_file_no_env_var():
 def test_get_credential_file_env_var_missing_file(tmpdir, monkeypatch):
     tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
 
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    monkeypatch.setenv('NTLM_USER_FILE', to_text(tmp_creds))
 
     actual = ntlm._get_credential_file()
     assert actual is None
@@ -59,7 +58,7 @@ def test_get_credential_file(tmpdir, monkeypatch):
     with open(tmp_creds, mode='wb') as fd:
         fd.write(b"data")
 
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    monkeypatch.setenv('NTLM_USER_FILE', to_text(tmp_creds))
 
     actual = ntlm._get_credential_file()
     assert actual == to_text(tmp_creds)
@@ -85,7 +84,7 @@ def test_get_credential_file(tmpdir, monkeypatch):
 ])
 def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, explicit, tmpdir, monkeypatch):
     tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    monkeypatch.setenv('NTLM_USER_FILE', to_text(tmp_creds))
     with open(tmp_creds, mode='wb') as fd:
         fd.write(to_bytes(line))
 
@@ -103,7 +102,7 @@ def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, expl
 
 def test_get_credential_from_file_no_matches(tmpdir, monkeypatch):
     tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    monkeypatch.setenv('NTLM_USER_FILE', to_text(tmp_creds))
     with open(tmp_creds, mode='wb') as fd:
         fd.write(b'domain:username:password')
 
@@ -114,7 +113,7 @@ def test_get_credential_from_file_no_matches(tmpdir, monkeypatch):
 
 @pytest.mark.parametrize('level', [-1, 6])
 def test_invalid_lm_compat_level(level, monkeypatch):
-    monkeypatch.setenv('LM_COMPAT_LEVEL', to_native(level))
+    monkeypatch.setenv('LM_COMPAT_LEVEL', to_text(level))
 
     expected = "Invalid LM_COMPAT_LEVEL %s, must be between 0 and 5" % level
     with pytest.raises(SpnegoError, match=re.escape(expected)):
@@ -138,13 +137,13 @@ def test_ntlm_invalid_usage():
 
 
 def test_ntlm_invalid_protocol():
-    with pytest.raises(ValueError, match="Invalid protocol 'fake', must be ntlm, kerberos, or negotiate"):
+    with pytest.raises(ValueError, match="Invalid protocol 'fake', must be ntlm, kerberos, negotiate, or credssp"):
         ntlm.NTLMProxy('user', 'pass', protocol='fake')
 
 
 def test_ntlm_iov_not_available():
-    expected = "The system is missing the GSSAPI IOV extension headers or NTLM is being requested, cannot utilitze " \
-               "wrap_iov and unwrap_iov"
+    expected = "The system is missing the GSSAPI IOV extension headers or NTLM or CredSSP is being requested, " \
+               "cannot utilize wrap_iov and unwrap_iov"
     with pytest.raises(FeatureMissingError, match=re.escape(expected)):
         ntlm.NTLMProxy('user', 'pass', options=spnego.NegotiateOptions.wrapping_iov)
 

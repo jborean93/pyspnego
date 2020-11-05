@@ -6,23 +6,7 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import abc
 import collections
-
-from spnego._compat import (
-    integer_types,
-
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-
-    add_metaclass,
-
-    reraise,
-
-    Enum,
-    IntFlag,
-)
+import enum
 
 from spnego.channel_bindings import (
     GssChannelBindings,
@@ -40,9 +24,15 @@ from spnego.iov import (
 )
 
 from spnego._text import (
-    text_type,
-    to_native,
     to_text,
+)
+
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
 )
 
 
@@ -88,7 +78,7 @@ def wrap_system_error(error_type, context=None):  # type: (type, Optional[str]) 
                 return func(*args, **kwargs)
 
             except error_type as native_err:
-                reraise(SpnegoError(base_error=native_err, context_msg=context))
+                raise SpnegoError(base_error=native_err, context_msg=context) from native_err
 
         return wrapper
     return decorator
@@ -138,7 +128,7 @@ Attributes:
 """
 
 
-class ContextReq(IntFlag):
+class ContextReq(enum.IntFlag):
     none = 0x00000000
 
     # GSSAPI|SSPI flags
@@ -157,7 +147,7 @@ class ContextReq(IntFlag):
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
 
 
-class GSSMech(Enum):
+class GSSMech(enum.Enum):
     ntlm = '1.3.6.1.4.1.311.2.2.10'
     spnego = '1.3.6.1.5.5.2'
 
@@ -230,8 +220,7 @@ class GSSMech(Enum):
             raise ValueError("'%s' is not a valid GSSMech OID" % oid)
 
 
-@add_metaclass(abc.ABCMeta)
-class ContextProxy:
+class ContextProxy(metaclass=abc.ABCMeta):
     """Base class for a authentication context.
 
     A base class the defined a common entry point for the various authentication context's that are used in this
@@ -253,10 +242,10 @@ class ContextProxy:
 
     Attributes:
         usage (str): The usage of the context, `initiate` for a client and `accept` for a server.
-        protocol (text_type): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
-        username (text_type): The username.
-        password (text_type): The password for username.
-        spn (text_type): The service principal name of the service to connect to.
+        protocol (str): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
+        username (str): The username.
+        password (str): The password for username.
+        spn (str): The service principal name of the service to connect to.
         channel_bindings (spnego.channel_bindings.GssChannelBindings): Optional channel bindings to provide with the
             context.
         options (NegotiateOptions): The user specified negotiation options.
@@ -265,14 +254,15 @@ class ContextProxy:
 
     def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol, options,
                  _is_wrapped):
-        # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, NegotiateOptions, bool) -> None  # noqa
+        # type: (Optional[str], Optional[str], Optional[str], Optional[str], Optional[GssChannelBindings], ContextReq, str, str, NegotiateOptions, bool) -> None  # noqa
         self.usage = usage.lower()
         if self.usage not in ['initiate', 'accept']:
             raise ValueError("Invalid usage '%s', must be initiate or accept" % self.usage)
 
         self.protocol = protocol.lower()
-        if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
-            raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
+        if self.protocol not in [u'ntlm', u'kerberos', u'negotiate', u'credssp']:
+            raise ValueError(to_text(u"Invalid protocol '%s', must be ntlm, kerberos, negotiate, or credssp"
+                                     % self.protocol))
 
         if self.protocol not in self.available_protocols(options=options):
             raise ValueError("Protocol %s is not available" % self.protocol)
@@ -337,7 +327,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def client_principal(self):  # type: () -> Optional[text_type]
+    def client_principal(self):  # type: () -> Optional[str]
         """The principal that was used authenticated by the acceptor.
 
         The name of the client principal that was used in the authentication context. This is `None` when
@@ -345,7 +335,7 @@ class ContextProxy:
         protocol and underlying library that was used to complete the authentication.
 
         Returns:
-            Optional[text_type]: The client principal name.
+            Optional[str]: The client principal name.
         """
         pass  # pragma: no cover
 
@@ -683,16 +673,16 @@ class ContextProxy:
                 if len(entry) != 2:
                     raise ValueError("IOV entry tuple must contain 2 values, the type and data, see IOVBuffer.")
 
-                if not isinstance(entry[0], integer_types):
+                if not isinstance(entry[0], int):
                     raise ValueError("IOV entry[0] must specify the BufferType as an int")
                 buffer_type = entry[0]
 
-                if entry[1] is not None and not isinstance(entry[1], (bytes, integer_types, bool)):
+                if entry[1] is not None and not isinstance(entry[1], (bytes, int, bool)):
                     raise ValueError("IOV entry[1] must specify the buffer bytes, length of the buffer, or whether "
                                      "it is auto allocated.")
                 data = entry[1] if entry[1] is not None else b""
 
-            elif isinstance(entry, integer_types):
+            elif isinstance(entry, int):
                 buffer_type = entry
                 data = None
 

@@ -5,13 +5,10 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import collections
-
-from spnego._compat import (
-    IntFlag,
-)
+import enum
 
 
-class BufferType(IntFlag):
+class BufferType(enum.IntFlag):
     """Buffer types to use for an IOVBuffer type.
 
     These are the IOVBuffer type flags that can be set for an IOVBuffer. The keys are a generified name for the

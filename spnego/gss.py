@@ -11,14 +11,6 @@ import os
 import sys
 import tempfile
 
-from spnego._compat import (
-    Generator,
-    List,
-    Optional,
-    Tuple,
-    reraise,
-)
-
 from spnego._context import (
     ContextProxy,
     ContextReq,
@@ -32,7 +24,6 @@ from spnego._context import (
 )
 
 from spnego._text import (
-    text_type,
     to_bytes,
     to_text,
 )
@@ -46,6 +37,13 @@ from spnego.exceptions import (
 from spnego.iov import (
     BufferType,
     IOVBuffer,
+)
+
+from typing import (
+    Generator,
+    List,
+    Optional,
+    Tuple,
 )
 
 
@@ -64,10 +62,10 @@ try:
         inquire_sec_context_by_oid,
         set_sec_context_option,
     )
-except ImportError:
-    GSSAPI_IMP_ERR = sys.exc_info()
+except ImportError as e:
+    GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False
-    log.debug("Python gssapi not available, cannot use any GSSAPIProxy protocols: %s" % str(GSSAPI_IMP_ERR[1]))
+    log.debug("Python gssapi not available, cannot use any GSSAPIProxy protocols: %s" % e)
 
 
 HAS_IOV = True
@@ -158,7 +156,7 @@ def _krb5_conf(forwardable=False):  # type: (bool) -> Generator[None, None, None
 
 
 def _get_gssapi_credential(mech, usage, username=None, password=None, context_req=None):
-    # type: (gssapi.OID, str, Optional[text_type], Optional[text_type]) -> gssapi.creds.Credentials
+    # type: (gssapi.OID, str, Optional[str], Optional[str]) -> gssapi.creds.Credentials
     """Gets a set of credential(s).
 
     Will get a set of GSSAPI credential(s) for the mech specified. If the username and password is specified then a new
@@ -347,7 +345,7 @@ class GSSAPIProxy(ContextProxy):
                  context_req=ContextReq.default, usage='initiate', protocol='negotiate', options=0, _is_wrapped=False):
 
         if not HAS_GSSAPI:
-            reraise(ImportError("GSSAPIProxy requires the Python gssapi library"), GSSAPI_IMP_ERR)
+            raise ImportError("GSSAPIProxy requires the Python gssapi library: %s" % GSSAPI_IMP_ERR)
 
         super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                           protocol, options, _is_wrapped)
@@ -364,7 +362,7 @@ class GSSAPIProxy(ContextProxy):
             cred = _get_gssapi_credential(mech, self.usage, username=username, password=password,
                                           context_req=context_req)
         except GSSError as gss_err:
-            reraise(SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential"))
+            raise SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential") from gss_err
 
         context_kwargs = {}
 

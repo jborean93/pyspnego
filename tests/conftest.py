@@ -12,7 +12,6 @@ import socket
 
 from spnego._text import (
     to_bytes,
-    to_native,
     to_text,
 )
 
@@ -88,7 +87,7 @@ def ntlm_cred(tmpdir, monkeypatch):
         with open(tmp_creds, mode='wb') as fd:
             fd.write(to_bytes(u'%s:%s:%s' % (domain, username, password)))
 
-        monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+        monkeypatch.setenv('NTLM_USER_FILE', to_text(tmp_creds))
 
         yield u"%s\\%s" % (domain, username), password
 
@@ -106,7 +105,7 @@ def kerb_cred(monkeypatch):
     realm = K5Realm()
     try:
         for k, v in realm.env.items():
-            monkeypatch.setenv(to_native(k), to_native(v))
+            monkeypatch.setenv(to_text(k), to_text(v))
 
         yield realm
 

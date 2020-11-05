@@ -6,27 +6,12 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import collections
 import datetime
+import enum
 import io
 import re
 import struct
 
-from spnego._compat import (
-    Callable,
-    Dict,
-    Optional,
-    Tuple,
-    Union,
-
-    add_metaclass,
-
-    IntEnum,
-    IntFlag,
-
-    UTC,
-)
-
 from spnego._text import (
-    text_type,
     to_bytes,
     to_text,
 )
@@ -35,11 +20,16 @@ from spnego._version import (
     __version__ as pyspnego_version,
 )
 
+from typing import (
+    Callable,
+    Dict,
+    Optional,
+    Tuple,
+    Union,
+)
 
-# TODO: Use _compat.IntFlag once Python 2.7 is dropped.
-# Cannot use it today as Python 2.7 on some systems have sys.maxint as a signed 32 bit integer and cannot have anything
-# > 0x7FFFFFFF set.
-class NegotiateFlags:
+
+class NegotiateFlags(enum.IntFlag):
     """NTLM Negotiation flags.
 
     Used during NTLM negotiation to negotiate the capabilities between the client and server.
@@ -118,7 +108,7 @@ class NegotiateFlags:
         }
 
 
-class AvId(IntFlag):
+class AvId(enum.IntFlag):
     """ID for an NTLM AV_PAIR.
 
     These are the IDs that can be set as the `AvId` on an `AV_PAIR`_.
@@ -155,7 +145,7 @@ class AvId(IntFlag):
         }
 
 
-class AvFlags(IntFlag):
+class AvFlags(enum.IntFlag):
     """MsvAvFlags for an AV_PAIR.
 
     These are the flags that can be set on the MsvAvFlags entry of an NTLM `AV_PAIR`_.
@@ -177,7 +167,7 @@ class AvFlags(IntFlag):
         }
 
 
-class MessageType(IntEnum):
+class MessageType(enum.IntEnum):
     negotiate = 1
     challenge = 2
     authenticate = 3
@@ -244,8 +234,7 @@ class _NTLMMessageMeta(type):
         return super(_NTLMMessageMeta, new_cls).__call__(*args, **kwargs)
 
 
-@add_metaclass(_NTLMMessageMeta)
-class NTLMMessage:
+class NTLMMessage(metaclass=_NTLMMessageMeta):
     """ Base NTLM message class that defines the pack and unpack functions. """
 
     MESSAGE_TYPE = 0
@@ -296,7 +285,7 @@ class Negotiate(NTLMMessage):
     MINIMUM_LENGTH = 32
 
     def __init__(self, flags=0, domain_name=None, workstation=None, version=None, encoding=None, _b_data=None):
-        # type: (int, Optional[text_type], Optional[text_type], Optional[Version], Optional[str], Optional[bytes]) -> None  # noqa
+        # type: (int, Optional[str], Optional[str], Optional[Version], Optional[str], Optional[bytes]) -> None  # noqa
         super(Negotiate, self).__init__(encoding=encoding, _b_data=_b_data)
 
         if not _b_data:
@@ -340,13 +329,13 @@ class Negotiate(NTLMMessage):
         self._data[12:16] = struct.pack("<I", value)
 
     @property
-    def domain_name(self):  # type: () -> Optional[text_type]
+    def domain_name(self):  # type: () -> Optional[str]
         """ The name of the client authentication domain. """
         return to_text(_unpack_payload(self._data, 16), encoding=self._encoding, errors='replace',
                        nonstring='passthru')
 
     @property
-    def workstation(self):  # type: () -> Optional[text_type]
+    def workstation(self):  # type: () -> Optional[str]
         """ The name of the client machine. """
         return to_text(_unpack_payload(self._data, 24), encoding=self._encoding, errors='replace',
                        nonstring='passthru')
@@ -390,7 +379,7 @@ class Challenge(NTLMMessage):
 
     def __init__(self, flags=0, server_challenge=None, target_name=None, target_info=None, version=None, encoding=None,
                  _b_data=None):
-        # type: (int, Optional[bytes], Optional[text_type], Optional[TargetInfo], Optional[Version], Optional[str], Optional[bytes]) -> None  # noqa
+        # type: (int, Optional[bytes], Optional[str], Optional[TargetInfo], Optional[Version], Optional[str], Optional[bytes]) -> None  # noqa
         super(Challenge, self).__init__(encoding=encoding, _b_data=_b_data)
 
         if _b_data:
@@ -434,7 +423,7 @@ class Challenge(NTLMMessage):
                 self.server_challenge = server_challenge
 
     @property
-    def target_name(self):  # type: () -> Optional[text_type]
+    def target_name(self):  # type: () -> Optional[str]
         """ The name of the server authentication realm. """
         return to_text(_unpack_payload(self._data, 12), encoding=self._encoding, nonstring='passthru')
 
@@ -508,7 +497,7 @@ class Authenticate(NTLMMessage):
     def __init__(self, flags=0, lm_challenge_response=None, nt_challenge_response=None, domain_name=None,
                  username=None, workstation=None, encrypted_session_key=None, version=None, mic=None, encoding=None,
                  _b_data=None):
-        # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes], Optional[str], Optional[bytes]) -> None  # noqa
+        # type: (int, Optional[bytes], Optional[bytes], Optional[str], Optional[str], Optional[str], Optional[bytes], Optional[Version], Optional[bytes], Optional[str], Optional[bytes]) -> None  # noqa
         super(Authenticate, self).__init__(encoding=encoding, _b_data=_b_data)
 
         if _b_data:
@@ -570,17 +559,17 @@ class Authenticate(NTLMMessage):
         return _unpack_payload(self._data, 20)
 
     @property
-    def domain_name(self):  # type: () -> Optional[text_type]
+    def domain_name(self):  # type: () -> Optional[str]
         """ The domain or computer name hosting the user account. """
         return to_text(_unpack_payload(self._data, 28), encoding=self._encoding, nonstring='passthru')
 
     @property
-    def user_name(self):  # type: () -> Optional[text_type]
+    def user_name(self):  # type: () -> Optional[str]
         """ The name of the user to be authenticated. """
         return to_text(_unpack_payload(self._data, 36), encoding=self._encoding, nonstring='passthru')
 
     @property
-    def workstation(self):  # type: () -> Optional[text_type]
+    def workstation(self):  # type: () -> Optional[str]
         """ The name of the computer to which the user is logged on. """
         return to_text(_unpack_payload(self._data, 44), encoding=self._encoding, nonstring='passthru')
 
@@ -705,7 +694,7 @@ class FileTime(datetime.datetime):
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
         # Make sure we are dealing with a timezone aware datetime
-        utc_tz = UTC()
+        utc_tz = datetime.timezone.utc
         utc_dt = self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz)
 
         # Get the time since UTC EPOCH in microseconds

@@ -6,26 +6,21 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import collections
 import datetime
+import enum
 import struct
 
-from spnego._compat import (
+from spnego._text import (
+    to_bytes,
+    to_text,
+)
+
+from typing import (
     Callable,
     Dict,
     List,
     Optional,
     Tuple,
     Union,
-
-    reraise,
-
-    IntEnum,
-
-    UTC,
-)
-
-from spnego._text import (
-    to_bytes,
-    to_text,
 )
 
 
@@ -44,7 +39,7 @@ Attributes:
 """
 
 
-class TagClass(IntEnum):
+class TagClass(enum.IntEnum):
     universal = 0
     application = 1
     context_specific = 2
@@ -60,7 +55,7 @@ class TagClass(IntEnum):
         }
 
 
-class TypeTagNumber(IntEnum):
+class TypeTagNumber(enum.IntEnum):
     end_of_content = 0
     boolean = 1
     integer = 2
@@ -178,7 +173,7 @@ def get_sequence_value(sequence, tag, structure_name, field_name=None, unpack_fu
         return unpack_func(sequence[tag])
     except ValueError as e:
         where = '%s in %s' % (field_name, structure_name) if field_name else structure_name
-        reraise(ValueError("Failed unpacking %s: %s" % (where, str(e))))
+        raise ValueError("Failed unpacking %s: %s" % (where, str(e))) from e
 
 
 def pack_asn1(tag_class, constructed, tag_number, b_data):
@@ -470,7 +465,7 @@ def unpack_asn1_generalized_time(value):  # type: (Union[bytes, ASN1Value]) -> d
     for datetime_format in ['%Y%m%d%H%M%S.%f', '%Y%m%d%H%M%S']:
         try:
             dt = datetime.datetime.strptime(data, datetime_format)
-            return dt.replace(tzinfo=UTC())
+            return dt.replace(tzinfo=datetime.timezone.utc)
         except ValueError as e:
             err = e
 

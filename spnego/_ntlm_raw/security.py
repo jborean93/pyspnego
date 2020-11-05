@@ -6,10 +6,6 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import struct
 
-from spnego._compat import (
-    Tuple,
-)
-
 from spnego._ntlm_raw.crypto import (
     crc32,
     hmac_md5,
@@ -23,6 +19,10 @@ from spnego._ntlm_raw.messages import (
 
 from spnego.exceptions import (
     OperationNotAvailableError,
+)
+
+from typing import (
+    Tuple,
 )
 
 

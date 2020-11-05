@@ -4,14 +4,13 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import enum
 import struct
 
-from spnego._compat import (
+from typing import (
     Optional,
     Tuple,
     Union,
-
-    IntEnum,
 )
 
 
@@ -35,7 +34,7 @@ def _unpack_value(b_mem, offset):  # type: (memoryview, int) -> Tuple[bytes, int
     return data, new_offset
 
 
-class AddressType(IntEnum):
+class AddressType(enum.IntEnum):
     unspecified = 0  # GSS_C_AF_UNSPEC
     local = 1  # GSS_C_AF_LOCAL
     inet = 2  # GSS_C_AF_INET

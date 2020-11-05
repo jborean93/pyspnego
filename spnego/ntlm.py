@@ -9,12 +9,6 @@ import logging
 import os
 import socket
 
-from spnego._compat import (
-    Dict,
-    Optional,
-    Tuple,
-)
-
 from spnego._context import (
     ContextProxy,
     ContextReq,
@@ -58,7 +52,6 @@ from spnego._ntlm_raw.messages import (
 )
 
 from spnego._text import (
-    text_type,
     to_text,
 )
 
@@ -72,10 +65,16 @@ from spnego.exceptions import (
     UnsupportedQop,
 )
 
+from typing import (
+    Dict,
+    Optional,
+    Tuple,
+)
+
 log = logging.getLogger(__name__)
 
 
-def _get_credential_file():  # type: () -> Optional[text_type]
+def _get_credential_file():  # type: () -> Optional[str]
     """Get the path to the NTLM credential store.
 
     Returns the path to the NTLM credential store specified by the environment variable `NTLM_USER_FILE`.
@@ -93,7 +92,7 @@ def _get_credential_file():  # type: () -> Optional[text_type]
 
 
 def _get_credential(store, domain=None, username=None):
-    # type: (text_type, Optional[text_type], Optional[text_type]) -> Tuple[text_type, text_type, bytes, bytes]
+    # type: (str, Optional[str], Optional[str]) -> Tuple[str, str, bytes, bytes]
     """Look up NTLM credentials from the common flat file.
 
     Retrieves the LM and NT hash for use with authentication or validating a credential from an initiator.
@@ -125,7 +124,7 @@ def _get_credential(store, domain=None, username=None):
         username: The username to get the credentials for. If omitted then the first entry in the store is used.
 
     Returns:
-        Tuple[text_type, text_type, bytes, bytes]: The domain, username, LM, and NT hash of the user specified.
+        Tuple[str, str, bytes, bytes]: The domain, username, LM, and NT hash of the user specified.
 
     .. _smbpasswd:
         https://www.samba.org/samba/docs/current/man-html/smbpasswd.5.html

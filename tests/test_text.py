@@ -79,7 +79,7 @@ def test_to_bytes_errors():
 
 
 def test_to_bytes_nonstr():
-    actual = text.to_bytes(Obj(str=text.to_native(u"café")))
+    actual = text.to_bytes(Obj(str=u"café"))
 
     assert actual == b"caf\xc3\xa9"
 
@@ -91,7 +91,7 @@ def test_to_bytes_nonstr_default():
 
 
 def test_to_bytes_nonstr_repr():
-    actual = text.to_bytes(ObjRepr(repr=text.to_native(u"café")))
+    actual = text.to_bytes(ObjRepr(repr=u"café"))
 
     assert actual == b"caf\xc3\xa9"
 
@@ -152,7 +152,7 @@ def test_to_text_errors():
 
 
 def test_to_text_nonstr():
-    actual = text.to_text(Obj(str=text.to_native(u"café")))
+    actual = text.to_text(Obj(str=u"café"))
 
     assert actual == u"café"
 
@@ -175,7 +175,7 @@ def test_to_text_nonstr_default():
 
 
 def test_to_text_nonstr_repr():
-    actual = text.to_text(ObjRepr(repr=text.to_native(u"café")))
+    actual = text.to_text(ObjRepr(repr=u"café"))
 
     assert actual == u"café"
 
@@ -201,20 +201,3 @@ def test_to_text_nonstr_empty():
 def test_to_text_nonstr_invalid():
     with pytest.raises(ValueError, match="Invalid nonstring value"):
         text.to_text(Obj(), nonstring='invalid')
-
-
-@pytest.mark.skipif(sys.version_info[0] == 3, reason='to_native is Python version specific')
-def test_to_native_py2():
-    actual = text.to_native(u"café")
-
-    assert isinstance(actual, str)
-    assert isinstance(actual, bytes)
-    assert actual == b"caf\xc3\xa9"
-
-
-@pytest.mark.skipif(sys.version_info[0] == 2, reason='to_native is Python version specific')
-def test_to_native_py3():
-    actual = text.to_native(u"café")
-
-    assert isinstance(actual, str)
-    assert actual == u"café"

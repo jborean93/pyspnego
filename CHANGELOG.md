@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0 - TBD
+
+* Dropped Python 2.7 and 3.5 support
+* Added support for CredSSP authentication using `protocol='credssp'`
+
 ## 0.1.4 - 2020-12-02
 
 * Only send `negState: request-mic` for the first reply from an acceptor for Negotiate auth.

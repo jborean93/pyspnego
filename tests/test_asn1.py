@@ -11,10 +11,6 @@ import re
 
 import spnego._asn1 as asn1
 
-from spnego._compat import (
-    UTC,
-)
-
 
 ASN1_TAG_TESTS = [
     # Simple universal
@@ -356,7 +352,7 @@ def test_unpack_asn1_boolean(value, expected):
     b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x2E\x30\x30\x30\x30\x30\x30\x5A",
 ])
 def test_unpack_asn1_generalized_time(value):
-    expected = datetime.datetime.fromtimestamp(0, tz=UTC())
+    expected = datetime.datetime.fromtimestamp(0, tz=datetime.timezone.utc)
 
     actual = asn1.unpack_asn1_generalized_time(value)
     assert actual == expected

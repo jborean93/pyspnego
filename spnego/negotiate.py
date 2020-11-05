@@ -9,12 +9,6 @@ import base64
 import collections
 import logging
 
-from spnego._compat import (
-    List,
-    Optional,
-    Tuple,
-)
-
 from spnego._context import (
     ContextProxy,
     ContextReq,
@@ -44,6 +38,12 @@ from spnego.gss import (
 
 from spnego.ntlm import (
     NTLMProxy,
+)
+
+from typing import (
+    List,
+    Optional,
+    Tuple,
 )
 
 log = logging.getLogger(__name__)

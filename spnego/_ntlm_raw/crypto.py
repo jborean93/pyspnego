@@ -30,11 +30,6 @@ from cryptography.hazmat.backends import (
     default_backend,
 )
 
-from spnego._compat import (
-    Optional,
-    Tuple,
-)
-
 from spnego._ntlm_raw.des import (
     DES,
 )
@@ -47,11 +42,14 @@ from spnego._ntlm_raw.messages import (
 )
 
 from spnego._text import (
-    text_type,
     to_bytes,
     to_text,
 )
 
+from typing import (
+    Optional,
+    Tuple,
+)
 
 # A user does not need to specify their actual plaintext password they can specify the LM and NT hash (from lmowfv1 and
 # ntowfv2) in the form 'lm_hash_hex:nt_hash_hex'. This is still considered a plaintext pass as we can use it to build
@@ -78,7 +76,7 @@ class RC4Handle:
         self._handle = cipher.encryptor()
 
 
-def _is_ntlm_hash(password):  # type: (text_type) -> bool
+def _is_ntlm_hash(password):  # type: (str) -> bool
     return bool(_NTLM_HASH_PATTERN.match(password))
 
 
@@ -307,7 +305,7 @@ def kxkey(flags, session_base_key, lmowf, lm_response, server_challenge):
         return session_base_key
 
 
-def lmowfv1(password):  # type: (text_type) -> bytes
+def lmowfv1(password):  # type: (str) -> bytes
     """NTLMv1 LMOWFv1 function
 
     The Lan Manager v1 one way function as documented under `NTLM v1 Authentication`_.
@@ -354,7 +352,7 @@ def md5(m):  # type: (bytes) -> bytes
     return hashlib.md5(m).digest()
 
 
-def ntowfv1(password):  # type: (text_type) -> bytes
+def ntowfv1(password):  # type: (str) -> bytes
     """NTLMv1 NTOWFv1 function
 
     The NT v1 one way function as documented under `NTLM v1 Authentication`_.
@@ -378,7 +376,7 @@ def ntowfv1(password):  # type: (text_type) -> bytes
     return md4(to_bytes(password, encoding='utf-16-le'))
 
 
-def ntowfv2(username, nt_hash, domain_name):  # type: (text_type, bytes, Optional[text_type]) -> bytes
+def ntowfv2(username, nt_hash, domain_name):  # type: (str, bytes, Optional[str]) -> bytes
     """NTLMv2 NTOWFv2 function
 
     The NT v2 one way function as documented under `NTLM v2 Authentication`_.

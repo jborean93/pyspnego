@@ -4,6 +4,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
+import enum
 import struct
 
 from spnego._asn1 import (
@@ -27,18 +28,6 @@ from spnego._asn1 import (
     unpack_asn1_tagged_sequence,
 )
 
-from spnego._compat import (
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-
-    IntEnum,
-    IntFlag,
-)
-
 from spnego._context import (
     GSSMech,
 )
@@ -49,6 +38,15 @@ from spnego._kerberos import (
 
 from spnego._ntlm_raw.messages import (
     NTLMMessage,
+)
+
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
 )
 
 
@@ -149,7 +147,7 @@ def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
 
 
 # https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.1 - ContextFlags
-class ContextFlags(IntFlag):
+class ContextFlags(enum.IntFlag):
     deleg = 0
     mutual = 1
     replay = 2
@@ -172,7 +170,7 @@ class ContextFlags(IntFlag):
 
 
 # https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.2 - negState
-class NegState(IntEnum):
+class NegState(enum.IntEnum):
     accept_complete = 0
     accept_incomplete = 1
     reject = 2
