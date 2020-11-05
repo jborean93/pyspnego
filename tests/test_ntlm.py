@@ -144,13 +144,13 @@ def test_ntlm_invalid_usage():
 
 
 def test_ntlm_invalid_protocol():
-    with pytest.raises(ValueError, match="Invalid protocol 'fake', must be ntlm, kerberos, or negotiate"):
+    with pytest.raises(ValueError, match="Invalid protocol 'fake', must be ntlm, kerberos, negotiate, or credssp"):
         ntlm.NTLMProxy('user', 'pass', protocol='fake')
 
 
 def test_ntlm_iov_not_available():
-    expected = "The system is missing the GSSAPI IOV extension headers or NTLM is being requested, cannot utilitze " \
-               "wrap_iov and unwrap_iov"
+    expected = "The system is missing the GSSAPI IOV extension headers or NTLM or CredSSP is being requested, " \
+               "cannot utilize wrap_iov and unwrap_iov"
     with pytest.raises(FeatureMissingError, match=re.escape(expected)):
         ntlm.NTLMProxy('user', 'pass', options=spnego.NegotiateOptions.wrapping_iov)
 

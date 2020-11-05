@@ -5,7 +5,6 @@ import base64
 import io
 import logging
 import struct
-import sys
 import typing
 
 from spnego._context import (
@@ -42,7 +41,7 @@ from spnego.exceptions import (
 log = logging.getLogger(__name__)
 
 HAS_SSPI = True
-# SSPI_IMP_ERR = None
+SSPI_IMP_ERR = None
 try:
     from spnego._sspi_raw import (
         accept_security_context,
@@ -65,10 +64,10 @@ try:
         verify_signature,
         WinNTAuthIdentity,
     )
-except ImportError:
-    # SSPI_IMP_ERR = sys.exc_info()
+except ImportError as e:
+    SSPI_IMP_ERR = str(e)
     HAS_SSPI = False
-    log.debug("SSPI bindings not available, cannot use any SSPIProxy protocols: %s" % str(sys.exc_info()[1]))
+    log.debug("SSPI bindings not available, cannot use any SSPIProxy protocols: %s" % e)
 
 
 def _available_protocols() -> typing.List[str]:
@@ -111,7 +110,7 @@ class SSPIProxy(ContextProxy):
     ) -> None:
 
         if not HAS_SSPI:
-            raise ImportError("SSPIProxy requires the SSPI Cython extension to be compiled")
+            raise ImportError("SSPIProxy requires the SSPI Cython extension to be compiled: %s" % SSPI_IMP_ERR)
 
         super(SSPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                         protocol, options, False)

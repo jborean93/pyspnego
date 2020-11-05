@@ -237,7 +237,7 @@ class KerberosAPOptions(enum.IntFlag):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1 - KDCOptions
-class KerberosKDCOptions:  # TODO: Use IntEnum when we've dropped py27
+class KerberosKDCOptions(enum.IntFlag):
     reserved = 0x80000000
     forwardable = 0x40000000
     forwarded = 0x20000000

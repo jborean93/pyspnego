@@ -261,8 +261,8 @@ class ContextProxy(metaclass=abc.ABCMeta):
             raise ValueError("Invalid usage '%s', must be initiate or accept" % self.usage)
 
         self.protocol = protocol.lower()
-        if self.protocol not in ['ntlm', 'kerberos', 'negotiate']:
-            raise ValueError("Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol)
+        if self.protocol not in ['ntlm', 'kerberos', 'negotiate', 'credssp']:
+            raise ValueError("Invalid protocol '%s', must be ntlm, kerberos, negotiate, or credssp" % self.protocol)
 
         if self.protocol not in self.available_protocols(options=options):
             raise ValueError("Protocol %s is not available" % self.protocol)
