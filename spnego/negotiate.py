@@ -360,6 +360,7 @@ class NegotiateProxy(ContextProxy):
             protocol = mech.name
             try:
                 proxy_obj = GSSAPIProxy if protocol in gssapi_protocols else NTLMProxy
+                log.debug("Checking %s with %s when building SPNEGO mech list" % (proxy_obj.__name__, protocol))
                 context = proxy_obj(protocol=protocol, **context_kwargs)
                 first_token = context.step() if self.usage == 'initiate' else None
             except Exception as e:

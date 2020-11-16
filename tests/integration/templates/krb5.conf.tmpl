@@ -1,5 +1,9 @@
 [libdefaults]
-  default_realm = {{ domain_name | upper}}
+  default_realm = {{ domain_name | upper }}
+{% if krb_provider == 'Heimdal' %}
+  # Heimdal - Don't try to resolve the hostnames passed in through DNS to speed up the tests
+  name_canon_rules = as-is:realm={{ domain_name | upper }}
+{% endif %}
 
 [realms]
   {{ domain_name | upper }} = {

@@ -135,35 +135,29 @@
       product_id: '{{ item.product_id }}'
       state: present
     with_items:
-    - url: https://www.python.org/ftp/python/2.7.18/python-2.7.18.msi
-      product_id: '{A5F504DF-2ED9-4A2D-A2F3-9D2750DD42D5}'
-      arguments: TARGETDIR="C:\Program Files\Python27-32" ALLUSERS=1
-    - url: https://www.python.org/ftp/python/2.7.18/python-2.7.18.amd64.msi
-      product_id: '{A5F504DF-2ED9-4A2D-A2F3-9D2750DD42D6}'
-      arguments: TARGETDIR="C:\Program Files\Python27" ALLUSERS=1
-    - url: https://www.python.org/ftp/python/3.5.4/python-3.5.4.exe
-      product_id: '{522FB3CA-6871-4466-9465-F9D65B59A345}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.5.4/python-3.5.4-amd64.exe
-      product_id: '{84848A30-C77B-4442-B84C-08B7B4DA1B01}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
     - url: https://www.python.org/ftp/python/3.6.8/python-3.6.8.exe
       product_id: '{B56829C6-1C25-469E-B351-1467C6295566}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
     - url: https://www.python.org/ftp/python/3.6.8/python-3.6.8-amd64.exe
       product_id: '{E1155302-B578-4D8C-8431-FAE677FBC58C}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.7.8/python-3.7.8.exe
-      product_id: '{EC08EC27-DBBB-4120-9D7C-6A3CB11BB5F2}'
+    - url: https://www.python.org/ftp/python/3.7.9/python-3.7.9.exe
+      product_id: '{65048DA1-5996-4FF9-B20A-66EB2E68D0A4}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.7.8/python-3.7.8-amd64.exe
-      product_id: '{0EEFE4AC-ED52-4F6F-A726-A9030991B75D}'
+    - url: https://www.python.org/ftp/python/3.7.9/python-3.7.9-amd64.exe
+      product_id: '{FF740026-2FC0-4F8A-A046-8B316AF4ECA6}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.3/python-3.8.3.exe
-      product_id: '{D1EFF389-2F77-4A46-8AFD-4F37BC6F1F99}'
+    - url: https://www.python.org/ftp/python/3.8.6/python-3.8.6.exe
+      product_id: '{F9A958E5-FB7D-443C-9E13-74E691793CDA}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.3/python-3.8.3-amd64.exe
-      product_id: '{245A2BD7-1E51-448C-810D-356286B18BA8}'
+    - url: https://www.python.org/ftp/python/3.8.6/python-3.8.6-amd64.exe
+      product_id: '{04BA74DE-13BE-477C-8FE5-19F247C0D555}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.9.0/python-3.9.0.exe
+      product_id: '{6C445CC2-203D-4669-BA6C-1FE72468B62B}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.9.0/python-3.9.0-amd64.exe
+      product_id: '{42480EE5-670F-4AF3-A619-2E761A398340}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
   - name: ensure virtualenv package is installed for each Python install
@@ -221,6 +215,18 @@
     register: cbt_res
     changed_when: cbt_res.stdout | trim | bool
 
+  - name: enable WSMan CredSSP Server
+    win_shell: |
+      $val = (Get-Item -LiteralPath WSMan:\localhost\Service\Auth\CredSSP).Value
+      if ($val -eq 'true') {
+          $false
+      } else {
+          $null = Enable-WSManCredSSP -Role Server
+          $true
+      }
+    register: credssp_res
+    changed_when: credssp_res.stdout | trim | bool
+
   - name: allow SMB traffic in
     win_firewall_rule:
       name: File and Printer Sharing (SMB-In)
@@ -234,7 +240,7 @@
   handlers:
   - name: restart NetworkManager.service
     service:
-      name: NetworkManager
+      name: NetworkManager.service
       state: restarted
 
   tasks:
@@ -244,10 +250,9 @@
       - dnsmasq
       - epel-release
       - gcc
-      - python2
-      - python2-devel
       - python3
       - python3-devel
+      - unzip
       - vim
       state: present
 
@@ -261,10 +266,7 @@
       name:
       - virtualenv
       - wheel
-      executable: '{{ item }}'
-    with_items:
-    - /usr/bin/pip2
-    - /usr/bin/pip3
+      executable: /usr/bin/pip3
 
   - name: setup NetworkManager to use dnsmasq
     copy:
