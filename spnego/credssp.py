@@ -115,7 +115,7 @@ def _create_tls_context(usage, options):  # type: (str, NegotiateOptions) -> TLS
     # OP_NO_* options.
     use_tls1 = bool(options & NegotiateOptions.credssp_allow_tlsv1)
     try:
-        ctx.minimum_version = ssl.TLSVersion.TLSv1 if use_tls1 else ssl.TLSVersion.TLSv1_2
+        ctx.minimum_version = ssl.TLSVersion.TLSv1 if use_tls1 else ssl.TLSVersion.TLSv1_3
     except (ValueError, AttributeError):
         ctx.options |= ssl.Options.OP_NO_SSLv2 | ssl.Options.OP_NO_SSLv3
         if not use_tls1:
@@ -210,7 +210,7 @@ def _get_pub_key_auth(pub_key, usage, nonce=None):  # type: (bytes, str, Optiona
     return key_auth
 
 
-def _tls_trailer_length(data_length, cipher_suite):  # type: (int, str) -> int
+def _tls_trailer_length(data_length, protocol, cipher_suite):  # type: (int, str, str) -> int
     """Gets the length of the TLS trailer.
 
     WinRM wrapping needs to split the trailer/header with the data but the length of the trailer is dependent on the
@@ -220,6 +220,7 @@ def _tls_trailer_length(data_length, cipher_suite):  # type: (int, str) -> int
 
     Params:
         data_length: The length of the TLS data used to calculate the padding size.
+        protocol: The TLS protocol negotiated between the client and server.
         cipher_suite: The TLS cipher suite negotiated between the client and server.
 
     Returns:
@@ -231,12 +232,17 @@ def _tls_trailer_length(data_length, cipher_suite):  # type: (int, str) -> int
     .. _SecPkgContext_StreamSizes:
         https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes
     """
-    if re.match(r'^.*-GCM-[\w\d]*$', cipher_suite):
+    if protocol == 'TLSv1.3':
+        # The 2 cipher suites that MS supports for TLS 1.3 (TLS_AES_*_GCM_SHA*) have a fixed length of 17. This may
+        # change in the future but it works for now.
+        trailer_length = 17
+
+    elif re.match(r'^.*[-_]GCM[-_][\w\d]*$', cipher_suite):
         # GCM has a fixed length of 16 bytes
         trailer_length = 16
 
     else:
-        # For other cipher suites, trailer size == len(hmac) + len(padding) the padding it the length required by the
+        # For other cipher suites, trailer size == len(hmac) + len(padding) the padding is the length required by the
         # chosen block cipher.
         hash_algorithm = cipher_suite.split('-')[-1]
 
@@ -497,7 +503,7 @@ class CredSSPProxy(ContextProxy):
                     break
 
         except ssl.SSLError as e:
-            raise InvalidTokenError(context_msg="TLS handshake for CredSSP") from e
+            raise InvalidTokenError(context_msg="TLS handshake for CredSSP: %s" % e) from e
 
         cipher, protocol, _ = self._tls_context.cipher()
         log.debug("TLS handshake complete, negotiation details: %s %s", protocol, cipher)
@@ -531,8 +537,8 @@ class CredSSPProxy(ContextProxy):
 
     def wrap_winrm(self, data):
         enc_data = self.wrap(data).data
-        cipher_negotiated = self._tls_context.cipher()[0]
-        trailer_length = _tls_trailer_length(len(data), cipher_negotiated)
+        cipher_negotiated, tls_protocol, _ = self._tls_context.cipher()
+        trailer_length = _tls_trailer_length(len(data), tls_protocol, cipher_negotiated)
 
         return WinRMWrapResult(header=enc_data[:trailer_length], data=enc_data[trailer_length:], padding_length=0)
 

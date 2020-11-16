@@ -47,15 +47,17 @@ def test_pub_key_auth(expected, usage, nonce):
     assert actual == expected
 
 
-@pytest.mark.parametrize('cipher, expected', [
-    ['ECDHE-RSA-AES128-GCM-SHA256', 16],
-    ['RC4-MD5', 16],
-    ['ECDH-ECDSA-3DES-SHA256', 34],
-    ['ECDH-RSA-AES-SHA384', 50],
-    ['ECDH-RSA-AES', 2],
+@pytest.mark.parametrize('protocol, cipher, expected', [
+    ['TLSv1.3', 'TLS_AES_128_GCM_SHA256', 17],
+    ['TLSv1.3', 'TLS_AES_256_GCM_SHA384', 17],
+    ['TLSv1.2', 'ECDHE-RSA-AES128-GCM-SHA256', 16],
+    ['TLSv1.2', 'RC4-MD5', 16],
+    ['TLSv1.2', 'ECDH-ECDSA-3DES-SHA256', 34],
+    ['TLSv1.2', 'ECDH-RSA-AES-SHA384', 50],
+    ['TLSv1.2', 'ECDH-RSA-AES', 2],
 ])
-def test_get_credssp_trailer_length(cipher, expected):
-    actual = credssp._tls_trailer_length(30, cipher)
+def test_get_credssp_trailer_length(protocol, cipher, expected):
+    actual = credssp._tls_trailer_length(30, protocol, cipher)
     assert actual == expected
 
 

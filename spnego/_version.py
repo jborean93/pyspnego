@@ -5,4 +5,3 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 __version__ = '0.2.0'
-
