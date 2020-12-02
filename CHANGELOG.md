@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.4 - TBD
+## 0.1.4 - 2020-12-02
 
 * Only send `negState: request-mic` for the first reply from an acceptor for Negotiate auth.
   * Strict interpretations of SPNEGO will fail if the initiator sends this state as it is against the RFC.
