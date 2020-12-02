@@ -1,8 +1,13 @@
 # Changelog
 
+## 0.1.4 - TBD
+
+* Only send `negState: request-mic` for the first reply from an acceptor for Negotiate auth.
+  * Strict interpretations of SPNEGO will fail if the initiator sends this state as it is against the RFC.
+
 ## 0.1.3 - 2020-10-29
 
-* Added Python 3.9 to CI and build Windows wheel for this versoin
+* Added Python 3.9 to CI and build Windows wheel for this version
 
 ## 0.1.2 - 2020-10-01
 

@@ -169,15 +169,18 @@ class NegotiateProxy(ContextProxy):
                     self._init_sent = True
                     self._mech_list = in_token.mech_types
 
+                    # If the preferred initiator token does not match the preferred acceptor token then the acceptor
+                    # must send the request-mic negState.
+                    preferred_mech = self._preferred_mech_list()[0]
+                    if preferred_mech.value != in_token.mech_types[0]:
+                        self._mic_required = True
+
             elif isinstance(in_token, NegTokenResp):
                 mech_list_mic = in_token.mech_list_mic
                 token = in_token.response_token
 
                 # If we have received the supported_mech then we don't need to send our own.
                 if in_token.supported_mech:
-                    if in_token.supported_mech != self._chosen_mech.value:
-                        self._mic_required = True
-
                     self.__chosen_mech = GSSMech.from_oid(in_token.supported_mech)
                     self._mech_sent = True
 
@@ -237,7 +240,7 @@ class NegotiateProxy(ContextProxy):
             if self._mic_sent:
                 self._complete = True
 
-        if self._mic_required and not self._mic_sent:
+        if self._context.complete and self._mic_required and not self._mic_sent:
             out_mic = self.sign(pack_mech_type_list(self._mech_list))
             self._reset_ntlm_crypto_state()
 
@@ -259,21 +262,22 @@ class NegotiateProxy(ContextProxy):
             return NegTokenInit(self._mech_list, **init_kwargs).pack()
 
         elif not self.complete:
+            state = NegState.accept_incomplete
+
             # As per RFC 4178 - 4.2.2: supportedMech should only be present in the first reply from the target.
+            # Also 'negState: request-mic' MUST only be in the first reply from the target if it is needed.
             # https://tools.ietf.org/html/rfc4178#section-4.2.2
             supported_mech = None
             if not self._mech_sent:
                 supported_mech = self._chosen_mech.value
+                if self._mic_required:
+                    state = NegState.request_mic
+
                 self._mech_sent = True
 
-            state = NegState.accept_incomplete
-
-            if self._context.complete:
-                if self._mic_sent and not self._mic_recv:
-                    state = NegState.request_mic
-                else:
-                    state = NegState.accept_complete
-                    self._complete = True
+            if self._context.complete and (not self._mic_required or (self._mic_sent and self._mic_recv)):
+                state = NegState.accept_complete
+                self._complete = True
 
             return NegTokenResp(neg_state=state, supported_mech=supported_mech, response_token=out_token,
                                 mech_list_mic=out_mic).pack()
@@ -325,6 +329,11 @@ class NegotiateProxy(ContextProxy):
     def _convert_iov_buffer(self, iov):
         pass  # Handled in the underlying context.  # pragma: no cover
 
+    def _preferred_mech_list(self):  # type: () -> List[GSSMech]
+        """ Get a list of mechs that can be used in priority order (highest to lowest). """
+        available_protocols = [p for p in self.available_protocols(self.options) if p != 'negotiate']
+        return [getattr(GSSMech, p) for p in available_protocols]
+
     def _rebuild_context_list(self, mech_types=None):  # type: (Optional[List[str]]) -> List[str]
         """ Builds a new context list that are available to the client. """
         context_kwargs = {
@@ -338,19 +347,17 @@ class NegotiateProxy(ContextProxy):
             'options': self.options,
             '_is_wrapped': True,
         }
-        gssapi_protocols = [p for p in GSSAPIProxy.available_protocols(options=self.options) if p != 'negotiate']
-        all_protocols = gssapi_protocols[:]
-        if 'ntlm' not in all_protocols:
-            all_protocols.append('ntlm')
+        gssapi_protocols = GSSAPIProxy.available_protocols(options=self.options)
+        all_protocols = self._preferred_mech_list()
 
         self._context_list = collections.OrderedDict()
         mech_list = []
         last_err = None
-        for protocol in all_protocols:
-            mech = getattr(GSSMech, protocol)
+        for mech in all_protocols:
             if mech_types and mech.value not in mech_types:
                 continue
 
+            protocol = mech.name
             try:
                 proxy_obj = GSSAPIProxy if protocol in gssapi_protocols else NTLMProxy
                 context = proxy_obj(protocol=protocol, **context_kwargs)
