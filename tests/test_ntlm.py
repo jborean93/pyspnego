@@ -257,7 +257,7 @@ def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
                       options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
-    
+
     b_negotiate = c.step()
     negotiate = Negotiate.unpack(b_negotiate)
 
@@ -275,7 +275,7 @@ def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
 
     version = Version(10, 0, 0, 1)
     challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info, version=version)
-    
+
     b_auth = c.step(challenge.pack())
     auth = Authenticate.unpack(b_auth)
 
@@ -314,7 +314,7 @@ def test_ntlm_custom_time(include_time, expected, ntlm_cred, mocker, monkeypatch
     mock_now = mocker.MagicMock()
     mock_now.side_effect = FileTime.now
     monkeypatch.setattr(FileTime, 'now', mock_now)
-    
+
     c.step(challenge.pack())
     assert c.complete
     assert mock_now.call_count == expected

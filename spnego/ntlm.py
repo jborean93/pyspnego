@@ -179,11 +179,11 @@ def _get_credential(store, domain=None, username=None):
 
 def _get_workstation():  # type: () -> Optional[str]
     """Get the current workstation name.
-    
+
     This gets the current workstation name that respects `NETBIOS_COMPUTER_NAME`. The env var is used by the library
     that gss-ntlmssp calls and makes sure that this Python implementation is a closer in its behaviour.
 
-    Returns:    
+    Returns:
         Optional[str]: The workstation to supply in the NTLM authentication message or None.
     """
     if 'NETBIOS_COMPUTER_NAME' in os.environ:
@@ -191,7 +191,7 @@ def _get_workstation():  # type: () -> Optional[str]
 
     else:
         workstation = to_text(socket.gethostname()).upper()
-        
+
     # An empty workstation should be None so we don't set it in the message.
     return workstation if workstation else None
 
