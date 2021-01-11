@@ -177,6 +177,25 @@ def _get_credential(store, domain=None, username=None):
                                                              "NTLM_USER_FILE credential store.")
 
 
+def _get_workstation():  # type: () -> Optional[str]
+    """Get the current workstation name.
+    
+    This gets the current workstation name that respects `NETBIOS_COMPUTER_NAME`. The env var is used by the library
+    that gss-ntlmssp calls and makes sure that this Python implementation is a closer in its behaviour.
+
+    Returns:    
+        Optional[str]: The workstation to supply in the NTLM authentication message or None.
+    """
+    if 'NETBIOS_COMPUTER_NAME' in os.environ:
+        workstation = os.environ['NETBIOS_COMPUTER_NAME']
+
+    else:
+        workstation = to_text(socket.gethostname()).upper()
+        
+    # An empty workstation should be None so we don't set it in the message.
+    return workstation if workstation else None
+
+
 class _NTLMCredential:
 
     def __init__(self, domain=None, username=None, password=None):
@@ -338,7 +357,7 @@ class NTLMProxy(ContextProxy):
 
         if challenge.flags & NegotiateFlags.version:
             auth_kwargs['version'] = Version.get_current()
-            auth_kwargs['workstation'] = to_text(socket.gethostname()).upper()
+            auth_kwargs['workstation'] = _get_workstation()
 
         nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, self._credential)
 
