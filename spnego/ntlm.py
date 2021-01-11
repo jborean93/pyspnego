@@ -190,10 +190,10 @@ def _get_workstation():  # type: () -> Optional[str]
         workstation = os.environ['NETBIOS_COMPUTER_NAME']
 
     else:
-        workstation = to_text(socket.gethostname()).upper()
+        workstation = socket.gethostname().upper()
 
     # An empty workstation should be None so we don't set it in the message.
-    return workstation if workstation else None
+    return to_text(workstation) if workstation else None
 
 
 class _NTLMCredential:
