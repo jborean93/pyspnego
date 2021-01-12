@@ -19,6 +19,13 @@ import spnego.sspi
 
 from spnego._ntlm_raw.messages import (
     Authenticate,
+    AvId,
+    Challenge,
+    FileTime,
+    Negotiate,
+    NegotiateFlags,
+    TargetInfo,
+    Version,
 )
 
 from spnego._text import (
@@ -237,6 +244,80 @@ def test_ntlm_bad_mic(ntlm_cred):
 
     with pytest.raises(InvalidTokenError, match="Invalid MIC in NTLM authentication message"):
         s.step(auth.tobytes())
+
+
+@pytest.mark.parametrize('env_var, expected', [
+    (None, to_text(socket.gethostname()).upper()),
+    ('', None),
+    ('custom', 'custom'),
+])
+def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
+    if env_var is not None:
+        monkeypatch.setenv('NETBIOS_COMPUTER_NAME', env_var)
+
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    b_negotiate = c.step()
+    negotiate = Negotiate.unpack(b_negotiate)
+
+    flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
+        NegotiateFlags.always_sign | NegotiateFlags.target_info | NegotiateFlags.target_type_server
+
+    server_challenge = os.urandom(8)
+    target_name = to_text(socket.gethostname()).upper()
+
+    target_info = TargetInfo()
+    target_info[AvId.nb_computer_name] = target_name
+    target_info[AvId.nb_domain_name] = u"WORKSTATION"
+    target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
+    target_info[AvId.timestamp] = FileTime.now()
+
+    version = Version(10, 0, 0, 1)
+    challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info, version=version)
+
+    b_auth = c.step(challenge.pack())
+    auth = Authenticate.unpack(b_auth)
+
+    assert auth.workstation == expected
+
+
+@pytest.mark.parametrize('include_time, expected', [
+    # If the challenge didn't contain the time then the client should generate it's own otherwise it uses the challenge
+    # time.
+    (True, 0),
+    (False, 1),
+])
+def test_ntlm_custom_time(include_time, expected, ntlm_cred, mocker, monkeypatch):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    b_negotiate = c.step()
+    negotiate = Negotiate.unpack(b_negotiate)
+
+    flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
+        NegotiateFlags.always_sign | NegotiateFlags.target_info | NegotiateFlags.target_type_server
+
+    server_challenge = os.urandom(8)
+    target_name = to_text(socket.gethostname()).upper()
+
+    target_info = TargetInfo()
+    target_info[AvId.nb_computer_name] = target_name
+    target_info[AvId.nb_domain_name] = u"WORKSTATION"
+    target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
+
+    if include_time:
+        target_info[AvId.timestamp] = FileTime.now()
+
+    challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info)
+
+    mock_now = mocker.MagicMock()
+    mock_now.side_effect = FileTime.now
+    monkeypatch.setattr(FileTime, 'now', mock_now)
+
+    c.step(challenge.pack())
+    assert c.complete
+    assert mock_now.call_count == expected
 
 
 def test_ntlm_no_key_exch(ntlm_cred):

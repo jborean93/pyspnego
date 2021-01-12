@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5 - TBD
+
+* Respect `NETBIOS_COMPUTER_NAME` when getting the workstation name for NTLM tokens. This matches the behaviour of `gss-ntlmssp` to ensure a consistent approach.
+
 ## 0.1.4 - 2020-12-02
 
 * Only send `negState: request-mic` for the first reply from an acceptor for Negotiate auth.
