@@ -3,6 +3,7 @@
 [![Build Status](https://dev.azure.com/jborean93/jborean93/_apis/build/status/jborean93.pyspnego?branchName=main)](https://dev.azure.com/jborean93/jborean93/_build/latest?definitionId=2&branchName=main)
 [![codecov](https://codecov.io/gh/jborean93/pyspnego/branch/main/graph/badge.svg)](https://codecov.io/gh/jborean93/pyspnego)
 [![PyPI version](https://badge.fury.io/py/pyspnego.svg)](https://badge.fury.io/py/pyspnego)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jborean93/pyspnego/blob/master/LICENSE)
 
 Library to handle SPNEGO (Negotiate, NTLM, Kerberos) authentication. Also includes a packet parser that can be used to
 decode raw NTLM/SPNEGO/Kerberos tokens into a human readable format.

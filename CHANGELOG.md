@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.5 - TBD
+## 0.1.5 - 2021-01-12
 
 * Respect `NETBIOS_COMPUTER_NAME` when getting the workstation name for NTLM tokens. This matches the behaviour of `gss-ntlmssp` to ensure a consistent approach.
 
