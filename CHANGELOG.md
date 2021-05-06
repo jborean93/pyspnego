@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6 - TBD
+
+* Change enum type of `iov.BufferType` to `IntEnum` to fix load on Python 3.10 - https://github.com/jborean93/pyspnego/issues/10
+
 ## 0.1.5 - 2021-01-12
 
 * Respect `NETBIOS_COMPUTER_NAME` when getting the workstation name for NTLM tokens. This matches the behaviour of `gss-ntlmssp` to ensure a consistent approach.
