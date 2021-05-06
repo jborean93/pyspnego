@@ -144,15 +144,16 @@ stages:
         versionSpec: $(python.version)
         architecture: $(python.arch)
 
-    - script: |
+    - powershell: |
         $msiPath = Join-Path ([IO.Path]::GetTempPath()) 'VSForPython27.msi'
         [Net.WebClient]::new().DownloadFile('https://raw.githubusercontent.com/jborean93/VCPython27/master/VCForPython27.msi', $msiPath)
         Start-Process -FilePath msiexec.exe -Wait -ArgumentList @(
             '/i',
             $msiPath,
             '/qn',
-            '/norestart',
+            '/norestart'
         )
+      errorActionPreference: stop
       displayName: Install Python C++ build tools
       condition: eq(variables['python.version'], '2.7')
 
