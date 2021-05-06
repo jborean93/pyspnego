@@ -63,9 +63,11 @@ setup(
     name='pyspnego',
     version=get_version(os.path.join('spnego', '_version.py')),
     packages=['spnego', 'spnego._ntlm_raw', 'spnego._sspi_raw'],
-    scripts=[
-        'bin/pyspnego-parse',
-    ],
+    entry_points={
+        "console_scripts": [
+            "pyspnego-parse = spnego.__main__:main"
+        ]
+    },
     ext_modules=extensions,
     include_package_data=True,
     install_requires=[
