@@ -114,7 +114,7 @@ def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
 
         initial_context_token = InitialContextToken.unpack(raw_data.b_data)
 
-        # unwrap=True is called from pyspnego-parse and we don't want to loose any info in the output.
+        # unwrap=True is called from python -m spnego and we don't want to loose any info in the output.
         if unwrap:
             return initial_context_token
 

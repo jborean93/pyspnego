@@ -3,7 +3,7 @@
 
 """Kerberos Messages
 
-Various Kerberos message structures that is used by 'pyspnego-parse.py' to unpack raw ASN.1 values and print out a
+Various Kerberos message structures that is used by 'python -m spnego' to unpack raw ASN.1 values and print out a
 pretty structure for end users. This code is not used in the actual spnego authentication processes and is just used
 for debugging purposes.
 """

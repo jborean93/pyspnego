@@ -45,6 +45,8 @@ as of yet. MIT KRB5's `SPNEGO` provider is only used when both Kerberos and NTLM
 The workaround is to either set `options=spnego.NegotiateOptions.use_negotiate` to force the use of `pyspnego's`
 Negotiate provider or set the protocol to either `ntlm` or `kerberos` explicitly.
 
+_Note: Some distributions, like Fedora, have backported this to the 1.18.x releases on those distributions._
+
 ### Code
 
 This problem is already fixed and is just waiting on a new MIT KRB5 release, no need for code to test this.

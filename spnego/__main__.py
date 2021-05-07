@@ -72,27 +72,13 @@ from spnego._spnego import (
 
 try:
     import argcomplete
-except ImportError:
+except ImportError:  # pragma: nocover
     argcomplete = None
 
 try:
     from ruamel import yaml
-except ImportError:
+except ImportError:  # pragma: nocover
     yaml = None
-
-
-def _get_ntlm_payload_offset(msg, fields, expected_payload_offset):
-    """
-    Some NTLM messages omit the Version field altogether while others just set 8 NULL bytes where it should be set.
-    This function determines the actual offset of the payload based on the Offset fields in the msg.
-    """
-    payload_offset = expected_payload_offset
-    for field in fields:
-        offset = msg[field + 'Fields']['BufferOffset']
-        if offset and offset < payload_offset:
-            payload_offset = offset
-
-    return payload_offset
 
 
 def _parse_ntlm_version(version):
@@ -163,10 +149,6 @@ def _parse_ntlm_negotiate(data):  # type: (Negotiate) -> Dict[str, any]
         }
     }
 
-    payload_offset = _get_ntlm_payload_offset(msg, ['DomainName', 'Workstation'], 40)
-    if not msg['Version'] and payload_offset == 40 and len(b_data) >= 40:
-        msg['Version'] = to_text(base64.b16encode(b_data[32:40]))
-
     return msg
 
 
@@ -193,10 +175,6 @@ def _parse_ntlm_challenge(data):  # type: (Challenge) -> Dict[str, any]
             'TargetInfo': _parse_ntlm_target_info(data.target_info),
         },
     }
-
-    payload_offset = _get_ntlm_payload_offset(msg, ['TargetName', 'TargetInfo'], 56)
-    if not msg['Version'] and payload_offset == 56 and len(b_data) >= 56:
-        msg['Version'] = to_text(base64.b16encode(b_data[48:56]))
 
     return msg
 
@@ -248,33 +226,17 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
         },
     }
 
-    payload_offset = _get_ntlm_payload_offset(msg, ['LmChallengeResponse', 'NtChallengeResponse', 'DomainName',
-                                                    'UserName', 'Workstation', 'EncryptedRandomSessionKey'], 88)
-    if payload_offset == 88:
-        if not msg['Version']:
-            msg['Version'] = to_text(base64.b16encode(b_data[64:72]))
-
-        if not msg['MIC']:
-            msg['MIC'] = to_text(base64.b16encode(b_data[72:88]))
-
-    elif payload_offset == 80:
-        if not msg['MIC']:
-            msg['MIC'] = to_text(base64.b16encode(b_data[64:80]))
-
-    elif payload_offset == 72:
-        if not msg['Version']:
-            msg['Version'] = to_text(base64.b16encode(b_data[64:72]))
-
     key_exchange_key = None
-
     lm_response_data = data.lm_challenge_response
+    nt_response_data = data.nt_challenge_response
+
     if lm_response_data:
         lm_response = {
             'ResponseType': None,
             'LMProofStr': None,
         }
 
-        if len(lm_response_data) == 24:
+        if not nt_response_data or len(nt_response_data) == 24:
             lm_response['ResponseType'] = 'LMv1'
             lm_response['LMProofStr'] = to_text(base64.b16encode(lm_response_data))
 
@@ -285,7 +247,6 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
 
         msg['Payload']['LmChallengeResponse'] = lm_response
 
-    nt_response_data = data.nt_challenge_response
     if nt_response_data:
         nt_response = {
             'ResponseType': None,
@@ -296,13 +257,12 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
             nt_response['ResponseType'] = 'NTLMv1'
             nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data))
 
-            if password and lm_response_data:
-                session_base_key = hashlib.new('md4', ntowfv1(password)).digest()
-                lmowf = lmowfv1(password)
-
-                # TODO: need to get a sane way to include the server challenge for ESS KXKEY.
-                if data.flags & NegotiateFlags.extended_session_security == 0:
-                    key_exchange_key = kxkey(data.flags, session_base_key, lmowf, lm_response_data, b"")
+            # TODO: need to get a sane way to include the server challenge for ESS KXKEY.
+            # if password and lm_response_data:
+            #     session_base_key = hashlib.new('md4', ntowfv1(password)).digest()
+            #     lmowf = lmowfv1(password)
+            #     if data.flags & NegotiateFlags.extended_session_security == 0:
+            #         key_exchange_key = kxkey(data.flags, session_base_key, lmowf, lm_response_data, b"")
 
         else:
             nt_proof_str = nt_response_data[:16]
@@ -392,9 +352,9 @@ def _parse_spnego_resp(data, secret=None, encoding=None):
     return msg
 
 
-def main():
+def main(args):
     """Main program entry point."""
-    args = parse_args()
+    args = parse_args(args)
 
     if args.token:
         b_data = to_bytes(args.token)
@@ -427,7 +387,7 @@ def main():
         print(json.dumps(token_info, indent=4))
 
 
-def parse_args():
+def parse_args(args):
     """Parse and return args."""
     parser = argparse.ArgumentParser(description='Parse Microsoft authentication tokens into a human readable format.')
 
@@ -467,7 +427,7 @@ def parse_args():
     if argcomplete:
         argcomplete.autocomplete(parser)
 
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     if args.output_format == 'yaml' and not yaml:
         raise ValueError('Cannot output as yaml as ruamel.yaml is not installed.')
@@ -495,6 +455,9 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
             'Data': 'Failed to parse token: %s' % to_native(e),
             'RawData': to_text(base64.b16encode(b_data)),
         }
+
+    msg_type = 'Unknown'
+    data = 'Failed to parse SPNEGO token due to unknown mech type'
 
     # SPNEGO messages.
     if isinstance(token, InitialContextToken):
@@ -535,10 +498,6 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
         msg_type = parse_enum(token.MESSAGE_TYPE)
         data = parse_kerberos_token(token, secret, encoding)
 
-    else:
-        msg_type = 'Unknown'
-        data = 'Failed to parse SPNEGO token due to unknown mech type'
-
     return {
         'MessageType': msg_type,
         'Data': data,
@@ -546,5 +505,5 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
     }
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == '__main__':  # pragma: nocover
+    main(sys.argv[1:])

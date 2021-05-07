@@ -700,7 +700,9 @@ class FileTime(datetime.datetime):
             utc_offset = self.strftime('%z')
             timezone = "%s:%s" % (utc_offset[:3], utc_offset[3:])
 
-        return self.strftime("%Y-%m-%dT%H:%M:%S{0}{1}".format(fraction_seconds, timezone))
+        # strftime doesn't support dates < 1900 on Python 2.7
+        return '{0}-{1:02d}-{2:02d}T{3:02d}:{4:02d}:{5:02d}{6}{7}'.format(
+            self.year, self.month, self.day, self.hour, self.minute, self.second, fraction_seconds, timezone)
 
     def pack(self):  # type: () -> bytes
         """ Packs the structure to bytes. """
