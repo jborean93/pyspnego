@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.6 - TBD
+## 0.1.6 - 2021-05-07
 
 * This will be the last release that supports Python 2.7 and 3.5
 * Change enum type of `iov.BufferType` to `IntEnum` to fix load on Python 3.10 - https://github.com/jborean93/pyspnego/issues/10
