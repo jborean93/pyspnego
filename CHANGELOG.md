@@ -2,7 +2,10 @@
 
 ## 0.1.6 - TBD
 
+* This will be the last release that supports Python 2.7 and 3.5
 * Change enum type of `iov.BufferType` to `IntEnum` to fix load on Python 3.10 - https://github.com/jborean93/pyspnego/issues/10
+* Make `pyspnego-parse` and entry point which uses `__main__.py` in the `spnego` package
+  * This allows Windows (and Linux) users to use the parser script by running `python -m spnego --token ...`
 
 ## 0.1.5 - 2021-01-12
 

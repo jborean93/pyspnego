@@ -86,7 +86,7 @@ dnf install gssntlmssp
 
 See [the examples section](docs/examples) for examples on how to use the authentication side of the library.
 
-_Note: While server/acceptor authentication is available for all protocols it is highly recommended you have the system GSSAPI and NTLM system libraries present for acceptor authentication. Pyspnego NTLM acceptor authentication should work but it is not as thoroughly tested as the GSSAPI imlpementation._
+_Note: While server/acceptor authentication is available for all protocols it is highly recommended you have the system GSSAPI and NTLM system libraries present for acceptor authentication. Pyspnego NTLM acceptor authentication should work but it is not as thoroughly tested as the GSSAPI implementation._
 
 
 ## Backlog
