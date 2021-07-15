@@ -444,6 +444,21 @@ def test_unpack_krb_ap_req():
     assert isinstance(actual['authenticator']['cipher'], str)
 
 
+def test_unpack_krb_ap_req_unknown_options():
+    data = get_data('initial_context_token_krb_ap_req')
+    data = data[:40] + b"\x10" + data[41:]  # This is where ap-options is set
+
+    actual = sp.unpack_token(data, unwrap=True)
+
+    assert isinstance(actual, sp.InitialContextToken)
+    assert actual.this_mech == GSSMech.kerberos.value
+
+    actual = actual.token
+
+    assert isinstance(actual, kerb.KrbApReq)
+    assert actual.ap_options == 16
+
+
 def test_unpack_krb_ap_rep():
     data = get_data('initial_context_token_krb_ap_rep')
 

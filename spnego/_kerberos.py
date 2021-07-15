@@ -915,12 +915,7 @@ class KrbApReq(KerberosV5Msg):
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         raw_ap_options = get_sequence_value(sequence, 2, 'AP-REQ', 'ap-options', unpack_asn1_bit_string)
-        ap_options = struct.unpack("<I", raw_ap_options)[0]
-
-        try:
-            ap_options = KerberosAPOptions(ap_options)
-        except ValueError:
-            pass
+        ap_options = KerberosAPOptions(struct.unpack("<I", raw_ap_options)[0])
 
         self.ap_options = ap_options
         self.ticket = get_sequence_value(sequence, 3, 'AP-REQ', 'ticket', Ticket.unpack)
