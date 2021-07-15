@@ -30,10 +30,6 @@ stages:
       test_realm: domain.test
     strategy:
       matrix:
-        Python27:
-          python.version: 2.7
-        Python35:
-          python.version: 3.5
         Python36:
           python.version: 3.6
         Python37:
@@ -101,18 +97,6 @@ stages:
       vmImage: windows-2019
     strategy:
       matrix:
-        Python27-x86:
-          python.version: 2.7
-          python.arch: x86
-        Python27-x64:
-          python.version: 2.7
-          python.arch: x64
-        Python35-x86:
-          python.version: 3.5
-          python.arch: x86
-        Python35-x64:
-          python.version: 3.5
-          python.arch: x64
         Python36-x86:
           python.version: 3.6
           python.arch: x86
@@ -143,19 +127,6 @@ stages:
       inputs:
         versionSpec: $(python.version)
         architecture: $(python.arch)
-
-    - powershell: |
-        $msiPath = Join-Path ([IO.Path]::GetTempPath()) 'VSForPython27.msi'
-        [Net.WebClient]::new().DownloadFile('https://raw.githubusercontent.com/jborean93/VCPython27/master/VCForPython27.msi', $msiPath)
-        Start-Process -FilePath msiexec.exe -Wait -ArgumentList @(
-            '/i',
-            $msiPath,
-            '/qn',
-            '/norestart'
-        )
-      errorActionPreference: stop
-      displayName: Install Python C++ build tools
-      condition: eq(variables['python.version'], '2.7')
 
     - script: |
         echo "Installing baseline pip packages"

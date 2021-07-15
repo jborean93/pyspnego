@@ -74,9 +74,6 @@ setup(
         'cryptography',
     ],
     extras_require={
-        ':python_version<"3.5"': [
-            'enum34',
-        ],
         'kerberos:sys_platform=="win32"': [],
         'kerberos:sys_platform!="win32"': [
             'gssapi>=1.5.0',
@@ -93,12 +90,10 @@ setup(
     long_description_content_type='text/markdown',
     keywords='windows spnego negotiate ntlm kerberos sspi gssapi auth',
     license='MIT',
-    python_requires='>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*',
+    python_requires='>=3.6',
     classifiers=[
         'Development Status :: 4 - Beta',
         'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',

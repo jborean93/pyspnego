@@ -1,11 +1,9 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import io
 import struct
+import typing
 
 
 class DES:
@@ -145,14 +143,14 @@ class DES:
         32, 0, 40, 8, 48, 16, 56, 24
     ]
 
-    def __init__(self, key):  # type: (bytes) -> None
+    def __init__(self, key: bytes) -> None:
         if len(key) != 8:
             raise ValueError("DES encryption key should be 8 bytes in length")
 
         self.key = key
         self._subkeys = self._create_subkeys(self.key)
 
-    def encrypt(self, data):  # type: (bytes) -> bytes
+    def encrypt(self, data: bytes) -> bytes:
         """Encrypt a byte string.
 
         DES encrypts the data based on the key it was initialised with. The data will be right padded with b"\x00" if
@@ -172,7 +170,7 @@ class DES:
 
         return encrypted_data.getvalue()
 
-    def decrypt(self, data):  # type: (bytes) -> bytes
+    def decrypt(self, data: bytes) -> bytes:
         """Decrypt a byte string.
 
         DES decrypts the data based on the key it was initialised with.
@@ -195,7 +193,7 @@ class DES:
         return decrypted_data.getvalue()
 
     @staticmethod
-    def key56_to_key64(key):  # type: (bytes) -> bytes
+    def key56_to_key64(key: bytes) -> bytes:
         """Convert 7 byte key to 8 bytes.
 
         This takes in an a bytes string of 7 bytes and converts it to a bytes
@@ -244,7 +242,7 @@ class DES:
         return new_key
 
     @staticmethod
-    def bit_count(i):
+    def bit_count(i: int) -> int:
         # counts the number of bits that are 1 in the integer
         count = 0
         while i:
@@ -253,7 +251,7 @@ class DES:
 
         return count
 
-    def _create_subkeys(self, key):
+    def _create_subkeys(self, key: bytes) -> typing.List[bytes]:
         # convert the key into a list of bits
         key_bits = self._get_bits(key)
 
@@ -277,7 +275,7 @@ class DES:
 
         return subkeys
 
-    def _shift_bits(self, bits, shifts):
+    def _shift_bits(self, bits: typing.List[int], shifts: int) -> typing.List[int]:
         new_bits = [None] * 28
         for i in range(28):
             shift_index = i + shifts
@@ -287,7 +285,7 @@ class DES:
 
         return new_bits
 
-    def _get_bits(self, data):
+    def _get_bits(self, data: bytes) -> typing.List[int]:
         bits = []
         for i in range(len(data)):
             b = struct.unpack("B", data[i:i + 1])[0]
@@ -301,7 +299,7 @@ class DES:
             bits.append(1 if b & 0x01 else 0)
         return bits
 
-    def _encode_block(self, block):
+    def _encode_block(self, block: bytes) -> bytes:
         block_bits = self._get_bits(block)
         lr = [block_bits[x] for x in self._ip]
 
@@ -324,7 +322,7 @@ class DES:
 
         return encrypted_bytes
 
-    def _decode_block(self, block):
+    def _decode_block(self, block: bytes) -> bytes:
         block_bits = self._get_bits(block)
         rl = [None] * 64
         for i, idx in enumerate(self._final_ip):
@@ -352,7 +350,7 @@ class DES:
 
         return decrypted_bytes
 
-    def _compute_block(self, block, key):
+    def _compute_block(self, block: typing.List[int], key: bytes) -> typing.List[int]:
         expanded_block = [block[x] for x in self._e_bit_selection]
         new_block = [int(key[i] != expanded_block[i]) for i in range(48)]
 

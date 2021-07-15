@@ -1,8 +1,7 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
+import typing
 
 from spnego._context import (
     ContextProxy,
@@ -11,14 +10,6 @@ from spnego._context import (
 
 from spnego.channel_bindings import (
     GssChannelBindings,
-)
-
-from spnego._compat import (
-    Optional,
-)
-
-from spnego._text import (
-    text_type,
 )
 
 from spnego.exceptions import (
@@ -42,7 +33,17 @@ from spnego.sspi import (
 )
 
 
-def _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options, usage):
+def _new_context(
+    username: typing.Optional[str],
+    password: typing.Optional[str],
+    hostname: str,
+    service: str,
+    channel_bindings: typing.Optional[GssChannelBindings],
+    context_req: ContextReq,
+    protocol: str,
+    options: NegotiateOptions,
+    usage: str,
+) -> ContextProxy:
     proto = protocol.lower()
 
     # Unless otherwise specified, we always favour the platform implementations (SSPI/GSSAPI) if they are available.
@@ -51,6 +52,7 @@ def _new_context(username, password, hostname, service, channel_bindings, contex
                  NegotiateOptions.use_ntlm)
     use_specified = options & use_flags != 0
 
+    proxy: typing.Type[ContextProxy]
     if options & NegotiateOptions.use_sspi or (not use_specified and
                                                proto in SSPIProxy.available_protocols(options=options)):
         proxy = SSPIProxy
@@ -73,9 +75,16 @@ def _new_context(username, password, hostname, service, channel_bindings, contex
     return proxy(username, password, hostname, service, channel_bindings, context_req, usage, proto, options)
 
 
-def client(username=None, password=None, hostname='unspecified', service='host', channel_bindings=None,
-           context_req=ContextReq.default, protocol='negotiate', options=0):
-    # type: (Optional[text_type], Optional[text_type], str, str, Optional[GssChannelBindings], ContextReq, str, NegotiateOptions) -> ContextProxy  # noqa
+def client(
+    username: typing.Optional[str] = None,
+    password: typing.Optional[str] = None,
+    hostname: str = 'unspecified',
+    service: str = 'host',
+    channel_bindings: typing.Optional[GssChannelBindings] = None,
+    context_req: ContextReq = ContextReq.default,
+    protocol: str = 'negotiate',
+    options: NegotiateOptions = NegotiateOptions.none,
+) -> ContextProxy:
     """Create a client context to be used for authentication.
 
     Args:
@@ -96,9 +105,14 @@ def client(username=None, password=None, hostname='unspecified', service='host',
                         'initiate')
 
 
-def server(hostname='unspecified', service='host', channel_bindings=None, context_req=ContextReq.default,
-           protocol='negotiate', options=0):
-    # type: (str, str, Optional[GssChannelBindings], ContextReq, str, NegotiateOptions) -> ContextProxy
+def server(
+    hostname: str = 'unspecified',
+    service: str = 'host',
+    channel_bindings: typing.Optional[GssChannelBindings] = None,
+    context_req: ContextReq = ContextReq.default,
+    protocol: str = 'negotiate',
+    options: NegotiateOptions = NegotiateOptions.none,
+) -> ContextProxy:
     """Create a server context to be used for authentication.
 
     Args:

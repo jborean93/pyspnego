@@ -13,7 +13,7 @@ decode raw NTLM/SPNEGO/Kerberos tokens into a human readable format.
 
 See [How to Install](#how-to-install) for more details
 
-* CPython 2.7, 3.5+
+* CPython 3.6+
 * [cryptography](https://github.com/pyca/cryptography)
 
 ### Optional Requirements
@@ -40,10 +40,7 @@ packages to be present.
 To install these packages, run the below
 
 ```bash
-# Debian/Ubuntu - Python 2
-apt-get install gcc python-dev libkrb5-dev
-
-# Debian/Ubuntu - Python 3
+# Debian/Ubuntu
 apt-get install gcc python3-dev libkrb5-dev
 
 # Centos/RHEL

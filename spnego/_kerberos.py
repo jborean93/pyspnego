@@ -8,13 +8,12 @@ pretty structure for end users. This code is not used in the actual spnego authe
 for debugging purposes.
 """
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import base64
 import collections
 import datetime
+import enum
 import struct
+import typing
 
 from spnego._asn1 import (
     ASN1Value,
@@ -31,25 +30,15 @@ from spnego._asn1 import (
     unpack_asn1_tagged_sequence,
 )
 
-from spnego._compat import (
-    Dict,
-    List,
-    Optional,
-    Union,
-
-    add_metaclass,
-
-    IntEnum,
-    IntFlag,
-)
-
 from spnego._text import (
-    text_type,
     to_text,
 )
 
 
-def _enum_labels(value, enum_type=None):  # type: (Union[int, IntEnum, IntFlag], Optional[type]) -> Dict[int, str]
+def _enum_labels(
+    value: typing.Union[int, str, enum.Enum],
+    enum_type: typing.Optional[typing.Type] = None,
+) -> typing.Dict[int, str]:
     """ Gets the human friendly labels of a known enum and what value they map to. """
     def get_labels(v):
         return getattr(v, 'native_labels', lambda: {})()
@@ -57,7 +46,10 @@ def _enum_labels(value, enum_type=None):  # type: (Union[int, IntEnum, IntFlag],
     return get_labels(enum_type) if enum_type else get_labels(value)
 
 
-def parse_enum(value, enum_type=None):  # type: (Union[int, IntEnum], Optional[type]) -> str
+def parse_enum(
+    value: typing.Union[int, str, enum.Enum],
+    enum_type: typing.Optional[typing.Type] = None,
+) -> str:
     """ Parses an IntEnum into a human representative object of that enum. """
     enum_name = 'UNKNOWN'
 
@@ -72,7 +64,10 @@ def parse_enum(value, enum_type=None):  # type: (Union[int, IntEnum], Optional[t
     return "%s (%s)" % (enum_name, value)
 
 
-def parse_flags(value, enum_type=None):  # type: (Union[int, IntFlag], Optional[type]) -> Dict[str, any]
+def parse_flags(
+    value: typing.Union[int, enum.IntFlag],
+    enum_type: typing.Optional[typing.Type] = None,
+) -> typing.Dict[str, typing.Any]:
     """ Parses an IntFlag into each flag value that is set. """
     raw_value = int(value)
     flags = []
@@ -94,37 +89,40 @@ def parse_flags(value, enum_type=None):  # type: (Union[int, IntFlag], Optional[
     }
 
 
-def parse_kerberos_token(token, secret=None, encoding=None):
-    # type: (KerberosV5Msg, Optional[str], Optional[str]) -> Dict[str, any]
+def parse_kerberos_token(
+    token: "KerberosV5Msg",
+    secret: typing.Optional[str] = None,
+    encoding: typing.Optional[str] = None,
+) -> typing.Dict[str, typing.Any]:
     """ Parses a KerberosV5Msg object to a dict. """
     if not encoding:
         encoding = 'utf-8'
 
-    def parse_default(value):  # type: (any) -> any
+    def parse_default(value: typing.Any) -> typing.Any:
         return value
 
-    def parse_datetime(value):  # type: (datetime.datetime) -> text_type
-        return to_text(value.isoformat())
+    def parse_datetime(value: datetime.datetime) -> str:
+        return value.isoformat()
 
-    def parse_text(value):  # type: (bytes) -> text_type
+    def parse_text(value: bytes) -> str:
         return to_text(value, encoding=encoding, errors='replace')
 
-    def parse_bytes(value):  # type: (bytes) -> text_type
-        return to_text(base64.b16encode(value))
+    def parse_bytes(value: bytes) -> str:
+        return base64.b16encode(value).decode()
 
-    def parse_principal_name(value):  # type: (PrincipalName) -> Dict[str, any]
+    def parse_principal_name(value: PrincipalName) -> typing.Dict[str, typing.Any]:
         return {
             'name-type': parse_enum(value.name_type),
             'name-string': [parse_text(v) for v in value.value],
         }
 
-    def parse_host_address(value):  # type: (HostAddress) -> Dict[str, any]
+    def parse_host_address(value: HostAddress) -> typing.Dict[str, typing.Any]:
         return {
             'addr-type': parse_enum(value.addr_type),
             'address': parse_text(value.value),
         }
 
-    def parse_token(value):  # type: (any) -> Dict[str, any]
+    def parse_token(value: typing.Any) -> typing.Dict[str, typing.Any]:
         return parse_kerberos_token(value, secret, encoding)
 
     if isinstance(token, bytes):
@@ -165,7 +163,7 @@ def parse_kerberos_token(token, secret=None, encoding=None):
     return msg
 
 
-def unpack_hostname(value):  # type: (ASN1Value) -> HostAddress
+def unpack_hostname(value: ASN1Value) -> "HostAddress":
     """ Unpacks an ASN.1 value to a HostAddress. """
     s = unpack_asn1_tagged_sequence(value)
 
@@ -175,7 +173,7 @@ def unpack_hostname(value):  # type: (ASN1Value) -> HostAddress
     return HostAddress(name_type, name)
 
 
-def unpack_principal_name(value):  # type: (ASN1Value) -> PrincipalName
+def unpack_principal_name(value: ASN1Value) -> "PrincipalName":
     """ Unpacks an ASN.1 value to a PrincipalName. """
     s = unpack_asn1_tagged_sequence(value)
 
@@ -224,13 +222,13 @@ Attributes:
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1 - ap-options
-class KerberosAPOptions(IntFlag):
+class KerberosAPOptions(enum.IntFlag):
     mutual_required = 0x00000020
     use_session_key = 0x00000040
     reserved = 0x00000080
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosAPOptions", str]:
         return {
             KerberosAPOptions.mutual_required: 'mutual-required',
             KerberosAPOptions.use_session_key: 'use-session-key',
@@ -274,7 +272,7 @@ class KerberosKDCOptions:  # TODO: Use IntEnum when we've dropped py27
     validate = 0x00000001
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosKDCOptions", str]:
         return {
             KerberosKDCOptions.reserved: 'reserved',
             KerberosKDCOptions.forwardable: 'forwardable',
@@ -312,7 +310,7 @@ class KerberosKDCOptions:  # TODO: Use IntEnum when we've dropped py27
 
 
 # https://ldapwiki.com/wiki/Kerberos%20Encryption%20Types - etypes
-class KerberosEncryptionType(IntEnum):
+class KerberosEncryptionType(enum.IntEnum):
     des_cbc_crc = 0x0001
     des_cbc_md4 = 0x0002
     des_cbc_md5 = 0x0003
@@ -329,7 +327,7 @@ class KerberosEncryptionType(IntEnum):
     camellia256_cts_cmac = 0x001a
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosEncryptionType", str]:
         return {
             KerberosEncryptionType.des_cbc_crc: 'DES_CBC_CRC',
             KerberosEncryptionType.des_cbc_md4: 'DES_CBC_MD4',
@@ -349,7 +347,7 @@ class KerberosEncryptionType(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-7.5.9
-class KerberosErrorCode(IntEnum):
+class KerberosErrorCode(enum.IntEnum):
     none = 0
     name_exp = 1
     service_exp = 2
@@ -420,7 +418,7 @@ class KerberosErrorCode(IntEnum):
     kdc_name_mismatch = 76
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosErrorCode", str]:
         return {
             KerberosErrorCode.none: 'KDC_ERR_NONE',
             KerberosErrorCode.name_exp: 'KDC_ERR_NAME_EXP',
@@ -494,7 +492,8 @@ class KerberosErrorCode(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.10
-class KerberosMessageType(IntEnum):
+class KerberosMessageType(enum.IntEnum):
+    unknown = 0
     as_req = 10
     as_rep = 11
     tgs_req = 12
@@ -504,8 +503,9 @@ class KerberosMessageType(IntEnum):
     error = 30
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosMessageType", str]:
         return {
+            KerberosMessageType.unknown: 'UNKNOWN',
             KerberosMessageType.as_req: 'AS-REQ',
             KerberosMessageType.as_rep: 'AS-REP',
             KerberosMessageType.tgs_req: 'TGS-REQ',
@@ -517,7 +517,7 @@ class KerberosMessageType(IntEnum):
 
 
 # https://www.iana.org/assignments/kerberos-parameters/kerberos-parameters.xhtml
-class KerberosPADataType(IntEnum):
+class KerberosPADataType(enum.IntEnum):
     tgs_req = 1
     enc_timestamp = 2
     pw_salt = 3
@@ -588,7 +588,7 @@ class KerberosPADataType(IntEnum):
     pac_options = 167
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosPADataType", str]:
         return {
             KerberosPADataType.tgs_req: 'PA-TGS-REQ',
             KerberosPADataType.enc_timestamp: 'PA-ENC-TIMESTAMP',
@@ -661,7 +661,7 @@ class KerberosPADataType(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-6.2
-class KerberosPrincipalNameType(IntEnum):
+class KerberosPrincipalNameType(enum.IntEnum):
     unknown = 0
     principal = 1
     srv_inst = 2
@@ -673,7 +673,7 @@ class KerberosPrincipalNameType(IntEnum):
     enterprise = 10
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosPrincipalNameType", str]:
         return {
             KerberosPrincipalNameType.unknown: 'NT-UNKNOWN',
             KerberosPrincipalNameType.principal: 'NT-PRINCIPAL',
@@ -688,7 +688,7 @@ class KerberosPrincipalNameType(IntEnum):
 
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-7.5.3
-class KerberosHostAddressType(IntEnum):
+class KerberosHostAddressType(enum.IntEnum):
     ipv4 = 2
     directional = 3
     chaos_net = 5
@@ -700,7 +700,7 @@ class KerberosHostAddressType(IntEnum):
     ipv6 = 26
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["KerberosHostAddressType", str]:
         return {
             KerberosHostAddressType.ipv4: 'IPv4',
             KerberosHostAddressType.directional: 'Directional',
@@ -714,7 +714,7 @@ class KerberosHostAddressType(IntEnum):
         }
 
 
-class ParseType(IntEnum):
+class ParseType(enum.IntEnum):
     default = 0
     enum = 1
     flags = 2
@@ -750,17 +750,17 @@ class _KerberosMsgType(type):
         return super(_KerberosMsgType, new_cls).__call__(sequence)
 
 
-@add_metaclass(_KerberosMsgType)
-class KerberosV5Msg:
+class KerberosV5Msg(metaclass=_KerberosMsgType):
 
+    MESSAGE_TYPE = KerberosMessageType.unknown
     PVNO = 5
 
-    def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
+    def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         # This is only used if decoding an unknown Kerberos message type.
         self.sequence = sequence
 
     @staticmethod
-    def unpack(value):  # type: (Union[bytes, ASN1Value]) -> KerberosV5Msg
+    def unpack(value: typing.Union[ASN1Value, bytes]) -> "KerberosV5Msg":
         msg_sequence = unpack_asn1_tagged_sequence(value)
         return KerberosV5Msg(msg_sequence)
 
@@ -802,7 +802,7 @@ class KrbAsReq(KerberosV5Msg):
         ('req-body', 'req_body', ParseType.token)
     ]
 
-    def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
+    def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         def unpack_padata(value):
             return [PAData.unpack(p) for p in unpack_asn1_sequence(value)]
 
@@ -856,7 +856,7 @@ class KrbAsRep(KerberosV5Msg):
         ('enc-part', 'enc_part', ParseType.token),
     ]
 
-    def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
+    def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         def unpack_padata(value):
             return [PAData.unpack(p) for p in unpack_asn1_sequence(value)]
 
@@ -913,14 +913,9 @@ class KrbApReq(KerberosV5Msg):
         ('authenticator', 'authenticator', ParseType.token),
     ]
 
-    def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
+    def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         raw_ap_options = get_sequence_value(sequence, 2, 'AP-REQ', 'ap-options', unpack_asn1_bit_string)
-        ap_options = struct.unpack("<I", raw_ap_options)[0]
-
-        try:
-            ap_options = KerberosAPOptions(ap_options)
-        except ValueError:
-            pass
+        ap_options = KerberosAPOptions(struct.unpack("<I", raw_ap_options)[0])
 
         self.ap_options = ap_options
         self.ticket = get_sequence_value(sequence, 3, 'AP-REQ', 'ticket', Ticket.unpack)
@@ -957,7 +952,7 @@ class KrbApRep(KerberosV5Msg):
         ('enc-part', 'enc_part', ParseType.token),
     ]
 
-    def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
+    def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         self.enc_part = get_sequence_value(sequence, 2, 'AP-REP', 'enc-part', EncryptedData.unpack)
 
 
@@ -1021,7 +1016,7 @@ class KrbError(KerberosV5Msg):
         ('e-data', 'e_data', ParseType.bytes),
     ]
 
-    def __init__(self, sequence):  # type: (Dict[int, ASN1Value]) -> None
+    def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         self.ctime = get_sequence_value(sequence, 2, 'KRB-ERROR', 'ctime', unpack_asn1_generalized_time)
         self.cusec = get_sequence_value(sequence, 3, 'KRB-ERROR', 'cusec', unpack_asn1_integer)
         self.stime = get_sequence_value(sequence, 4, 'KRB-ERROR', 'stime', unpack_asn1_generalized_time)
@@ -1064,12 +1059,12 @@ class PAData:
         ('padata-value', 'value', ParseType.token),
     ]
 
-    def __init__(self, data_type, value):  # type: (Union[int, KerberosPADataType], bytes) -> None
+    def __init__(self, data_type: typing.Union[int, KerberosPADataType], value: bytes) -> None:
         self.data_type = data_type
         self.b_value = value
 
     @property
-    def value(self):
+    def value(self) -> typing.Any:
         if self.data_type == KerberosPADataType.tgs_req:
             # Special edge case for this PA type due to how the messages require the data in unpack
             return KrbTgsReq.unpack(unpack_asn1(unpack_asn1(self.b_value)[0].b_data)[0])
@@ -1092,7 +1087,7 @@ class PAData:
             return self.b_value
 
     @staticmethod
-    def unpack(value):  # type: (ASN1Value) -> PAData
+    def unpack(value: ASN1Value) -> "PAData":
         sequence = unpack_asn1_tagged_sequence(value)
 
         def unpack_data_type(value):
@@ -1139,14 +1134,18 @@ class PAETypeInfo2:
         ('s2kparams', 's2kparams', ParseType.bytes),
     ]
 
-    def __init__(self, etype, salt, s2kparams):
-        # type: (KerberosEncryptionType, Optional[bytes], Optional[bytes]) -> None
+    def __init__(
+        self,
+        etype: KerberosEncryptionType,
+        salt: typing.Optional[bytes],
+        s2kparams: typing.Optional[bytes],
+    ) -> None:
         self.etype = etype
         self.salt = salt
         self.s2kparams = s2kparams
 
     @staticmethod
-    def unpack(value):
+    def unpack(value: ASN1Value) -> "PAETypeInfo2":
         sequence = unpack_asn1_tagged_sequence(value)
 
         etype = KerberosEncryptionType(get_sequence_value(sequence, 0, 'PA-ETYPE-INFO2', 'etype', unpack_asn1_integer))
@@ -1187,13 +1186,13 @@ class EncryptedData:
         ('cipher', 'cipher', ParseType.bytes),
     ]
 
-    def __init__(self, etype, kvno, cipher):  # type: (KerberosEncryptionType, Optional[int], bytes) -> None
+    def __init__(self, etype: KerberosEncryptionType, kvno: typing.Optional[int], cipher: bytes) -> None:
         self.etype = etype
         self.kvno = kvno
         self.cipher = cipher
 
     @staticmethod
-    def unpack(value):
+    def unpack(value: ASN1Value) -> "EncryptedData":
         sequence = unpack_asn1_tagged_sequence(value)
 
         etype = KerberosEncryptionType(get_sequence_value(sequence, 0, 'EncryptedData', 'etype', unpack_asn1_integer))
@@ -1237,15 +1236,20 @@ class Ticket:
         ('enc-part', 'enc_part', ParseType.token),
     ]
 
-    def __init__(self, tkt_vno, realm, sname, enc_part):
-        # type; (int, bytes, List[PrincipalName], KrbEncryptedData) -> None
+    def __init__(
+        self,
+        tkt_vno: int,
+        realm: bytes,
+        sname: typing.List[PrincipalName],
+        enc_part: EncryptedData,
+    ) -> None:
         self.tkt_vno = tkt_vno
         self.realm = realm
         self.sname = sname
         self.enc_part = enc_part
 
     @staticmethod
-    def unpack(value):  # type: (Union[bytes, ASN1Value]) -> Ticket
+    def unpack(value: typing.Union[ASN1Value, bytes]) -> "Ticket":
         b_data = extract_asn1_tlv(value, TagClass.application, 1)
         sequence = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
 
@@ -1333,9 +1337,21 @@ class KdcReqBody:
         ('additional-tickets', 'additional_tickets', ParseType.token),
     ]
 
-    def __init__(self, kdc_options, cname, realm, sname, postdated_from, postdated_till, rtime, nonce, etype,
-                 addresses, enc_authorization_data, additional_tickets):
-        # type: (int, Optional[PrincipalName], bytes, PrincipalName, Optional[datetime.datetime], datetime.datetime, Optional[datetime.datetime], int, List[KerberosEncryptionType], Optional[List[HostAddress]], Optional[EncryptedData], Optional[List[Ticket]]) -> None  # noqa
+    def __init__(
+        self,
+        kdc_options: int,
+        cname: typing.Optional[PrincipalName],
+        realm: bytes,
+        sname: PrincipalName,
+        postdated_from: typing.Optional[datetime.datetime],
+        postdated_till: datetime.datetime,
+        rtime: typing.Optional[datetime.datetime],
+        nonce: int,
+        etype: typing.List[KerberosEncryptionType],
+        addresses: typing.Optional[typing.List[HostAddress]],
+        enc_authorization_data: typing.Optional[EncryptedData],
+        additional_tickets: typing.Optional[typing.List[Ticket]],
+    ) -> None:
         self.kdc_options = kdc_options
         self.cname = cname
         self.realm = realm
@@ -1350,7 +1366,7 @@ class KdcReqBody:
         self.additional_tickets = additional_tickets
 
     @staticmethod
-    def unpack(value):  # type: (Union[bytes, ASN1Value]) -> KdcReqBody
+    def unpack(value: typing.Union[ASN1Value, bytes]) -> "KdcReqBody":
         sequence = unpack_asn1_tagged_sequence(value)
 
         def unpack_kdc_options(value):

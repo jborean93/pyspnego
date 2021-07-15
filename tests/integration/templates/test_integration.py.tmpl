@@ -224,7 +224,7 @@ def winrm_run(context, server, command, arguments=None, ssl=False):
         wsman_signal(http, shell_id, cmd_id,
                      'http://schemas.microsoft.com/wbem/wsman/1/windows/shell/signal/Terminate')
 
-        if stderr.startswith(u'#< CLIXML'):
+        if stderr.startswith('#< CLIXML'):
             # Strip off the '#< CLIXML\r\n' by finding the 2nd index of '<'
             output = stderr[stderr.index('<', 2):]
             element = ET.fromstring(output)
@@ -234,7 +234,7 @@ def winrm_run(context, server, command, arguments=None, ssl=False):
             for error in element.findall("{%s}S[@S='Error']" % namespace):
                 errors.append(error.text)
 
-            stderr = u"".join(errors).replace('_x000D_', '\r').replace('_x000A_', '\n')
+            stderr = "".join(errors).replace('_x000D_', '\r').replace('_x000A_', '\n')
 
         return rc, stdout, stderr
 
@@ -553,7 +553,7 @@ def test_winrm_no_delegate():
 
     c = spnego.client(**context_kwargs)
 
-    pwsh_script = base64.b64encode(u'''$ErrorActionPreference = 'Stop'
+    pwsh_script = base64.b64encode('''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp\\test_integration.py).FullName
 '''.format(WIN_SERVER_UNTRUSTED).encode('utf-16-le')).decode()
     rc, stdout, stderr = winrm_run(c, WIN_SERVER_TRUSTED, 'powershell.exe', ['-EncodedCommand', pwsh_script])
@@ -576,7 +576,7 @@ def test_winrm_delegate(kinit):
 
     c = spnego.client(**context_kwargs)
 
-    pwsh_script = base64.b64encode(u'''$ErrorActionPreference = 'Stop'
+    pwsh_script = base64.b64encode('''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp\\test_integration.py).FullName
 '''.format(WIN_SERVER_UNTRUSTED).encode('utf-16-le')).decode()
     rc, stdout, stderr = winrm_run(c, WIN_SERVER_TRUSTED, 'powershell.exe', ['-EncodedCommand', pwsh_script])
@@ -601,7 +601,7 @@ def test_winrm_ok_as_delegate(kinit):
 
     c = spnego.client(**context_kwargs)
 
-    pwsh_script = base64.b64encode(u'''$ErrorActionPreference = 'Stop'
+    pwsh_script = base64.b64encode('''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp).FullName
 '''.format(WIN_SERVER_TRUSTED).encode('utf-16-le')).decode()
     rc, stdout, stderr = winrm_run(c, WIN_SERVER_UNTRUSTED, 'powershell.exe', ['-EncodedCommand', pwsh_script])

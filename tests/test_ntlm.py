@@ -30,7 +30,6 @@ from spnego._ntlm_raw.messages import (
 
 from spnego._text import (
     to_bytes,
-    to_native,
     to_text,
 )
 
@@ -53,20 +52,20 @@ def test_get_credential_file_no_env_var():
 
 
 def test_get_credential_file_env_var_missing_file(tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
+    tmp_creds = os.path.join(to_text(tmpdir), 'pÿspᴞӛgӫ TÈ$''.creds')
 
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    monkeypatch.setenv('NTLM_USER_FILE', tmp_creds)
 
     actual = ntlm._get_credential_file()
     assert actual is None
 
 
 def test_get_credential_file(tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
+    tmp_creds = os.path.join(to_text(tmpdir), 'pÿspᴞӛgӫ TÈ$''.creds')
     with open(tmp_creds, mode='wb') as fd:
         fd.write(b"data")
 
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    monkeypatch.setenv('NTLM_USER_FILE', tmp_creds)
 
     actual = ntlm._get_credential_file()
     assert actual == to_text(tmp_creds)
@@ -91,8 +90,8 @@ def test_get_credential_file(tmpdir, monkeypatch):
      'testuser@testdom.com', None, '00000000000000000000000000000000', '8ADB9B997580D69E69CAA2BBB68F4697', True),
 ])
 def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, explicit, tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    tmp_creds = os.path.join(to_text(tmpdir), 'pÿspᴞӛgӫ TÈ$''.creds')
+    monkeypatch.setenv('NTLM_USER_FILE', tmp_creds)
     with open(tmp_creds, mode='wb') as fd:
         fd.write(to_bytes(line))
 
@@ -109,8 +108,8 @@ def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, expl
 
 
 def test_get_credential_from_file_no_matches(tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), u'pÿspᴞӛgӫ TÈ$''.creds')
-    monkeypatch.setenv('NTLM_USER_FILE', to_native(tmp_creds))
+    tmp_creds = os.path.join(to_text(tmpdir), 'pÿspᴞӛgӫ TÈ$''.creds')
+    monkeypatch.setenv('NTLM_USER_FILE', tmp_creds)
     with open(tmp_creds, mode='wb') as fd:
         fd.write(b'domain:username:password')
 
@@ -121,7 +120,7 @@ def test_get_credential_from_file_no_matches(tmpdir, monkeypatch):
 
 @pytest.mark.parametrize('level', [-1, 6])
 def test_invalid_lm_compat_level(level, monkeypatch):
-    monkeypatch.setenv('LM_COMPAT_LEVEL', to_native(level))
+    monkeypatch.setenv('LM_COMPAT_LEVEL', str(level))
 
     expected = "Invalid LM_COMPAT_LEVEL %s, must be between 0 and 5" % level
     with pytest.raises(SpnegoError, match=re.escape(expected)):
@@ -269,7 +268,7 @@ def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
 
     target_info = TargetInfo()
     target_info[AvId.nb_computer_name] = target_name
-    target_info[AvId.nb_domain_name] = u"WORKSTATION"
+    target_info[AvId.nb_domain_name] = "WORKSTATION"
     target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
     target_info[AvId.timestamp] = FileTime.now()
 
@@ -303,7 +302,7 @@ def test_ntlm_custom_time(include_time, expected, ntlm_cred, mocker, monkeypatch
 
     target_info = TargetInfo()
     target_info[AvId.nb_computer_name] = target_name
-    target_info[AvId.nb_domain_name] = u"WORKSTATION"
+    target_info[AvId.nb_domain_name] = "WORKSTATION"
     target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
 
     if include_time:
@@ -436,7 +435,7 @@ def test_ntlm_invalid_password(client_opt, ntlm_cred):
         if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through SSPI')
 
-    c = spnego.client(ntlm_cred[0], u"Invalid", hostname=socket.gethostname(), options=client_opt, protocol='ntlm')
+    c = spnego.client(ntlm_cred[0], "Invalid", hostname=socket.gethostname(), options=client_opt, protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
     auth = c.step(s.step(c.step()))

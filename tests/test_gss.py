@@ -83,7 +83,7 @@ def test_build_iov_list_invalid_data(kerb_cred):
 
     expected = "IOV entry[1] must specify the buffer bytes, length of the buffer, or whether it is auto allocated."
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([(1, u"data")])
+        c._build_iov_list([(1, "data")])
 
 
 def test_build_iov_list_invalid_value(kerb_cred):

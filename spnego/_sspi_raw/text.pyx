@@ -43,7 +43,7 @@ cdef class WideChar:
 
     def to_text(WideChar self, size_t length=0):
         if not length and self.length == 0:
-            return u""
+            return ""
 
         # Subtract from self.length to remove the null char that LPWSTR points to.
         return u16_to_text(self.buffer, length if length else self.length - 1)

@@ -363,7 +363,7 @@ def test_ntlm_authenticate_with_secret(capsys):
         '--token',
         base64.b64encode(get_data('ntlm_authenticate')).decode(),
         '--secret',
-        u'VagrantPass1',
+        'VagrantPass1',
     ])
     actual_out = capsys.readouterr()
 
@@ -521,7 +521,7 @@ def test_nltm_session_key_no_sign_seal(capsys):
         '--token',
         base64.b64encode(get_data('ntlm_authenticate_no_sign_seal')).decode(),
         '--secret',
-        u'vagrant',
+        'vagrant',
     ])
     actual_out = capsys.readouterr()
 

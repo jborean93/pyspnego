@@ -50,7 +50,7 @@ def test_seal_ntlmv1():
     seal_handle = rc4init(seal_key)
     sign_key = signkey(TEST_NTLMV1_FLAGS, TEST_RANDOM_SESSION_KEY, usage='initiate')
 
-    b_data = to_bytes(u"Plaintext", encoding='utf-16-le')
+    b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(TEST_NTLMV1_FLAGS, seal_handle, sign_key, 0, b_data)
 
     assert actual_msg == b"\x56\xFE\x04\xD8\x61\xF9\x31\x9A\xF0\xD7\x23\x8A\x2E\x3B\x4D\x45" \
@@ -69,7 +69,7 @@ def test_seal_ntlmv1_with_ess():
     seal_handle = rc4init(seal_key)
     sign_key = signkey(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, key_exchange_key, usage='initiate')
 
-    b_data = to_bytes(u"Plaintext", encoding='utf-16-le')
+    b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, seal_handle, sign_key, 0, b_data)
 
     assert actual_msg == b"\xA0\x23\x72\xF6\x53\x02\x73\xF3\xAA\x1E\xB9\x01\x90\xCE\x52\x00" \
@@ -86,7 +86,7 @@ def test_seal_ntlmv2():
     seal_handle = rc4init(seal_key)
     sign_key = signkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate')
 
-    b_data = to_bytes(u"Plaintext", encoding='utf-16-le')
+    b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
 
     assert actual_msg == b"\x54\xE5\x01\x65\xBF\x19\x36\xDC\x99\x60\x20\xC1\x81\x1B\x0F\x06" \
@@ -102,7 +102,7 @@ def test_seal_ntlmv2_no_key_exch():
     seal_handle = rc4init(seal_key)
     sign_key = signkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate')
 
-    b_data = to_bytes(u"Plaintext", encoding='utf-16-le')
+    b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
 
     assert actual_msg == b"\x54\xE5\x01\x65\xBF\x19\x36\xDC\x99\x60\x20\xC1\x81\x1B\x0F\x06" \

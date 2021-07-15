@@ -11,10 +11,6 @@ import re
 
 import spnego._asn1 as asn1
 
-from spnego._compat import (
-    UTC,
-)
-
 
 ASN1_TAG_TESTS = [
     # Simple universal
@@ -216,7 +212,7 @@ def test_unpack_asn1_bit_string(value, expected):
 
 
 def test_pack_asn1_general_string():
-    actual = asn1.pack_asn1_general_string(u'cafe')
+    actual = asn1.pack_asn1_general_string('cafe')
     assert actual == b"\x1B\x04\x63\x61\x66\x65"
 
 
@@ -237,7 +233,7 @@ def test_unpack_asn1_enumerated():
 
 
 def test_pack_asn1_general_string_encoding():
-    actual = asn1.pack_asn1_general_string(u'café', encoding='utf-8')
+    actual = asn1.pack_asn1_general_string('café', encoding='utf-8')
     assert actual == b"\x1B\x05\x63\x61\x66\xC3\xA9"
 
 
@@ -356,7 +352,7 @@ def test_unpack_asn1_boolean(value, expected):
     b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x2E\x30\x30\x30\x30\x30\x30\x5A",
 ])
 def test_unpack_asn1_generalized_time(value):
-    expected = datetime.datetime.fromtimestamp(0, tz=UTC())
+    expected = datetime.datetime.fromtimestamp(0, tz=datetime.timezone.utc)
 
     actual = asn1.unpack_asn1_generalized_time(value)
     assert actual == expected
