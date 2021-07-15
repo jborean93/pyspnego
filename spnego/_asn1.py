@@ -86,7 +86,7 @@ class TypeTagNumber(enum.IntEnum):
     relative_oid_iri = 36
 
     @classmethod
-    def native_labels(cls) -> typing.Dict["TypeTagNumber", str]:
+    def native_labels(cls) -> typing.Dict[int, str]:
         return {
             TypeTagNumber.end_of_content: 'End-of-Content (EOC)',
             TypeTagNumber.boolean: 'BOOLEAN',
@@ -320,11 +320,12 @@ def pack_asn1_integer(
         b_int.append(0xFF)
 
     b_int.reverse()
-    b_int = bytes(b_int)
-    if tag:
-        b_int = pack_asn1(TagClass.universal, False, TypeTagNumber.integer, b_int)
 
-    return b_int
+    b_value = bytes(b_int)
+    if tag:
+        b_value = pack_asn1(TagClass.universal, False, TypeTagNumber.integer, b_value)
+
+    return b_value
 
 
 def pack_asn1_object_identifier(
@@ -344,11 +345,11 @@ def pack_asn1_object_identifier(
     for val in oid_split[2:]:
         b_oid.extend(_pack_asn1_octet_number(val))
 
-    b_oid = bytes(b_oid)
+    b_value = bytes(b_oid)
     if tag:
-        b_oid = pack_asn1(TagClass.universal, False, TypeTagNumber.object_identifier, b_oid)
+        b_value = pack_asn1(TagClass.universal, False, TypeTagNumber.object_identifier, b_value)
 
-    return b_oid
+    return b_value
 
 
 def pack_asn1_octet_string(
@@ -493,7 +494,7 @@ def unpack_asn1_generalized_time(value: typing.Union[ASN1Value, bytes]) -> datet
             err = e
 
     else:
-        raise err
+        raise err  # type: ignore
 
 
 def unpack_asn1_integer(value: typing.Union[ASN1Value, bytes]) -> int:
@@ -516,14 +517,14 @@ def unpack_asn1_integer(value: typing.Union[ASN1Value, bytes]) -> int:
                 b_int[i] += 1
                 break
 
-    value = 0
+    int_value = 0
     for val in b_int:
-        value = (value << 8) | val
+        int_value = (int_value << 8) | val
 
     if is_negative:
-        value *= -1
+        int_value *= -1
 
-    return value
+    return int_value
 
 
 def unpack_asn1_object_identifier(value: typing.Union[ASN1Value, bytes]) -> str:

@@ -1,10 +1,9 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
+import enum
 import struct
+import typing
 
 from spnego._asn1 import (
     get_sequence_value,
@@ -27,18 +26,6 @@ from spnego._asn1 import (
     unpack_asn1_tagged_sequence,
 )
 
-from spnego._compat import (
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-
-    IntEnum,
-    IntFlag,
-)
-
 from spnego._context import (
     GSSMech,
 )
@@ -52,7 +39,9 @@ from spnego._ntlm_raw.messages import (
 )
 
 
-def pack_mech_type_list(mech_list):  # type: (Union[str, List[str], Tuple[str, ...], Set[str]]) -> bytes
+def pack_mech_type_list(
+    mech_list: typing.Union[str, typing.List[str], typing.Tuple[str, ...], typing.Set[str]],
+) -> bytes:
     """Packs a list of OIDs for the mechListMIC value.
 
     Will pack a list of object identifiers to the raw byte string value for the mechListMIC.
@@ -69,8 +58,12 @@ def pack_mech_type_list(mech_list):  # type: (Union[str, List[str], Tuple[str, .
     return pack_asn1_sequence([pack_asn1_object_identifier(oid) for oid in mech_list])
 
 
-def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
-    # type: (bytes, Optional[GSSMech], bool, str) -> any
+def unpack_token(
+    b_data: bytes,
+    mech: typing.Optional[GSSMech] = None,
+    unwrap: bool = False,
+    encoding: typing.Optional[str] = None,
+) -> typing.Any:
     """Unpacks a raw GSSAPI/SPNEGO token to a Python object.
 
     Unpacks the byte string into a Python object that represents the token passed in. This can return many different
@@ -118,6 +111,7 @@ def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
         if unwrap:
             return initial_context_token
 
+        this_mech: typing.Optional[GSSMech]
         try:
             this_mech = GSSMech.from_oid(initial_context_token.this_mech)
         except ValueError:
@@ -149,7 +143,7 @@ def unpack_token(b_data, mech=None, unwrap=False, encoding=None):
 
 
 # https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.1 - ContextFlags
-class ContextFlags(IntFlag):
+class ContextFlags(enum.IntFlag):
     deleg = 0
     mutual = 1
     replay = 2
@@ -159,7 +153,7 @@ class ContextFlags(IntFlag):
     integ = 6
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["ContextFlags", str]:
         return {
             ContextFlags.deleg: 'delegFlag',
             ContextFlags.mutual: 'mutualFlag',
@@ -172,14 +166,14 @@ class ContextFlags(IntFlag):
 
 
 # https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.2 - negState
-class NegState(IntEnum):
+class NegState(enum.IntEnum):
     accept_complete = 0
     accept_incomplete = 1
     reject = 2
     request_mic = 3
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["NegState", str]:
         return {
             NegState.accept_complete: 'accept-complete',
             NegState.accept_incomplete: 'accept-incomplete',
@@ -223,7 +217,7 @@ class InitialContextToken:
         https://www.rfc-editor.org/rfc/rfc2743#section-3.1.
     """
 
-    def __init__(self, mech, token):  # type: (Union[str, GSSMech], bytes) -> None
+    def __init__(self, mech: typing.Union[GSSMech, str], token: bytes) -> None:
         if isinstance(mech, GSSMech):
             mech = mech.value
 
@@ -231,7 +225,8 @@ class InitialContextToken:
         self.inner_context_token = token
 
     @property
-    def token(self):  # type: () -> any
+    def token(self) -> typing.Any:
+        mech: typing.Optional[GSSMech]
         try:
             mech = GSSMech.from_oid(self.this_mech)
         except ValueError:
@@ -239,13 +234,13 @@ class InitialContextToken:
 
         return unpack_token(self.inner_context_token, mech=mech)
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the InitialContextToken as a byte string. """
         return pack_asn1(TagClass.application, True, 0,
                          pack_asn1_object_identifier(self.this_mech, tag=True) + self.inner_context_token)
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> InitialContextToken
+    def unpack(b_data: bytes) -> "InitialContextToken":
         """ Unpacks the InitialContextToken TLV value. """
         this_mech, inner_context_token = unpack_asn1(b_data)
         mech = unpack_asn1_object_identifier(this_mech)
@@ -320,9 +315,15 @@ class NegTokenInit:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/8e71cf53-e867-4b79-b5b5-38c92be3d472
     """
 
-    def __init__(self, mech_types=None, req_flags=None, mech_token=None, hint_name=None, hint_address=None,
-                 mech_list_mic=None):
-        # type: (Optional[List[str]], Optional[ContextFlags], Optional[bytes], Optional[bytes], Optional[bytes], Optional[bytes]) -> None  # noqa
+    def __init__(
+        self,
+        mech_types: typing.Optional[typing.List[str]] = None,
+        req_flags: typing.Optional[ContextFlags] = None,
+        mech_token: typing.Optional[bytes] = None,
+        hint_name: typing.Optional[bytes] = None,
+        hint_address: typing.Optional[bytes] = None,
+        mech_list_mic: typing.Optional[bytes] = None,
+    ) -> None:
         self.mech_types = mech_types or []
         self.req_flags = req_flags
         self.mech_token = mech_token
@@ -330,7 +331,7 @@ class NegTokenInit:
         self.hint_address = hint_address
         self.mech_list_mic = mech_list_mic
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the NegTokenInit as a byte string. """
 
         def pack_elements(value_map):
@@ -370,7 +371,7 @@ class NegTokenInit:
         return InitialContextToken(GSSMech.spnego.value, pack_asn1(TagClass.context_specific, True, 0, b_data)).pack()
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> NegTokenInit
+    def unpack(b_data: bytes) -> "NegTokenInit":
         """ Unpacks the NegTokenInit TLV value. """
         neg_seq = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
 
@@ -452,16 +453,21 @@ class NegTokenResp:
         https://www.rfc-editor.org/rfc/rfc4178.html#section-4.2.2
     """
 
-    def __init__(self, neg_state=None, supported_mech=None, response_token=None, mech_list_mic=None):
-        # type: (Optional[NegState], Optional[str], Optional[bytes], Optional[bytes]) -> None
+    def __init__(
+        self,
+        neg_state: typing.Optional[NegState] = None,
+        supported_mech: typing.Optional[str] = None,
+        response_token: typing.Optional[bytes] = None,
+        mech_list_mic: typing.Optional[bytes] = None,
+    ) -> None:
         self.neg_state = neg_state
         self.supported_mech = supported_mech
         self.response_token = response_token
         self.mech_list_mic = mech_list_mic
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the NegTokenResp as a byte string. """
-        value_map = [
+        value_map: typing.List[typing.Tuple[int, typing.Any, typing.Callable[[typing.Any], bytes]]] = [
             (0, self.neg_state, pack_asn1_enumerated),
             (1, self.supported_mech, pack_asn1_object_identifier),
             (2, self.response_token, pack_asn1_octet_string),
@@ -477,7 +483,7 @@ class NegTokenResp:
         return pack_asn1(TagClass.context_specific, True, 1, b_data)
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> NegTokenResp
+    def unpack(b_data: bytes) -> "NegTokenResp":
         """ Unpacks the NegTokenResp TLV value. """
         neg_seq = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
 

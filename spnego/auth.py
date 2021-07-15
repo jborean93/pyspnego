@@ -52,6 +52,7 @@ def _new_context(
                  NegotiateOptions.use_ntlm)
     use_specified = options & use_flags != 0
 
+    proxy: typing.Type[ContextProxy]
     if options & NegotiateOptions.use_sspi or (not use_specified and
                                                proto in SSPIProxy.available_protocols(options=options)):
         proxy = SSPIProxy

@@ -10,7 +10,6 @@ import sys
 import pytest
 
 from spnego._text import (
-    to_native,
     to_text,
 )
 
@@ -86,17 +85,17 @@ def test_sec_buffer_str():
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 @pytest.mark.parametrize('username, domain, expected', [
-    (u"username", u"domain", "domain\\username"),
-    (u"username@DOMAIN", u"", "username@DOMAIN"),
-    (u"username@DOMAIN", None, "username@DOMAIN"),
-    (None, u"domain", "domain\\"),
-    (None, None, u""),
-    (u"", u"", u""),
-    (u"user" + to_text(b"\xF0\x9D\x84\x9E"), u"domain" + to_text(b"\xF0\x9D\x84\x9E"),
-     to_native(u"domain{0}\\user{0}".format(to_text(b"\xF0\x9D\x84\x9E"))))
+    ("username", "domain", "domain\\username"),
+    ("username@DOMAIN", "", "username@DOMAIN"),
+    ("username@DOMAIN", None, "username@DOMAIN"),
+    (None, "domain", "domain\\"),
+    (None, None, ""),
+    ("", "", ""),
+    ("user" + to_text(b"\xF0\x9D\x84\x9E"), "domain" + to_text(b"\xF0\x9D\x84\x9E"),
+     "domain{0}\\user{0}".format(to_text(b"\xF0\x9D\x84\x9E"))),
 ])
 def test_win_nt_auth_identity(username, domain, expected):
-    identity = sspi.WinNTAuthIdentity(username, domain, u"password")
+    identity = sspi.WinNTAuthIdentity(username, domain, "password")
 
     assert repr(identity) == "<spnego._sspi_raw.sspi.WinNTAuthIdentity %s>" % expected
     assert str(identity) == expected
@@ -104,29 +103,29 @@ def test_win_nt_auth_identity(username, domain, expected):
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_win_nt_auth_identity_set_username():
-    identity = sspi.WinNTAuthIdentity(u"original", None, None)
+    identity = sspi.WinNTAuthIdentity("original", None, None)
 
-    test_user = u"user" + to_text(b"\xF0\x9D\x84\x9E")
+    test_user = "user" + to_text(b"\xF0\x9D\x84\x9E")
     identity.username = test_user
     assert identity.username == test_user
-    assert str(identity) == to_native(test_user)
+    assert str(identity) == test_user
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_win_nt_auth_identity_set_domain():
-    identity = sspi.WinNTAuthIdentity(None, u"original", None)
+    identity = sspi.WinNTAuthIdentity(None, "original", None)
 
-    test_domain = u"domain" + to_text(b"\xF0\x9D\x84\x9E")
+    test_domain = "domain" + to_text(b"\xF0\x9D\x84\x9E")
     identity.domain = test_domain
     assert identity.domain == test_domain
-    assert str(identity) == to_native(test_domain) + "\\"
+    assert str(identity) == test_domain + "\\"
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_win_nt_auth_identity_set_password():
-    identity = sspi.WinNTAuthIdentity(None, None, u"original")
+    identity = sspi.WinNTAuthIdentity(None, None, "original")
 
-    test_password = u"password" + to_text(b"\xF0\x9D\x84\x9E")
+    test_password = "password" + to_text(b"\xF0\x9D\x84\x9E")
     identity.password = test_password
     assert identity.password == test_password
 
@@ -140,7 +139,7 @@ def test_accept_security_context_fail():
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_acquire_credentials_handle_fail():
     with pytest.raises(WindowsError, match="The requested security package does not exist"):
-        sspi.acquire_credentials_handle(None, u"fake package")
+        sspi.acquire_credentials_handle(None, "fake package")
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
@@ -158,7 +157,7 @@ def test_encrypt_message_fail():
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_initialize_security_context_fail():
     with pytest.raises(WindowsError, match="The handle specified is invalid"):
-        sspi.initialize_security_context(sspi.Credential(), sspi.SecurityContext(), u"target_name")
+        sspi.initialize_security_context(sspi.Credential(), sspi.SecurityContext(), "target_name")
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')

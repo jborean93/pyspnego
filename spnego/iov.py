@@ -4,6 +4,7 @@
 import collections
 import enum
 
+
 class BufferType(enum.IntEnum):
     """Buffer types to use for an IOVBuffer type.
 

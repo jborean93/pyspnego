@@ -11,22 +11,15 @@ SPNEGO token or just a raw Kerberos or NTLM token, the script should be smart en
 input.
 """
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
-
 import argparse
 import base64
-import hashlib
 import json
 import os.path
 import re
 import struct
 import sys
+import typing
 
-from spnego._compat import (
-    Dict,
-    Optional,
-)
 
 from spnego._context import (
     GSSMech,
@@ -41,8 +34,6 @@ from spnego._kerberos import (
 
 from spnego._ntlm_raw.crypto import (
     hmac_md5,
-    kxkey,
-    lmowfv1,
     ntowfv1,
     ntowfv2,
     rc4k,
@@ -55,12 +46,12 @@ from spnego._ntlm_raw.messages import (
     Negotiate,
     NegotiateFlags,
     NTClientChallengeV2,
+    TargetInfo,
+    Version,
 )
 
 from spnego._text import (
     to_bytes,
-    to_native,
-    to_text,
 )
 
 from spnego._spnego import (
@@ -75,28 +66,33 @@ try:
 except ImportError:  # pragma: nocover
     argcomplete = None
 
+yaml: typing.Optional[typing.Any]
 try:
     from ruamel import yaml
 except ImportError:  # pragma: nocover
     yaml = None
 
 
-def _parse_ntlm_version(version):
+def _parse_ntlm_version(
+    version: typing.Optional[Version],
+) -> typing.Optional[typing.Dict[str, typing.Union[int, str]]]:
     if not version:
-        return
+        return None
 
     return {
         'Major': version.major,
         'Minor': version.minor,
         'Build': version.build,
-        'Reserved': to_text(base64.b16encode(version.reserved)),
+        'Reserved': base64.b16encode(version.reserved).decode(),
         'NTLMRevision': version.revision,
     }
 
 
-def _parse_ntlm_target_info(target_info):
+def _parse_ntlm_target_info(
+    target_info: typing.Optional[TargetInfo],
+) -> typing.Optional[typing.List[typing.Dict[str, typing.Any]]]:
     if target_info is None:
-        return
+        return None
 
     text_values = [AvId.nb_computer_name, AvId.nb_domain_name, AvId.dns_computer_name, AvId.dns_domain_name,
                    AvId.dns_tree_name, AvId.target_name]
@@ -111,23 +107,23 @@ def _parse_ntlm_target_info(target_info):
         elif av_id == AvId.flags:
             value = parse_flags(raw_value)
         elif av_id == AvId.timestamp:
-            value = to_text(raw_value)
+            value = str(raw_value)
         elif av_id == AvId.single_host:
             value = {
                 'Size': raw_value.size,
                 'Z4': raw_value.z4,
-                'CustomData': to_text(base64.b16encode(raw_value.custom_data)),
-                'MachineId': to_text(base64.b16encode(raw_value.machine_id)),
+                'CustomData': base64.b16encode(raw_value.custom_data).decode(),
+                'MachineId': base64.b16encode(raw_value.machine_id).decode(),
             }
         else:
-            value = to_text(base64.b16encode(raw_value))
+            value = base64.b16encode(raw_value).decode()
 
         info.append({'AvId': parse_enum(av_id), 'Value': value})
 
     return info
 
 
-def _parse_ntlm_negotiate(data):  # type: (Negotiate) -> Dict[str, any]
+def _parse_ntlm_negotiate(data: Negotiate) -> typing.Dict[str, typing.Any]:
     b_data = data.pack()
 
     msg = {
@@ -152,7 +148,7 @@ def _parse_ntlm_negotiate(data):  # type: (Negotiate) -> Dict[str, any]
     return msg
 
 
-def _parse_ntlm_challenge(data):  # type: (Challenge) -> Dict[str, any]
+def _parse_ntlm_challenge(data: Challenge) -> typing.Dict[str, typing.Any]:
     b_data = data.pack()
 
     msg = {
@@ -162,8 +158,8 @@ def _parse_ntlm_challenge(data):  # type: (Challenge) -> Dict[str, any]
             'BufferOffset': struct.unpack("<I", b_data[16:20])[0],
         },
         'NegotiateFlags': parse_flags(data.flags, enum_type=NegotiateFlags),
-        'ServerChallenge': to_text(base64.b16encode(b_data[24:32])),
-        'Reserved': to_text(base64.b16encode(b_data[32:40])),
+        'ServerChallenge': base64.b16encode(b_data[24:32]).decode(),
+        'Reserved': base64.b16encode(b_data[32:40]).decode(),
         'TargetInfoFields': {
             'Len': struct.unpack("<H", b_data[40:42])[0],
             'MaxLen': struct.unpack("<H", b_data[42:44])[0],
@@ -179,10 +175,10 @@ def _parse_ntlm_challenge(data):  # type: (Challenge) -> Dict[str, any]
     return msg
 
 
-def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Dict[str, any]
+def _parse_ntlm_authenticate(data: Authenticate, password: typing.Optional[str]) -> typing.Dict[str, typing.Any]:
     b_data = data.pack()
 
-    msg = {
+    msg: typing.Dict[str, typing.Any] = {
         'LmChallengeResponseFields': {
             'Len': struct.unpack("<H", b_data[12:14])[0],
             'MaxLen': struct.unpack("<H", b_data[14:16])[0],
@@ -215,7 +211,7 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
         },
         'NegotiateFlags': parse_flags(data.flags, enum_type=NegotiateFlags),
         'Version': _parse_ntlm_version(data.version),
-        'MIC': to_text(base64.b16encode(data.mic)) if data.mic else None,
+        'MIC': base64.b16encode(data.mic).decode() if data.mic else None,
         'Payload': {
             'LmChallengeResponse': None,
             'NtChallengeResponse': None,
@@ -231,31 +227,31 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
     nt_response_data = data.nt_challenge_response
 
     if lm_response_data:
-        lm_response = {
+        lm_response: typing.Dict[str, typing.Any] = {
             'ResponseType': None,
             'LMProofStr': None,
         }
 
         if not nt_response_data or len(nt_response_data) == 24:
             lm_response['ResponseType'] = 'LMv1'
-            lm_response['LMProofStr'] = to_text(base64.b16encode(lm_response_data))
+            lm_response['LMProofStr'] = base64.b16encode(lm_response_data).decode()
 
         else:
             lm_response['ResponseType'] = 'LMv2'
-            lm_response['LMProofStr'] = to_text(base64.b16encode(lm_response_data[:16]))
-            lm_response['ChallengeFromClient'] = to_text(base64.b16encode(lm_response_data[16:]))
+            lm_response['LMProofStr'] = base64.b16encode(lm_response_data[:16]).decode()
+            lm_response['ChallengeFromClient'] = base64.b16encode(lm_response_data[16:]).decode()
 
         msg['Payload']['LmChallengeResponse'] = lm_response
 
     if nt_response_data:
-        nt_response = {
+        nt_response: typing.Dict[str, typing.Any] = {
             'ResponseType': None,
             'NTProofStr': None,
         }
 
         if len(nt_response_data) == 24:
             nt_response['ResponseType'] = 'NTLMv1'
-            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_response_data))
+            nt_response['NTProofStr'] = base64.b16encode(nt_response_data).decode()
 
             # TODO: need to get a sane way to include the server challenge for ESS KXKEY.
             # if password and lm_response_data:
@@ -267,7 +263,7 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
         else:
             nt_proof_str = nt_response_data[:16]
             nt_response['ResponseType'] = 'NTLMv2'
-            nt_response['NTProofStr'] = to_text(base64.b16encode(nt_proof_str))
+            nt_response['NTProofStr'] = base64.b16encode(nt_proof_str).decode()
 
             challenge = NTClientChallengeV2.unpack(nt_response_data[16:])
             b_challenge = nt_response_data[16:]
@@ -278,7 +274,7 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
                 'Reserved1': struct.unpack("<H", b_challenge[2:4])[0],
                 'Reserved2': struct.unpack("<I", b_challenge[4:8])[0],
                 'TimeStamp': str(challenge.time_stamp),
-                'ChallengeFromClient': to_text(base64.b16encode(challenge.challenge_from_client)),
+                'ChallengeFromClient': base64.b16encode(challenge.challenge_from_client).decode(),
                 'Reserved3': struct.unpack("<I", b_challenge[24:28])[0],
                 'AvPairs': _parse_ntlm_target_info(challenge.av_pairs),
                 'Reserved4': struct.unpack("<I", b_challenge[-4:])[0],
@@ -291,23 +287,26 @@ def _parse_ntlm_authenticate(data, password):  # type: (Authenticate, str) -> Di
         msg['Payload']['NtChallengeResponse'] = nt_response
 
     if data.encrypted_random_session_key:
-        msg['Payload']['EncryptedRandomSessionKey'] = to_text(base64.b16encode(data.encrypted_random_session_key))
+        msg['Payload']['EncryptedRandomSessionKey'] = base64.b16encode(data.encrypted_random_session_key).decode()
 
     if data.flags & NegotiateFlags.key_exch and (data.flags & NegotiateFlags.sign or data.flags & NegotiateFlags.seal):
         session_key = None
         if key_exchange_key:
-            session_key = rc4k(key_exchange_key, data.encrypted_random_session_key)
+            session_key = rc4k(key_exchange_key, typing.cast(bytes, data.encrypted_random_session_key))
 
     else:
         session_key = key_exchange_key
 
-    msg['SessionKey'] = to_text(base64.b16encode(session_key)) if session_key else 'Failed to derive'
+    msg['SessionKey'] = base64.b16encode(session_key).decode() if session_key else 'Failed to derive'
 
     return msg
 
 
-def _parse_spnego_init(data, secret=None, encoding=None):
-    # type: (NegTokenInit, Optional[str], Optional[str]) -> Dict[str, any]
+def _parse_spnego_init(
+    data: NegTokenInit,
+    secret: typing.Optional[str] = None,
+    encoding: typing.Optional[str] = None,
+) -> typing.Dict[str, typing.Any]:
     mech_types = [parse_enum(m, enum_type=GSSMech) for m in data.mech_types] \
         if data.mech_types else None
 
@@ -315,28 +314,30 @@ def _parse_spnego_init(data, secret=None, encoding=None):
     if data.mech_token:
         mech_token = parse_token(data.mech_token, secret=secret, encoding=encoding)
 
-    encoding = encoding if encoding else 'utf-8'
+    encoding = encoding or 'utf-8'
 
     msg = {
         'mechTypes': mech_types,
         'reqFlags': parse_flags(data.req_flags) if data.req_flags is not None else None,
         'mechToken': mech_token,
-        'mechListMIC': to_text(base64.b16encode(data.mech_list_mic)) if data.mech_list_mic is not None else None,
+        'mechListMIC': base64.b16encode(data.mech_list_mic).decode() if data.mech_list_mic is not None else None,
     }
 
     if data.hint_name or data.hint_address:
         # This is a NegTokenInit2 structure.
         msg['negHints'] = {
-            'hintName': to_text(data.hint_name, encoding=encoding) if data.hint_name else None,
-            'hintAddress': to_text(data.hint_address, encoding=encoding) if data.hint_address else None,
+            'hintName': data.hint_name.decode(encoding) if data.hint_name else None,
+            'hintAddress': data.hint_address.decode(encoding) if data.hint_address else None,
         }
 
     return msg
 
 
-def _parse_spnego_resp(data, secret=None, encoding=None):
-    # type: (NegTokenResp, Optional[str], Optional[str]) -> Dict[str, any]
-
+def _parse_spnego_resp(
+    data: NegTokenResp,
+    secret: typing.Optional[str] = None,
+    encoding: typing.Optional[str] = None,
+) -> typing.Dict[str, typing.Any]:
     supported_mech = parse_enum(data.supported_mech, enum_type=GSSMech) if data.supported_mech else None
 
     response_token = None
@@ -347,23 +348,23 @@ def _parse_spnego_resp(data, secret=None, encoding=None):
         'negState': parse_enum(data.neg_state) if data.neg_state is not None else None,
         'supportedMech': supported_mech,
         'responseToken': response_token,
-        'mechListMIC': to_text(base64.b16encode(data.mech_list_mic)) if data.mech_list_mic is not None else None,
+        'mechListMIC': base64.b16encode(data.mech_list_mic).decode() if data.mech_list_mic is not None else None,
     }
     return msg
 
 
-def main(args):
+def main(args: typing.List[str]) -> None:
     """Main program entry point."""
-    args = parse_args(args)
+    parsed_args = parse_args(args)
 
-    if args.token:
-        b_data = to_bytes(args.token)
+    if parsed_args.token:
+        b_data = to_bytes(parsed_args.token)
     else:
-        if args.file:
-            file_path = os.path.abspath(os.path.expanduser(os.path.expandvars(args.file)))
+        if parsed_args.file:
+            file_path = os.path.abspath(os.path.expanduser(os.path.expandvars(parsed_args.file)))
             b_file_path = to_bytes(file_path)
             if not os.path.exists(b_file_path):
-                raise ValueError("Cannot find file at path '%s'" % to_native(b_file_path))
+                raise ValueError("Cannot find file at path '%s'" % file_path)
 
             with open(b_file_path, mode='rb') as fd:
                 b_data = fd.read()
@@ -377,17 +378,17 @@ def main(args):
         # Input data was a base64 string.
         b_data = base64.b64decode(b_data.strip())
 
-    token_info = parse_token(b_data, secret=args.secret, encoding=args.encoding)
+    token_info = parse_token(b_data, secret=parsed_args.secret, encoding=parsed_args.encoding)
 
-    if args.output_format == 'yaml':
-        y = yaml.YAML()
+    if parsed_args.output_format == 'yaml':
+        y = yaml.YAML()  # type: ignore
         y.default_flow_style = False
         y.dump(token_info, sys.stdout)
     else:
         print(json.dumps(token_info, indent=4))
 
 
-def parse_args(args):
+def parse_args(args: typing.List[str]) -> argparse.Namespace:
     """Parse and return args."""
     parser = argparse.ArgumentParser(description='Parse Microsoft authentication tokens into a human readable format.')
 
@@ -427,15 +428,20 @@ def parse_args(args):
     if argcomplete:
         argcomplete.autocomplete(parser)
 
-    args = parser.parse_args(args)
+    parsed_args = parser.parse_args(args)
 
-    if args.output_format == 'yaml' and not yaml:
+    if parsed_args.output_format == 'yaml' and not yaml:
         raise ValueError('Cannot output as yaml as ruamel.yaml is not installed.')
 
-    return args
+    return parsed_args
 
 
-def parse_token(b_data, secret=None, encoding=None, mech=None):
+def parse_token(
+    b_data: bytes,
+    secret: typing.Optional[str] = None,
+    encoding: typing.Optional[str] = None,
+    mech: typing.Optional[typing.Union[str, GSSMech]] = None
+) -> typing.Dict[str, typing.Any]:
     """
     :param b_data: A byte string of the token to parse. This can be a NTLM or GSSAPI (SPNEGO/Kerberos) token.
     :param secret: The secret data used to decrypt fields and/or derive session keys.
@@ -444,20 +450,21 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
         for Kerberos.
     :return: A dict containing the parsed token data.
     """
+    gss_mech: typing.Optional[GSSMech] = None
     if mech and not isinstance(mech, GSSMech):
-        mech = GSSMech.from_oid(mech)
+        gss_mech = GSSMech.from_oid(mech)
 
     try:
-        token = unpack_token(b_data, mech=mech, unwrap=True, encoding=encoding)
+        token = unpack_token(b_data, mech=gss_mech, unwrap=True, encoding=encoding)
     except Exception as e:
         return {
             'MessageType': 'Unknown - Failed to parse see Data for more details.',
-            'Data': 'Failed to parse token: %s' % to_native(e),
-            'RawData': to_text(base64.b16encode(b_data)),
+            'Data': 'Failed to parse token: %s' % str(e),
+            'RawData': base64.b16encode(b_data).decode(),
         }
 
     msg_type = 'Unknown'
-    data = 'Failed to parse SPNEGO token due to unknown mech type'
+    data: typing.Union[str, typing.Dict[str, typing.Any]] = 'Failed to parse SPNEGO token due to unknown mech type'
 
     # SPNEGO messages.
     if isinstance(token, InitialContextToken):
@@ -501,7 +508,7 @@ def parse_token(b_data, secret=None, encoding=None, mech=None):
     return {
         'MessageType': msg_type,
         'Data': data,
-        'RawData': to_text(base64.b16encode(b_data)),
+        'RawData': base64.b16encode(b_data).decode(),
     }
 
 

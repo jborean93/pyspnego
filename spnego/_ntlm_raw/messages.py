@@ -170,7 +170,7 @@ class MessageType(enum.IntEnum):
         }
 
 
-def _get_payload_offset(b_data: bytes, field_offsets: int) -> int:
+def _get_payload_offset(b_data: memoryview, field_offsets: typing.List[int]) -> int:
     payload_offset = None
 
     for field_offset in field_offsets:
@@ -215,7 +215,7 @@ def _unpack_payload(
 
 
 class _NTLMMessageMeta(type):
-    __registry = {}
+    __registry: typing.Dict[int, typing.Type] = {}
 
     def __init__(cls, name, bases, attributes):
         cls.__registry[cls.MESSAGE_TYPE] = cls
@@ -286,7 +286,7 @@ class Negotiate(NTLMMessage):
         flags: int = 0,
         domain_name: typing.Optional[str] = None,
         workstation: typing.Optional[str] = None,
-        version: typing.Optional[str] = None,
+        version: typing.Optional["Version"] = None,
         encoding: typing.Optional[str] = None,
         _b_data: typing.Optional[bytes] = None,
     ) -> None:
@@ -352,6 +352,9 @@ class Negotiate(NTLMMessage):
         # If the payload offset is at 40 or more then the Version, or at least empty bytes, is in the payload.
         if payload_offset >= 40:
             return Version.unpack(self._data[32:40].tobytes())
+
+        else:
+            return None
 
     @property
     def _payload_offset(self) -> int:
@@ -472,6 +475,9 @@ class Challenge(NTLMMessage):
         # If the payload offset is at 56 or more then the Version, or at least empty bytes, is in the payload.
         if payload_offset >= 56:
             return Version.unpack(self._data[48:56].tobytes())
+
+        else:
+            return None
 
     @property
     def _payload_offset(self) -> int:
@@ -617,12 +623,18 @@ class Authenticate(NTLMMessage):
         if payload_offset not in [64, 80] and payload_offset >= 72:
             return Version.unpack(self._data[64:72].tobytes())
 
+        else:
+            return None
+
     @property
     def mic(self) -> typing.Optional[bytes]:
         """ The MIC for the Authenticate message. """
         mic_offset = self._get_mic_offset()
         if mic_offset:
             return self._data.tobytes()[mic_offset:mic_offset + 16]
+
+        else:
+            return None
 
     @mic.setter
     def mic(self, value: bytes) -> None:
@@ -684,6 +696,10 @@ class FileTime(datetime.datetime):
 
         return dt
 
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+        super().__init__()
+        self.nanosecond = getattr(self, "nanosecond", None) or 0
+
     @classmethod
     def now(cls, tz: typing.Optional[datetime.tzinfo] = None) -> "FileTime":
         """ Construct a FileTime from the current time and optional time zone info. """
@@ -717,7 +733,7 @@ class FileTime(datetime.datetime):
     def pack(self) -> bytes:
         """ Packs the structure to bytes. """
         # Make sure we are dealing with a timezone aware datetime
-        utc_tz = datetime.timzeone.utc
+        utc_tz = datetime.timezone.utc
         utc_dt = self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz)
 
         # Get the time since UTC EPOCH in microseconds
@@ -903,6 +919,7 @@ class TargetInfo(collections.OrderedDict):
             length = struct.unpack("<H", b_io.read(2))[0]
             b_value = b_io.read(length)
 
+            value: typing.Any
             if av_id in TargetInfo._FIELD_TYPES['text']:
                 # All AV_PAIRS are UNICODE encoded.
                 value = b_value.decode('utf-16-le')
@@ -970,7 +987,7 @@ class SingleHost:
             self.custom_data = custom_data or b"\x00" * 8
             self.machine_id = machine_id or b"\x00" * 32
 
-    def __eq__(self, other: typing.Union[bytes, "SingleHost"]) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, (bytes, SingleHost)):
             return False
 
@@ -980,7 +997,7 @@ class SingleHost:
         return self.pack() == other
 
     @property
-    def size(self) -> None:
+    def size(self) -> int:
         return struct.unpack("<I", self._data[:4].tobytes())[0]
 
     @size.setter
@@ -1022,7 +1039,7 @@ class SingleHost:
         return self._data.tobytes()
 
     @staticmethod
-    def unpack(b_data: bytes) -> "SingleHost":  # type: (bytes) -> SingleHost
+    def unpack(b_data: bytes) -> "SingleHost":
         """ Creates a SignleHost object from raw bytes. """
         return SingleHost(_b_data=b_data)
 
@@ -1073,7 +1090,7 @@ class Version:
             self.build = build
             self.revision = revision
 
-    def __eq__(self, other):  # type: (Union[bytes, Version]) -> bool
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, (bytes, Version)):
             return False
 

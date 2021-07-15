@@ -9,11 +9,11 @@ from spnego._ntlm_raw.messages import (
 )
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/7fc694c9-397a-446a-bd80-4635000f2c0f
-TEST_USER = u"User"
-TEST_USER_DOM = u"Domain"
-TEST_PASSWD = u"Password"
-TEST_SERVER_NAME = u"Server"
-TEST_WORKSTATION_NAME = u"COMPUTER"
+TEST_USER = "User"
+TEST_USER_DOM = "Domain"
+TEST_PASSWD = "Password"
+TEST_SERVER_NAME = "Server"
+TEST_WORKSTATION_NAME = "COMPUTER"
 TEST_RANDOM_SESSION_KEY = b"\x55" * 16
 TEST_TIME = b"\x00" * 8
 TEST_CLIENT_CHALLENGE = b"\xAA" * 8

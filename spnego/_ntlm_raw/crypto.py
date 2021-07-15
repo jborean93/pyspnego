@@ -436,7 +436,6 @@ def rc4init(k: bytes) -> RC4Handle:
 
 
 def sealkey(flags: int, session_key: bytes, usage: str) -> bytes:
-    # type: (int, bytes, str) -> bytes
     """NTLM SEALKEY function.
 
     The MS-NLMP `SEALKEY`_ function used to generate the sealing keys for a security context.

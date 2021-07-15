@@ -42,6 +42,7 @@ def split_username(username: typing.Optional[str]) -> typing.Tuple[typing.Option
     if username is None:
         return None, None
 
+    domain: typing.Optional[str]
     if '\\' in username:
         domain, username = username.split('\\', 1)
     else:
@@ -50,7 +51,7 @@ def split_username(username: typing.Optional[str]) -> typing.Tuple[typing.Option
     return to_text(domain, nonstring='passthru'), to_text(username, nonstring='passthru')
 
 
-def wrap_system_error(error_type: typing.Type, context: typing.Optiona[str] = None) -> typing.Any:
+def wrap_system_error(error_type: typing.Type, context: typing.Optional[str] = None) -> typing.Any:
     """Wraps a function that makes a native GSSAPI/SSPI syscall and convert native exceptions to a SpnegoError.
 
     Wraps a function that can potentially raise a WindowsError or GSSError and converts it to the common SpnegoError
@@ -137,7 +138,7 @@ class ContextReq(enum.IntFlag):
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
 
 
-class GSSMech(enum.Enum):
+class GSSMech(str, enum.Enum):
     ntlm = '1.3.6.1.4.1.311.2.2.10'
     spnego = '1.3.6.1.5.5.2'
 
@@ -152,7 +153,7 @@ class GSSMech(enum.Enum):
     negoex = '1.3.6.1.4.1.311.2.2.30'
 
     @classmethod
-    def native_labels(cls) -> typing.Dict["GSSMech", str]:
+    def native_labels(cls) -> typing.Dict[str, str]:
         return {
             GSSMech.ntlm: 'NTLM',
             GSSMech.ntlm.value: 'NTLM',
@@ -232,10 +233,10 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
     Attributes:
         usage (str): The usage of the context, `initiate` for a client and `accept` for a server.
-        protocol (text_type): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
-        username (text_type): The username.
-        password (text_type): The password for username.
-        spn (text_type): The service principal name of the service to connect to.
+        protocol (str): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
+        username (str): The username.
+        password (str): The password for username.
+        spn (str): The service principal name of the service to connect to.
         channel_bindings (spnego.channel_bindings.GssChannelBindings): Optional channel bindings to provide with the
             context.
         options (NegotiateOptions): The user specified negotiation options.
@@ -253,7 +254,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
         usage: str,
         protocol: str,
         options: NegotiateOptions,
-        _is_wrapped: bool,
+        _is_wrapped: bool = False,
     ) -> None:
         self.usage = usage.lower()
         if self.usage not in ['initiate', 'accept']:
@@ -334,7 +335,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
         protocol and underlying library that was used to complete the authentication.
 
         Returns:
-            Optional[text_type]: The client principal name.
+            Optional[str]: The client principal name.
         """
         pass  # pragma: no cover
 
@@ -365,7 +366,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
             if self._context_attr & provider:
                 attr |= generic
 
-        return attr
+        return ContextReq(attr)
 
     @property
     @abc.abstractmethod
@@ -465,7 +466,12 @@ class ContextProxy(metaclass=abc.ABCMeta):
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def wrap_iov(self, iov: typing.List[IOVBuffer], encrypt: bool = True, qop: typing.Optional[int] = None) -> IOVWrapResult:
+    def wrap_iov(
+        self,
+        iov: typing.List[IOVBuffer],
+        encrypt: bool = True,
+        qop: typing.Optional[int] = None,
+    ) -> IOVWrapResult:
         """Wrap/Encrypt an IOV buffer.
 
         This method wraps/encrypts an IOV buffer. The IOV buffers control how the data is to be processed. Because
@@ -667,6 +673,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
         provider_iov = []
 
         for entry in iov:
+            data: typing.Optional[typing.Union[bytes, int, bool]]
             if isinstance(entry, tuple):
                 if len(entry) != 2:
                     raise ValueError("IOV entry tuple must contain 2 values, the type and data, see IOVBuffer.")

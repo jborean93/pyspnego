@@ -275,7 +275,7 @@ class DES:
 
         return subkeys
 
-    def _shift_bits(self, bits:typing.List[int], shifts: int) -> typing.List[int]:
+    def _shift_bits(self, bits: typing.List[int], shifts: int) -> typing.List[int]:
         new_bits = [None] * 28
         for i in range(28):
             shift_index = i + shifts

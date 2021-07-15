@@ -36,7 +36,7 @@ from spnego._text import (
 
 
 def _enum_labels(
-    value: typing.Union[int, enum.IntEnum, enum.IntFlag],
+    value: typing.Union[int, str, enum.Enum],
     enum_type: typing.Optional[typing.Type] = None,
 ) -> typing.Dict[int, str]:
     """ Gets the human friendly labels of a known enum and what value they map to. """
@@ -47,7 +47,7 @@ def _enum_labels(
 
 
 def parse_enum(
-    value: typing.Union[int, enum.IntEnum],
+    value: typing.Union[int, str, enum.Enum],
     enum_type: typing.Optional[typing.Type] = None,
 ) -> str:
     """ Parses an IntEnum into a human representative object of that enum. """
@@ -493,6 +493,7 @@ class KerberosErrorCode(enum.IntEnum):
 
 # https://www.rfc-editor.org/rfc/rfc4120#section-5.10
 class KerberosMessageType(enum.IntEnum):
+    unknown = 0
     as_req = 10
     as_rep = 11
     tgs_req = 12
@@ -504,6 +505,7 @@ class KerberosMessageType(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosMessageType", str]:
         return {
+            KerberosMessageType.unknown: 'UNKNOWN',
             KerberosMessageType.as_req: 'AS-REQ',
             KerberosMessageType.as_rep: 'AS-REP',
             KerberosMessageType.tgs_req: 'TGS-REQ',
@@ -750,6 +752,7 @@ class _KerberosMsgType(type):
 
 class KerberosV5Msg(metaclass=_KerberosMsgType):
 
+    MESSAGE_TYPE = KerberosMessageType.unknown
     PVNO = 5
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:

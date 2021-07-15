@@ -5,12 +5,12 @@ import enum
 import typing
 
 try:
-    from gssapi.raw import GSSError
+    from gssapi.raw import GSSError  # type: ignore
 except ImportError as e:
     GSSError = ()
 
 try:
-    WinError = WindowsError
+    WinError = WindowsError  # type: ignore
 except NameError:
     WinError = ()
 
@@ -138,9 +138,9 @@ class ErrorCode(enum.IntEnum):
 # Implementation is inspired by the python-gssapi project https://github.com/pythongssapi/python-gssapi.
 # https://github.com/pythongssapi/python-gssapi/blob/826c02de1c1885896924bf342c60087f369c6b1a/gssapi/raw/misc.pyx#L180
 class _SpnegoErrorRegistry(type):
-    __registry = {}
-    __gssapi_map = {}
-    __sspi_map = {}
+    __registry: typing.Dict[int, typing.Type] = {}
+    __gssapi_map: typing.Dict[int, int] = {}
+    __sspi_map: typing.Dict[int, int] = {}
 
     def __init__(cls, name, bases, attributes):
         # Load up the registry with the instantiated class so we can look it up when creating a SpnegoError.
@@ -214,8 +214,8 @@ class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
 
     def __init__(
         self,
-        error_code: typing.Optional[typing.Union[GSSError, WinError]] = None,
-        base_error: typing.Optional[ErrorCode] = None,
+        error_code: typing.Optional[ErrorCode] = None,
+        base_error: typing.Optional[Exception] = None,
         context_msg: typing.Optional[str] = None,
     ) -> None:
         self.base_error = base_error

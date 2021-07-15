@@ -94,7 +94,7 @@ class GssChannelBindings:
             self.acceptor_address, self.application_data
         )
 
-    def __eq__(self, other: typing.Union["GssChannelBindings", bytes]) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, (bytes, GssChannelBindings)):
             return False
 

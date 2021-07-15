@@ -2,9 +2,6 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import datetime
 
 import spnego._kerberos as kerb
@@ -22,16 +19,8 @@ from spnego._asn1 import (
     TypeTagNumber,
 )
 
-from spnego._compat import (
-    UTC,
-)
-
 from spnego._context import (
     GSSMech,
-)
-
-from spnego._text import (
-    text_type,
 )
 
 from .conftest import get_data
@@ -171,7 +160,7 @@ def test_unpack_krb_as_req():
     assert actual.req_body.kdc_options == 1073741824
     assert actual.req_body.nonce == 734266074
     assert actual.req_body.postdated_from is None
-    assert actual.req_body.postdated_till == datetime.datetime(2020, 6, 14, 7, 4, 20, tzinfo=UTC())
+    assert actual.req_body.postdated_till == datetime.datetime(2020, 6, 14, 7, 4, 20, tzinfo=datetime.timezone.utc)
     assert actual.req_body.realm == b'DOMAIN.LOCAL'
     assert actual.req_body.rtime is None
     assert actual.req_body.sname == kerb.PrincipalName(kerb.KerberosPrincipalNameType.srv_inst,
@@ -253,7 +242,7 @@ def test_unpack_krb_tgs_req():
     assert actual.req_body.kdc_options == 1073807360
     assert actual.req_body.nonce == 333512069
     assert actual.req_body.postdated_from is None
-    assert actual.req_body.postdated_till == datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=UTC())
+    assert actual.req_body.postdated_till == datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
     assert actual.req_body.realm == b'DOMAIN.LOCAL'
     assert actual.req_body.rtime is None
     assert actual.req_body.sname == kerb.PrincipalName(kerb.KerberosPrincipalNameType.srv_hst,
@@ -276,10 +265,10 @@ def test_unpack_krb_tgs_req():
     assert actual['padata'][0]['padata-value']['ticket']['sname']['name-string'] == ['krbtgt', 'DOMAIN.LOCAL']
     assert actual['padata'][0]['padata-value']['ticket']['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['padata'][0]['padata-value']['ticket']['enc-part']['kvno'] == 2
-    assert isinstance(actual['padata'][0]['padata-value']['ticket']['enc-part']['cipher'], text_type)
+    assert isinstance(actual['padata'][0]['padata-value']['ticket']['enc-part']['cipher'], str)
     assert actual['padata'][0]['padata-value']['authenticator']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['padata'][0]['padata-value']['authenticator']['kvno'] is None
-    assert isinstance(actual['padata'][0]['padata-value']['authenticator']['cipher'], text_type)
+    assert isinstance(actual['padata'][0]['padata-value']['authenticator']['cipher'], str)
     assert actual['req-body']['kdc-options']['raw'] == 1073807360
     assert actual['req-body']['kdc-options']['flags'] == ['forwardable (1073741824)', 'canonicalize (65536)']
     assert actual['req-body']['cname'] is None
@@ -356,10 +345,10 @@ def test_unpack_krb_as_rep():
     assert actual['ticket']['sname']['name-string'] == ['krbtgt', 'DOMAIN.LOCAL']
     assert actual['ticket']['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['ticket']['enc-part']['kvno'] == 2
-    assert isinstance(actual['ticket']['enc-part']['cipher'], text_type)
+    assert isinstance(actual['ticket']['enc-part']['cipher'], str)
     assert actual['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['enc-part']['kvno'] == 11
-    assert isinstance(actual['enc-part']['cipher'], text_type)
+    assert isinstance(actual['enc-part']['cipher'], str)
 
 
 def test_unpack_krb_tgs_rep():
@@ -404,10 +393,10 @@ def test_unpack_krb_tgs_rep():
     assert actual['ticket']['sname']['name-string'] == ['HTTP', 'server2019.domain.local']
     assert actual['ticket']['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['ticket']['enc-part']['kvno'] == 6
-    assert isinstance(actual['ticket']['enc-part']['cipher'], text_type)
+    assert isinstance(actual['ticket']['enc-part']['cipher'], str)
     assert actual['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['enc-part']['kvno'] is None
-    assert isinstance(actual['enc-part']['cipher'], text_type)
+    assert isinstance(actual['enc-part']['cipher'], str)
 
 
 def test_unpack_krb_ap_req():
@@ -449,10 +438,10 @@ def test_unpack_krb_ap_req():
     assert actual['ticket']['sname']['name-string'] == ['host', 'dc01']
     assert actual['ticket']['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['ticket']['enc-part']['kvno'] == 6
-    assert isinstance(actual['ticket']['enc-part']['cipher'], text_type)
+    assert isinstance(actual['ticket']['enc-part']['cipher'], str)
     assert actual['authenticator']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['authenticator']['kvno'] is None
-    assert isinstance(actual['authenticator']['cipher'], text_type)
+    assert isinstance(actual['authenticator']['cipher'], str)
 
 
 def test_unpack_krb_ap_rep():
@@ -481,7 +470,7 @@ def test_unpack_krb_ap_rep():
     assert actual['msg-type'] == 'AP-REP (15)'
     assert actual['enc-part']['etype'] == 'AES256_CTS_HMAC_SHA1_96 (18)'
     assert actual['enc-part']['kvno'] is None
-    assert isinstance(actual['enc-part']['cipher'], text_type)
+    assert isinstance(actual['enc-part']['cipher'], str)
 
 
 def test_unpack_krb_error():
@@ -504,7 +493,7 @@ def test_unpack_krb_error():
     assert actual.error_code == kerb.KerberosErrorCode.preauth_required
     assert actual.realm == b'DOMAIN.LOCAL'
     assert actual.sname == kerb.PrincipalName(kerb.KerberosPrincipalNameType.srv_inst, [b'krbtgt', b'DOMAIN.LOCAL'])
-    assert actual.stime == datetime.datetime(2020, 6, 13, 21, 4, 23, tzinfo=UTC())
+    assert actual.stime == datetime.datetime(2020, 6, 13, 21, 4, 23, tzinfo=datetime.timezone.utc)
     assert actual.susec == 748591
 
     actual = kerb.parse_kerberos_token(actual, encoding='utf-8')
@@ -521,7 +510,7 @@ def test_unpack_krb_error():
     assert actual['sname']['name-type'] == 'NT-SRV-INST (2)'
     assert actual['sname']['name-string'] == ['krbtgt', 'DOMAIN.LOCAL']
     assert actual['e-text'] is None
-    assert isinstance(actual['e-data'], text_type)
+    assert isinstance(actual['e-data'], str)
 
 
 def test_padata_unknown_type():

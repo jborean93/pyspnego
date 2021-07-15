@@ -5,10 +5,6 @@ from collections import (
     namedtuple,
 )
 
-from spnego._text import (
-    to_native,
-)
-
 from cpython.exc cimport (
     PyErr_SetFromWindowsErr,
 )
@@ -570,15 +566,15 @@ cdef class WinNTAuthIdentity(_AuthIdentityBase):
         self.password = password
 
     def __repr__(WinNTAuthIdentity self):
-        domain = u"%s\\" % self.domain if self.domain else u""
+        domain = "%s\\" % self.domain if self.domain else ""
 
-        return to_native(u"<{0}.{1} {2}{3}>".format(type(self).__module__, type(self).__name__, domain,
-            self.username or u""))
+        return "<{0}.{1} {2}{3}>".format(type(self).__module__, type(self).__name__, domain,
+            self.username or "")
 
     def __str__(WinNTAuthIdentity self):
-        domain = u"%s\\" % self.domain if self.domain else u""
+        domain = "%s\\" % self.domain if self.domain else ""
 
-        return to_native(u"{0}{1}".format(domain, self.username or u""))
+        return "{0}{1}".format(domain, self.username or "")
 
     @property
     def username(WinNTAuthIdentity self):

@@ -100,12 +100,12 @@ def test_negotiate_pack_defaults():
 
 
 def test_negotiate_pack_with_domain():
-    negotiate = messages.Negotiate(domain_name=u"café", workstation=u"café")
+    negotiate = messages.Negotiate(domain_name="café", workstation="café")
 
     assert negotiate.flags == messages.NegotiateFlags.oem_workstation_supplied | \
         messages.NegotiateFlags.oem_domain_name_supplied
-    assert negotiate.domain_name == u"café"
-    assert negotiate.workstation == u"café"
+    assert negotiate.domain_name == "café"
+    assert negotiate.workstation == "café"
     assert negotiate.version is None
 
     actual = negotiate.pack()
@@ -124,13 +124,13 @@ def test_negotiate_pack_with_domain():
 
 
 def test_negotiate_pack_with_all_fields():
-    negotiate = messages.Negotiate(domain_name=u"café", workstation=u"café", version=messages.Version(1, 1, 1))
+    negotiate = messages.Negotiate(domain_name="café", workstation="café", version=messages.Version(1, 1, 1))
 
     assert negotiate.flags == messages.NegotiateFlags.oem_workstation_supplied | \
         messages.NegotiateFlags.oem_domain_name_supplied | \
         messages.NegotiateFlags.version
-    assert negotiate.domain_name == u"café"
-    assert negotiate.workstation == u"café"
+    assert negotiate.domain_name == "café"
+    assert negotiate.workstation == "café"
     assert negotiate.version == messages.Version(1, 1, 1)
 
     actual = negotiate.pack()
@@ -150,12 +150,12 @@ def test_negotiate_pack_with_all_fields():
 
 
 def test_negotiate_pack_encoding():
-    negotiate = messages.Negotiate(domain_name=u"café", workstation=u"café", encoding='utf-8')
+    negotiate = messages.Negotiate(domain_name="café", workstation="café", encoding='utf-8')
 
     assert negotiate.flags == messages.NegotiateFlags.oem_workstation_supplied | \
         messages.NegotiateFlags.oem_domain_name_supplied
-    assert negotiate.domain_name == u"café"
-    assert negotiate.workstation == u"café"
+    assert negotiate.domain_name == "café"
+    assert negotiate.workstation == "café"
     assert negotiate.version is None
 
     actual = negotiate.pack()
@@ -205,8 +205,8 @@ def test_negotiate_unpack_with_domain():
 
     assert actual.flags == messages.NegotiateFlags.oem_workstation_supplied | \
         messages.NegotiateFlags.oem_domain_name_supplied
-    assert actual.domain_name == u"café"
-    assert actual.workstation == u"café"
+    assert actual.domain_name == "café"
+    assert actual.workstation == "café"
     assert actual.version is None
 
 
@@ -228,8 +228,8 @@ def test_negotiate_unpack_with_all_fields():
         messages.NegotiateFlags.oem_domain_name_supplied | \
         messages.NegotiateFlags.version
 
-    assert actual.domain_name == u"café"
-    assert actual.workstation == u"café"
+    assert actual.domain_name == "café"
+    assert actual.workstation == "café"
     assert actual.version == messages.Version(1, 1, 1)
 
 
@@ -248,8 +248,8 @@ def test_negotiate_unpack_encoding():
 
     assert actual.flags == messages.NegotiateFlags.oem_workstation_supplied | \
         messages.NegotiateFlags.oem_domain_name_supplied
-    assert actual.domain_name == u"café"
-    assert actual.workstation == u"café"
+    assert actual.domain_name == "café"
+    assert actual.workstation == "café"
     assert actual.version is None
 
 
@@ -269,8 +269,8 @@ def test_negotiate_unpack_invalid_encoding():
 
     assert actual.flags == messages.NegotiateFlags.oem_workstation_supplied | \
         messages.NegotiateFlags.oem_domain_name_supplied
-    assert actual.domain_name == u"caf�"
-    assert actual.workstation == u"caf�"
+    assert actual.domain_name == "caf�"
+    assert actual.workstation == "caf�"
     assert actual.version is None
 
 
@@ -305,11 +305,11 @@ def test_challenge_pack():
 
 def test_challenge_pack_target_name():
     challenge = messages.Challenge(flags=messages.NegotiateFlags.unicode, server_challenge=b"\x11" * 8,
-                                   target_name=u"café")
+                                   target_name="café")
 
     assert challenge.flags == messages.NegotiateFlags.unicode | messages.NegotiateFlags.request_target
     assert challenge.server_challenge == b"\x11" * 8
-    assert challenge.target_name == u"café"
+    assert challenge.target_name == "café"
 
     actual = challenge.pack()
 
@@ -329,11 +329,11 @@ def test_challenge_pack_target_name():
 
 def test_challenge_pack_target_name_oem():
     challenge = messages.Challenge(flags=messages.NegotiateFlags.oem, server_challenge=b"\x11" * 8,
-                                   target_name=u"café")
+                                   target_name="café")
 
     assert challenge.flags == messages.NegotiateFlags.oem | messages.NegotiateFlags.request_target
     assert challenge.server_challenge == b"\x11" * 8
-    assert challenge.target_name == u"café"
+    assert challenge.target_name == "café"
 
     actual = challenge.pack()
 
@@ -353,7 +353,7 @@ def test_challenge_pack_target_name_oem():
 
 def test_challenge_pack_target_info():
     ti = messages.TargetInfo()
-    ti[messages.AvId.dns_computer_name] = u"café"
+    ti[messages.AvId.dns_computer_name] = "café"
     # Even with the OEM encoding flag, the target info should still be utf-16-le.
     challenge = messages.Challenge(flags=messages.NegotiateFlags.oem, server_challenge=b"\x11" * 8,
                                    target_info=ti)
@@ -362,7 +362,7 @@ def test_challenge_pack_target_info():
     assert challenge.server_challenge == b"\x11" * 8
     assert challenge.target_name is None
     assert len(challenge.target_info) == 2
-    assert challenge.target_info[messages.AvId.dns_computer_name] == u"café"
+    assert challenge.target_info[messages.AvId.dns_computer_name] == "café"
     assert challenge.target_info[messages.AvId.eol] == b""
     assert challenge.version is None
 
@@ -385,16 +385,16 @@ def test_challenge_pack_target_info():
 
 def test_challenge_pack_all_fields():
     ti = messages.TargetInfo()
-    ti[messages.AvId.dns_computer_name] = u"café"
+    ti[messages.AvId.dns_computer_name] = "café"
     challenge = messages.Challenge(flags=messages.NegotiateFlags.unicode, server_challenge=b"\x11" * 8,
-                                   target_name=u"café", target_info=ti, version=messages.Version(2, 2, 2))
+                                   target_name="café", target_info=ti, version=messages.Version(2, 2, 2))
 
     assert challenge.flags == messages.NegotiateFlags.target_info | messages.NegotiateFlags.request_target | \
         messages.NegotiateFlags.version | messages.NegotiateFlags.unicode
     assert challenge.server_challenge == b"\x11" * 8
-    assert challenge.target_name == u"café"
+    assert challenge.target_name == "café"
     assert len(challenge.target_info) == 2
-    assert challenge.target_info[messages.AvId.dns_computer_name] == u"café"
+    assert challenge.target_info[messages.AvId.dns_computer_name] == "café"
     assert challenge.target_info[messages.AvId.eol] == b""
     assert challenge.version == messages.Version(2, 2, 2)
 
@@ -519,7 +519,7 @@ def test_challenge_unpack_encoding():
                                        b"\x34\x00\x00\x00"
                                        b"\x63\x61\x66\xE9")
 
-    assert actual.target_name == u"café"
+    assert actual.target_name == "café"
     assert actual.flags == messages.NegotiateFlags.oem | messages.NegotiateFlags.request_target
     assert actual.server_challenge == b"\x11" * 8
     assert actual.target_info is None
@@ -566,12 +566,12 @@ def test_authenticate_pack():
 
 
 def test_authenticate_pack_domain_version():
-    authenticate = messages.Authenticate(flags=messages.NegotiateFlags.unicode, domain_name=u"café",
+    authenticate = messages.Authenticate(flags=messages.NegotiateFlags.unicode, domain_name="café",
                                          version=messages.Version(1, 1, 1))
 
     assert authenticate.lm_challenge_response is None
     assert authenticate.nt_challenge_response is None
-    assert authenticate.domain_name == u"café"
+    assert authenticate.domain_name == "café"
     assert authenticate.user_name is None
     assert authenticate.workstation is None
     assert authenticate.encrypted_random_session_key is None
@@ -609,12 +609,12 @@ def test_authenticate_pack_domain_version():
 
 
 def test_authenticate_pack_oem_encoding():
-    authenticate = messages.Authenticate(flags=messages.NegotiateFlags.oem, domain_name=u"café",
+    authenticate = messages.Authenticate(flags=messages.NegotiateFlags.oem, domain_name="café",
                                          version=messages.Version(1, 1, 1))
 
     assert authenticate.lm_challenge_response is None
     assert authenticate.nt_challenge_response is None
-    assert authenticate.domain_name == u"café"
+    assert authenticate.domain_name == "café"
     assert authenticate.user_name is None
     assert authenticate.workstation is None
     assert authenticate.encrypted_random_session_key is None
@@ -976,9 +976,9 @@ def test_authenticate_unpack_mic_no_version():
                                            b"\x01\x00\x0C\x00\x53\x00\x65\x00\x72\x00\x76\x00\x65\x00\x72\x00" \
                                            b"\x00\x00\x00\x00" \
                                            b"\x00\x00\x00\x00"
-    assert actual.domain_name == u"café"
-    assert actual.user_name == u"café"
-    assert actual.workstation == u"café"
+    assert actual.domain_name == "café"
+    assert actual.user_name == "café"
+    assert actual.workstation == "café"
     assert actual.encrypted_random_session_key is None
     assert actual.flags == 3800728113
     assert actual.mic == b"\x11" * 16
@@ -1066,7 +1066,7 @@ def test_nt_challenge_pack():
 def test_nt_challenge_create():
     ft = messages.FileTime.unpack(b"\x11" * 8)
     av = messages.TargetInfo()
-    av[messages.AvId.dns_domain_name] = u"test"
+    av[messages.AvId.dns_domain_name] = "test"
 
     actual = messages.NTClientChallengeV2(time_stamp=ft, client_challenge=b"\x11" * 8, av_pairs=av)
 
@@ -1075,7 +1075,7 @@ def test_nt_challenge_create():
     assert actual.time_stamp.pack() == b"\x11" * 8
     assert actual.challenge_from_client == b"\x11" * 8
     assert len(actual.av_pairs) == 2
-    assert actual.av_pairs[messages.AvId.dns_domain_name] == u"test"
+    assert actual.av_pairs[messages.AvId.dns_domain_name] == "test"
 
     assert actual.pack() == b"\x01" \
                             b"\x01" \
@@ -1152,7 +1152,7 @@ def test_target_info_pack():
     target_info = messages.TargetInfo()
     target_info[messages.AvId.timestamp] = b"\x00\x00\x00\x00\x00\x00\x00\x00"
     target_info[messages.AvId.single_host] = b"\x00" * 48
-    target_info[messages.AvId.dns_computer_name] = u"caf\u00e9-host"
+    target_info[messages.AvId.dns_computer_name] = "caf\u00e9-host"
     target_info[messages.AvId.eol] = b""
     target_info[messages.AvId.channel_bindings] = b"\xFF" * 16
     target_info[messages.AvId.flags] = messages.AvFlags.constrained
@@ -1193,7 +1193,7 @@ def test_target_info_unpack():
     assert len(actual) == 6
     assert actual[messages.AvId.timestamp] == messages.FileTime.unpack(b"\x00" * 8)
     assert actual[messages.AvId.single_host] == messages.SingleHost.unpack(b"\x00" * 48)
-    assert actual[messages.AvId.dns_computer_name] == u"caf\u00e9-host"
+    assert actual[messages.AvId.dns_computer_name] == "caf\u00e9-host"
     assert actual[messages.AvId.channel_bindings] == b"\xFF" * 16
     assert actual[messages.AvId.flags] == messages.AvFlags.constrained
     assert actual[messages.AvId.eol] == b""
