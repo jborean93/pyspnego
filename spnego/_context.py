@@ -1,28 +1,10 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import abc
 import collections
-
-from spnego._compat import (
-    integer_types,
-
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-
-    add_metaclass,
-
-    reraise,
-
-    Enum,
-    IntFlag,
-)
+import enum
+import typing
 
 from spnego.channel_bindings import (
     GssChannelBindings,
@@ -40,13 +22,11 @@ from spnego.iov import (
 )
 
 from spnego._text import (
-    text_type,
-    to_native,
     to_text,
 )
 
 
-def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], Optional[str]]
+def split_username(username: typing.Optional[str]) -> typing.Tuple[typing.Optional[str], typing.Optional[str]]:
     """Splits a username and returns the domain component.
 
     Will split a username in the Netlogon form `DOMAIN\\username` and return the domain and user part as separate
@@ -70,7 +50,7 @@ def split_username(username):  # type: (Optional[str]) -> Tuple[Optional[str], O
     return to_text(domain, nonstring='passthru'), to_text(username, nonstring='passthru')
 
 
-def wrap_system_error(error_type, context=None):  # type: (type, Optional[str]) -> any
+def wrap_system_error(error_type: typing.Type, context: typing.Optiona[str] = None) -> typing.Any:
     """Wraps a function that makes a native GSSAPI/SSPI syscall and convert native exceptions to a SpnegoError.
 
     Wraps a function that can potentially raise a WindowsError or GSSError and converts it to the common SpnegoError
@@ -88,7 +68,7 @@ def wrap_system_error(error_type, context=None):  # type: (type, Optional[str]) 
                 return func(*args, **kwargs)
 
             except error_type as native_err:
-                reraise(SpnegoError(base_error=native_err, context_msg=context))
+                raise SpnegoError(base_error=native_err, context_msg=context) from native_err
 
         return wrapper
     return decorator
@@ -138,7 +118,7 @@ Attributes:
 """
 
 
-class ContextReq(IntFlag):
+class ContextReq(enum.IntFlag):
     none = 0x00000000
 
     # GSSAPI|SSPI flags
@@ -157,7 +137,7 @@ class ContextReq(IntFlag):
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
 
 
-class GSSMech(Enum):
+class GSSMech(enum.Enum):
     ntlm = '1.3.6.1.4.1.311.2.2.10'
     spnego = '1.3.6.1.5.5.2'
 
@@ -172,7 +152,7 @@ class GSSMech(Enum):
     negoex = '1.3.6.1.4.1.311.2.2.30'
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[str, str]
+    def native_labels(cls) -> typing.Dict["GSSMech", str]:
         return {
             GSSMech.ntlm: 'NTLM',
             GSSMech.ntlm.value: 'NTLM',
@@ -193,14 +173,14 @@ class GSSMech(Enum):
         }
 
     @property
-    def common_name(self):
+    def common_name(self) -> str:
         if self.is_kerberos_oid:
             return 'kerberos'
 
         return self.name
 
     @property
-    def is_kerberos_oid(self):  # type: () -> bool
+    def is_kerberos_oid(self) -> bool:
         """Determines if the mech is a Kerberos mech.
 
         Kerberos has been known under serveral OIDs in the past. This tells the caller whether the OID is one of those
@@ -212,7 +192,7 @@ class GSSMech(Enum):
         return self in [GSSMech.kerberos, GSSMech._ms_kerberos, GSSMech._kerberos_draft, GSSMech._iakerb]
 
     @staticmethod
-    def from_oid(oid):  # type: (str) -> GSSMech
+    def from_oid(oid: str) -> "GSSMech":
         """Converts an OID string to a GSSMech value.
 
         Converts an OID string to a GSSMech value if it is known.
@@ -230,8 +210,7 @@ class GSSMech(Enum):
             raise ValueError("'%s' is not a valid GSSMech OID" % oid)
 
 
-@add_metaclass(abc.ABCMeta)
-class ContextProxy:
+class ContextProxy(metaclass=abc.ABCMeta):
     """Base class for a authentication context.
 
     A base class the defined a common entry point for the various authentication context's that are used in this
@@ -263,16 +242,26 @@ class ContextProxy:
         context_req (ContextReq): The context requirements flags as an int value specific to the context provider.
     """
 
-    def __init__(self, username, password, hostname, service, channel_bindings, context_req, usage, protocol, options,
-                 _is_wrapped):
-        # type: (Optional[text_type], Optional[text_type], Optional[text_type], Optional[text_type], Optional[GssChannelBindings], ContextReq, str, text_type, NegotiateOptions, bool) -> None  # noqa
+    def __init__(
+        self,
+        username: typing.Optional[str],
+        password: typing.Optional[str],
+        hostname: typing.Optional[str],
+        service: typing.Optional[str],
+        channel_bindings: typing.Optional[GssChannelBindings],
+        context_req: ContextReq,
+        usage: str,
+        protocol: str,
+        options: NegotiateOptions,
+        _is_wrapped: bool,
+    ) -> None:
         self.usage = usage.lower()
         if self.usage not in ['initiate', 'accept']:
             raise ValueError("Invalid usage '%s', must be initiate or accept" % self.usage)
 
         self.protocol = protocol.lower()
-        if self.protocol not in [u'ntlm', u'kerberos', u'negotiate']:
-            raise ValueError(to_native(u"Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol))
+        if self.protocol not in ['ntlm', 'kerberos', 'negotiate']:
+            raise ValueError("Invalid protocol '%s', must be ntlm, kerberos, or negotiate" % self.protocol)
 
         if self.protocol not in self.available_protocols(options=options):
             raise ValueError("Protocol %s is not available" % self.protocol)
@@ -306,7 +295,7 @@ class ContextProxy:
             raise FeatureMissingError(NegotiateOptions.wrapping_iov)
 
     @classmethod
-    def available_protocols(cls, options=None):  # type: (Optional[NegotiateOptions]) -> List[str]
+    def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
         """A list of protocols that the provider can offer.
 
         Returns a list of protocols the underlying provider can implement. Currently only kerberos, negotiate, or ntlm
@@ -322,7 +311,7 @@ class ContextProxy:
         return ['kerberos', 'negotiate', 'ntlm']  # pragma: no cover
 
     @classmethod
-    def iov_available(cls):  # type: () -> bool
+    def iov_available(cls) -> bool:
         """Whether the context supports IOV wrapping and unwrapping.
 
         Will return a bool that states whether the context supports IOV wrapping or unwrapping. The NTLM protocol on
@@ -337,7 +326,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def client_principal(self):  # type: () -> Optional[text_type]
+    def client_principal(self) -> typing.Optional[str]:
         """The principal that was used authenticated by the acceptor.
 
         The name of the client principal that was used in the authentication context. This is `None` when
@@ -351,7 +340,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def complete(self):  # type: () -> bool
+    def complete(self) -> bool:
         """Whether the context has completed the authentication process.
 
         Will return a bool that states whether the authentication process has completed successfully.
@@ -362,7 +351,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @property
-    def context_attr(self):  # type: () -> ContextReq
+    def context_attr(self) -> ContextReq:
         """The context attributes that were negotiated.
 
         This is the context attributes that were negotiated with the counterpart server. These attributes are only
@@ -380,7 +369,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def negotiated_protocol(self):  # type: () -> Optional[str]
+    def negotiated_protocol(self) -> typing.Optional[str]:
         """The name of the negotiated protocol.
 
         Once the authentication process has compeleted this will return the name of the negotiated context that was
@@ -396,7 +385,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def session_key(self):  # type: () -> bytes
+    def session_key(self) -> bytes:
         """The derived session key.
 
         Once the authentication process is complete, this will return the derived session key. It is recommended to not
@@ -409,7 +398,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def step(self, in_token=None):  # type: (Optional[bytes]) -> Optional[bytes]
+    def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
         """Performs a negotiation step.
 
         This method performs a negotiation step and processes/generates a token. This token should be then sent to the
@@ -444,7 +433,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def wrap(self, data, encrypt=True, qop=None):  # type: (bytes, bool, Optional[int]) -> WrapResult
+    def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
         """Wrap a message, optionally with encryption.
 
         This wraps a message, signing it and optionally encrypting it. The :meth:`unwrap` will unwrap a message.
@@ -476,8 +465,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def wrap_iov(self, iov, encrypt=True, qop=None):
-        # type: (List[IOVBuffer, ...], bool, Optional[int]) -> IOVWrapResult
+    def wrap_iov(self, iov: typing.List[IOVBuffer], encrypt: bool = True, qop: typing.Optional[int] = None) -> IOVWrapResult:
         """Wrap/Encrypt an IOV buffer.
 
         This method wraps/encrypts an IOV buffer. The IOV buffers control how the data is to be processed. Because
@@ -504,7 +492,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def wrap_winrm(self, data):  # type: (bytes) -> WinRMWrapResult
+    def wrap_winrm(self, data: bytes) -> WinRMWrapResult:
         """Wrap/Encrypt data for use with WinRM.
 
         This method wraps/encrypts bytes for use with WinRM message encryption.
@@ -518,7 +506,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def unwrap(self, data):  # type: (bytes) -> UnwrapResult
+    def unwrap(self, data: bytes) -> UnwrapResult:
         """Unwrap a message.
 
         This unwraps a message created by :meth:`wrap`.
@@ -547,7 +535,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def unwrap_iov(self, iov):  # type: (List[IOVBuffer, ...]) -> IOVUnwrapResult
+    def unwrap_iov(self, iov: typing.List[IOVBuffer]) -> IOVUnwrapResult:
         """Unwrap/Decrypt an IOV buffer.
 
         This method unwraps/decrypts an IOV buffer. The IOV buffers control how the data is to be processed. Because
@@ -571,7 +559,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def unwrap_winrm(self, header, data):  # type: (bytes, bytes) -> bytes
+    def unwrap_winrm(self, header: bytes, data: bytes) -> bytes:
         """Unwrap/Decrypt a WinRM message.
 
         This method unwraps/decrypts a WinRM message. It handles the complexities of unwrapping the data and dealing
@@ -587,7 +575,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def sign(self, data, qop=None):  # type: (bytes, Optional[int]) -> bytes
+    def sign(self, data: bytes, qop: typing.Optional[int] = None) -> bytes:
         """Generates a signature/MIC for a message.
 
         This method generates a MIC for the given data. This is unlike wrap which bundles the MIC and the message
@@ -611,7 +599,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def verify(self, data, mic):  # type: (bytes, bytes) -> int
+    def verify(self, data: bytes, mic: bytes) -> int:
         """Verify the signature/MIC for a message.
 
         Will verify that the given MIC matches the given data. If the MIC does not match the given data, an exception
@@ -638,7 +626,7 @@ class ContextProxy:
 
     @property
     @abc.abstractmethod
-    def _context_attr_map(self):  # type: () -> List[Tuple[ContextReq, int], ...]
+    def _context_attr_map(self) -> typing.List[typing.Tuple[ContextReq, int]]:
         """Map the generic ContextReq into the provider specific flags.
 
         Will return a list of tuples that give the provider specific flag value for the generic ContextReq that is
@@ -651,7 +639,7 @@ class ContextProxy:
         pass  # pragma: no cover
 
     @property
-    def _requires_mech_list_mic(self):  # type: () -> bool
+    def _requires_mech_list_mic(self) -> bool:
         """Determine if the SPNEGO mechListMIC is required for the sec context.
 
         When Microsoft hosts deal with NTLM through SPNEGO it always wants the mechListMIC to be present when the NTLM
@@ -675,7 +663,7 @@ class ContextProxy:
         """
         return False  # pragma: no cover
 
-    def _build_iov_list(self, iov):  # type: (List[Union[Tuple, IOVBuffer, int, bytes], ...]) -> List
+    def _build_iov_list(self, iov: typing.List[typing.Union[typing.Tuple, IOVBuffer, int, bytes]]) -> typing.List:
         provider_iov = []
 
         for entry in iov:
@@ -683,16 +671,16 @@ class ContextProxy:
                 if len(entry) != 2:
                     raise ValueError("IOV entry tuple must contain 2 values, the type and data, see IOVBuffer.")
 
-                if not isinstance(entry[0], integer_types):
+                if not isinstance(entry[0], int):
                     raise ValueError("IOV entry[0] must specify the BufferType as an int")
                 buffer_type = entry[0]
 
-                if entry[1] is not None and not isinstance(entry[1], (bytes, integer_types, bool)):
+                if entry[1] is not None and not isinstance(entry[1], (bytes, int, bool)):
                     raise ValueError("IOV entry[1] must specify the buffer bytes, length of the buffer, or whether "
                                      "it is auto allocated.")
                 data = entry[1] if entry[1] is not None else b""
 
-            elif isinstance(entry, integer_types):
+            elif isinstance(entry, int):
                 buffer_type = entry
                 data = None
 
@@ -709,7 +697,7 @@ class ContextProxy:
         return provider_iov
 
     @abc.abstractmethod
-    def _convert_iov_buffer(self, buffer):  # type: (IOVBuffer) -> any
+    def _convert_iov_buffer(self, buffer: IOVBuffer) -> typing.Any:
         """Convert a IOVBuffer object to a provider specific IOVBuffer value.
 
         Converts the common IOVBuffer object to the provider specific value that it can use in the *_iov() functions.
@@ -722,7 +710,7 @@ class ContextProxy:
         """
         pass  # pragma: no cover
 
-    def _reset_ntlm_crypto_state(self, outgoing=True):  # type: (bool) -> None
+    def _reset_ntlm_crypto_state(self, outgoing: bool = True) -> None:
         """Reset the NTLM crypto handles after signing/verifying the SPNEGO mechListMIC.
 
         `MS-SPNG`_ documents that after signing or verifying the mechListMIC, the RC4 key state needs to be the same

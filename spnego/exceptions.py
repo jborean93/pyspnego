@@ -1,19 +1,8 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from spnego._compat import (
-    add_metaclass,
-
-    Optional,
-    Union,
-
-    IntEnum,
-    IntFlag,
-)
-
-from spnego._text import (
-    text_type,
-)
+import enum
+import typing
 
 try:
     from gssapi.raw import GSSError
@@ -26,7 +15,7 @@ except NameError:
     WinError = ()
 
 
-class NegotiateOptions(IntFlag):
+class NegotiateOptions(enum.IntFlag):
     """Flags that the caller can use to control the negotiation behaviour.
 
     A list of features as bit flags that the caller can specify when creating the security context. These flags can
@@ -94,11 +83,11 @@ class NegotiateOptions(IntFlag):
 class FeatureMissingError(Exception):
 
     @property
-    def feature_id(self):
+    def feature_id(self) -> NegotiateOptions:
         return self.args[0]
 
     @property
-    def message(self):
+    def message(self) -> str:
         msg = {
             NegotiateOptions.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
                                                  'negotiated.',
@@ -113,11 +102,11 @@ class FeatureMissingError(Exception):
 
         return msg
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.message
 
 
-class ErrorCode(IntEnum):
+class ErrorCode(enum.IntEnum):
     """Common error codes for SPNEGO operations.
 
     Mostly a copy of the `GSS major error codes`_ with the names made more pythonic. Not all codes have a corresponding
@@ -196,8 +185,7 @@ class _SpnegoErrorRegistry(type):
         return super(_SpnegoErrorRegistry, new_cls).__call__(error_code, base_error, *args, **kwargs)
 
 
-@add_metaclass(_SpnegoErrorRegistry)
-class SpnegoError(Exception):
+class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
     """Common error for SPNEGO exception.
 
     Creates an common error record for SPNEGO errors raised by pyspnego. This error record can wrap system level error
@@ -224,15 +212,20 @@ class SpnegoError(Exception):
     # _GSSAPI_CODE = The GSSAPI major_code from GSSError to map to the common error code
     # _SSPI_CODE = The winerror value from an WindowsError to map to the common error code
 
-    def __init__(self, error_code=None, base_error=None, context_msg=None):
-        self.base_error = base_error  # type: Optional[Union[GSSError, WinError]]
-        self._error_code = error_code  # type: Optional[ErrorCode]
-        self._context_message = context_msg  # type: Optional[text_type]
+    def __init__(
+        self,
+        error_code: typing.Optional[typing.Union[GSSError, WinError]] = None,
+        base_error: typing.Optional[ErrorCode] = None,
+        context_msg: typing.Optional[str] = None,
+    ) -> None:
+        self.base_error = base_error
+        self._error_code = error_code
+        self._context_message = context_msg
 
         super(SpnegoError, self).__init__(self.message)
 
     @property
-    def message(self):
+    def message(self) -> str:
         error_code = self._error_code if self._error_code is not None else 0xFFFFFFFF
 
         if self.base_error:

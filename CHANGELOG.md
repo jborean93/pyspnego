@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0 - TBD
+
+* Drop support for Python 2.7 and 3.5 - new minimum is 3.6+
+
 ## 0.1.6 - 2021-05-07
 
 * This will be the last release that supports Python 2.7 and 3.5

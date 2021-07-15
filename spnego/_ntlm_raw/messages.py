@@ -1,33 +1,15 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import collections
 import datetime
+import enum
 import io
 import re
 import struct
-
-from spnego._compat import (
-    Callable,
-    Dict,
-    Optional,
-    Tuple,
-    Union,
-
-    add_metaclass,
-
-    IntEnum,
-    IntFlag,
-
-    UTC,
-)
+import typing
 
 from spnego._text import (
-    text_type,
-    to_bytes,
     to_text,
 )
 
@@ -36,10 +18,7 @@ from spnego._version import (
 )
 
 
-# TODO: Use _compat.IntFlag once Python 2.7 is dropped.
-# Cannot use it today as Python 2.7 on some systems have sys.maxint as a signed 32 bit integer and cannot have anything
-# > 0x7FFFFFFF set.
-class NegotiateFlags:
+class NegotiateFlags(enum.IntFlag):
     """NTLM Negotiation flags.
 
     Used during NTLM negotiation to negotiate the capabilities between the client and server.
@@ -81,7 +60,7 @@ class NegotiateFlags:
     unicode = 0x00000001
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["NegotiateFlags", str]:
         return {
             NegotiateFlags.key_56: 'NTLMSSP_NEGOTIATE_56',
             NegotiateFlags.key_exch: 'NTLMSSP_NEGOTIATE_KEY_EXCH',
@@ -118,7 +97,7 @@ class NegotiateFlags:
         }
 
 
-class AvId(IntFlag):
+class AvId(enum.IntFlag):
     """ID for an NTLM AV_PAIR.
 
     These are the IDs that can be set as the `AvId` on an `AV_PAIR`_.
@@ -139,7 +118,7 @@ class AvId(IntFlag):
     channel_bindings = 0x000A
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["AvId", str]:
         return {
             AvId.eol: 'MSV_AV_EOL',
             AvId.nb_computer_name: 'MSV_AV_NB_COMPUTER_NAME',
@@ -155,7 +134,7 @@ class AvId(IntFlag):
         }
 
 
-class AvFlags(IntFlag):
+class AvFlags(enum.IntFlag):
     """MsvAvFlags for an AV_PAIR.
 
     These are the flags that can be set on the MsvAvFlags entry of an NTLM `AV_PAIR`_.
@@ -169,7 +148,7 @@ class AvFlags(IntFlag):
     untrusted_spn = 0x00000004
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["AvFlags", str]:
         return {
             AvFlags.constrained: 'AUTHENTICATION_CONSTRAINED',
             AvFlags.mic: 'MIC_PROVIDED',
@@ -177,13 +156,13 @@ class AvFlags(IntFlag):
         }
 
 
-class MessageType(IntEnum):
+class MessageType(enum.IntEnum):
     negotiate = 1
     challenge = 2
     authenticate = 3
 
     @classmethod
-    def native_labels(cls):  # type: () -> Dict[int, str]
+    def native_labels(cls) -> typing.Dict["MessageType", str]:
         return {
             MessageType.negotiate: 'NEGOTIATE_MESSAGE',
             MessageType.challenge: 'CHALLENGE_MESSAGE',
@@ -191,7 +170,7 @@ class MessageType(IntEnum):
         }
 
 
-def _get_payload_offset(b_data, field_offsets):
+def _get_payload_offset(b_data: bytes, field_offsets: int) -> int:
     payload_offset = None
 
     for field_offset in field_offsets:
@@ -202,8 +181,12 @@ def _get_payload_offset(b_data, field_offsets):
     return payload_offset or len(b_data)
 
 
-def _pack_payload(data, b_payload, payload_offset, pack_func=None):
-    # type: (Optional[any], bytearray, int, Callable[[any], bytes]) -> Tuple[bytes, int]
+def _pack_payload(
+    data: typing.Any,
+    b_payload: bytearray,
+    payload_offset: int,
+    pack_func: typing.Optional[typing.Callable[[typing.Any], bytes]] = None,
+) -> typing.Tuple[bytes, int]:
     if data:
         b_data = pack_func(data) if pack_func else data
     else:
@@ -218,7 +201,11 @@ def _pack_payload(data, b_payload, payload_offset, pack_func=None):
     return b_field, payload_offset
 
 
-def _unpack_payload(b_data, field_offset, unpack_func=None):  # type: (memoryview, int, Callable[[bytes], any]) -> any
+def _unpack_payload(
+    b_data: memoryview,
+    field_offset: int,
+    unpack_func: typing.Optional[typing.Callable[[bytes], typing.Any]] = None,
+) -> typing.Any:
     field_len = struct.unpack("<H", b_data[field_offset:field_offset + 2].tobytes())[0]
     if field_len:
         field_offset = struct.unpack("<I", b_data[field_offset + 4:field_offset + 8].tobytes())[0]
@@ -244,14 +231,13 @@ class _NTLMMessageMeta(type):
         return super(_NTLMMessageMeta, new_cls).__call__(*args, **kwargs)
 
 
-@add_metaclass(_NTLMMessageMeta)
-class NTLMMessage:
+class NTLMMessage(metaclass=_NTLMMessageMeta):
     """ Base NTLM message class that defines the pack and unpack functions. """
 
     MESSAGE_TYPE = 0
     MINIMUM_LENGTH = 0
 
-    def __init__(self, encoding=None, _b_data=None):
+    def __init__(self, encoding: typing.Optional[str] = None, _b_data: typing.Optional[bytes] = None) -> None:
         self.signature = b"NTLMSSP\x00" + struct.pack("<I", self.MESSAGE_TYPE)
         self._encoding = encoding or 'windows-1252'
 
@@ -264,12 +250,12 @@ class NTLMMessage:
         else:
             self._data = memoryview(b"")
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the structure to bytes. """
         return self._data.tobytes()
 
     @staticmethod
-    def unpack(b_data, encoding=None):  # type: (bytes, str) -> NTLMMessage
+    def unpack(b_data: bytes, encoding: typing.Optional[str] = None) -> "NTLMMessage":
         """ Unpacks the structure from bytes. """
         return NTLMMessage(encoding=encoding, _b_data=b_data)
 
@@ -295,8 +281,15 @@ class Negotiate(NTLMMessage):
     MESSAGE_TYPE = MessageType.negotiate
     MINIMUM_LENGTH = 32
 
-    def __init__(self, flags=0, domain_name=None, workstation=None, version=None, encoding=None, _b_data=None):
-        # type: (int, Optional[text_type], Optional[text_type], Optional[Version], Optional[str], Optional[bytes]) -> None  # noqa
+    def __init__(
+        self,
+        flags: int = 0,
+        domain_name: typing.Optional[str] = None,
+        workstation: typing.Optional[str] = None,
+        version: typing.Optional[str] = None,
+        encoding: typing.Optional[str] = None,
+        _b_data: typing.Optional[bytes] = None,
+    ) -> None:
         super(Negotiate, self).__init__(encoding=encoding, _b_data=_b_data)
 
         if not _b_data:
@@ -313,13 +306,13 @@ class Negotiate(NTLMMessage):
             b_domain_name = b""
             if domain_name:
                 flags |= NegotiateFlags.oem_domain_name_supplied
-                b_domain_name = to_bytes(domain_name, encoding=self._encoding)
+                b_domain_name = domain_name.encode(self._encoding)
             b_domain_name_fields, payload_offset = _pack_payload(b_domain_name, b_payload, payload_offset)
 
             b_workstation = b""
             if workstation:
                 flags |= NegotiateFlags.oem_workstation_supplied
-                b_workstation = to_bytes(workstation, encoding=self._encoding)
+                b_workstation = workstation.encode(self._encoding)
             b_workstation_fields = _pack_payload(b_workstation, b_payload, payload_offset)[0]
 
             b_data = bytearray(self.signature)
@@ -331,28 +324,28 @@ class Negotiate(NTLMMessage):
             self._data = memoryview(b_data)
 
     @property
-    def flags(self):  # type: () -> int
+    def flags(self) -> int:
         """ The negotiate flags for the Negotiate message. """
         return struct.unpack("<I", self._data[12:16].tobytes())[0]
 
     @flags.setter
-    def flags(self, value):  # type: (int) -> None
+    def flags(self, value: int) -> None:
         self._data[12:16] = struct.pack("<I", value)
 
     @property
-    def domain_name(self):  # type: () -> Optional[text_type]
+    def domain_name(self) -> typing.Optional[str]:
         """ The name of the client authentication domain. """
         return to_text(_unpack_payload(self._data, 16), encoding=self._encoding, errors='replace',
                        nonstring='passthru')
 
     @property
-    def workstation(self):  # type: () -> Optional[text_type]
+    def workstation(self) -> typing.Optional[str]:
         """ The name of the client machine. """
         return to_text(_unpack_payload(self._data, 24), encoding=self._encoding, errors='replace',
                        nonstring='passthru')
 
     @property
-    def version(self):  # type: () -> Optional[Version]
+    def version(self) -> typing.Optional["Version"]:
         """ The client NTLM version. """
         payload_offset = self._payload_offset
 
@@ -361,7 +354,7 @@ class Negotiate(NTLMMessage):
             return Version.unpack(self._data[32:40].tobytes())
 
     @property
-    def _payload_offset(self):  # type: () -> int
+    def _payload_offset(self) -> int:
         """ Gets the offset of the first payload value. """
         return _get_payload_offset(self._data, [16, 24])
 
@@ -388,9 +381,16 @@ class Challenge(NTLMMessage):
     MESSAGE_TYPE = MessageType.challenge
     MINIMUM_LENGTH = 48
 
-    def __init__(self, flags=0, server_challenge=None, target_name=None, target_info=None, version=None, encoding=None,
-                 _b_data=None):
-        # type: (int, Optional[bytes], Optional[text_type], Optional[TargetInfo], Optional[Version], Optional[str], Optional[bytes]) -> None  # noqa
+    def __init__(
+        self,
+        flags: int = 0,
+        server_challenge: typing.Optional[bytes] = None,
+        target_name: typing.Optional[str] = None,
+        target_info: typing.Optional["TargetInfo"] = None,
+        version: typing.Optional["Version"] = None,
+        encoding: typing.Optional[str] = None,
+        _b_data: typing.Optional[bytes] = None,
+    ):
         super(Challenge, self).__init__(encoding=encoding, _b_data=_b_data)
 
         if _b_data:
@@ -411,7 +411,7 @@ class Challenge(NTLMMessage):
             b_target_name = b""
             if target_name:
                 flags |= NegotiateFlags.request_target
-                b_target_name = to_bytes(target_name, encoding=self._encoding)
+                b_target_name = target_name.encode(self._encoding)
             b_target_name_fields, payload_offset = _pack_payload(b_target_name, b_payload, payload_offset)
 
             b_target_info = b""
@@ -434,38 +434,38 @@ class Challenge(NTLMMessage):
                 self.server_challenge = server_challenge
 
     @property
-    def target_name(self):  # type: () -> Optional[text_type]
+    def target_name(self) -> typing.Optional[str]:
         """ The name of the server authentication realm. """
         return to_text(_unpack_payload(self._data, 12), encoding=self._encoding, nonstring='passthru')
 
     @property
-    def flags(self):  # type: () -> int
+    def flags(self) -> int:
         """ The negotiate flags supported by the server. """
         return struct.unpack("<I", self._data[20:24].tobytes())[0]
 
     @flags.setter
-    def flags(self, value):  # type: (int) -> None
+    def flags(self, value: int) -> None:
         self._data[20:24] = struct.pack("<I", value)
 
     @property
-    def server_challenge(self):  # type: () -> bytes
+    def server_challenge(self) -> bytes:
         """ The server's 8 byte nonce challenge. """
         return self._data[24:32].tobytes()
 
     @server_challenge.setter
-    def server_challenge(self, value):  # type: (bytes) -> None
+    def server_challenge(self, value: bytes) -> None:
         if not value or len(value) != 8:
             raise ValueError("NTLM Challenge ServerChallenge must be 8 bytes long")
 
         self._data[24:32] = value
 
     @property
-    def target_info(self):  # type: () -> Optional[TargetInfo]
+    def target_info(self) -> typing.Optional["TargetInfo"]:
         """ The AV_PAIR structures generated by the server. """
         return _unpack_payload(self._data, 40, lambda d: TargetInfo.unpack(d))
 
     @property
-    def version(self):  # type: () -> Optional[Version]
+    def version(self) -> typing.Optional["Version"]:
         """ The server NTLM version. """
         payload_offset = self._payload_offset
 
@@ -474,7 +474,7 @@ class Challenge(NTLMMessage):
             return Version.unpack(self._data[48:56].tobytes())
 
     @property
-    def _payload_offset(self):  # type: () -> int
+    def _payload_offset(self) -> int:
         """ Gets the offset of the first payload value. """
         return _get_payload_offset(self._data, [12, 40])
 
@@ -505,10 +505,20 @@ class Authenticate(NTLMMessage):
     MESSAGE_TYPE = MessageType.authenticate
     MINIMUM_LENGTH = 64
 
-    def __init__(self, flags=0, lm_challenge_response=None, nt_challenge_response=None, domain_name=None,
-                 username=None, workstation=None, encrypted_session_key=None, version=None, mic=None, encoding=None,
-                 _b_data=None):
-        # type: (int, Optional[bytes], Optional[bytes], Optional[text_type], Optional[text_type], Optional[text_type], Optional[bytes], Optional[Version], Optional[bytes], Optional[str], Optional[bytes]) -> None  # noqa
+    def __init__(
+        self,
+        flags: int = 0,
+        lm_challenge_response: typing.Optional[bytes] = None,
+        nt_challenge_response: typing.Optional[bytes] = None,
+        domain_name: typing.Optional[str] = None,
+        username: typing.Optional[str] = None,
+        workstation: typing.Optional[str] = None,
+        encrypted_session_key: typing.Optional[bytes] = None,
+        version: typing.Optional["Version"] = None,
+        mic: typing.Optional[bytes] = None,
+        encoding: typing.Optional[str] = None,
+        _b_data: typing.Optional[bytes] = None,
+    ) -> None:
         super(Authenticate, self).__init__(encoding=encoding, _b_data=_b_data)
 
         if _b_data:
@@ -535,11 +545,11 @@ class Authenticate(NTLMMessage):
             b_lm_response_fields, payload_offset = _pack_payload(lm_challenge_response, b_payload, payload_offset)
             b_nt_response_fields, payload_offset = _pack_payload(nt_challenge_response, b_payload, payload_offset)
             b_domain_fields, payload_offset = _pack_payload(domain_name, b_payload, payload_offset,
-                                                            lambda d: to_bytes(d, encoding=self._encoding))
+                                                            lambda d: d.encode(self._encoding))
             b_username_fields, payload_offset = _pack_payload(username, b_payload, payload_offset,
-                                                              lambda d: to_bytes(d, encoding=self._encoding))
+                                                              lambda d: d.encode(self._encoding))
             b_workstation_fields, payload_offset = _pack_payload(workstation, b_payload, payload_offset,
-                                                                 lambda d: to_bytes(d, encoding=self._encoding))
+                                                                 lambda d: d.encode(self._encoding))
             if encrypted_session_key:
                 flags |= NegotiateFlags.key_exch
             b_session_key_fields = _pack_payload(encrypted_session_key, b_payload, payload_offset)[0]
@@ -560,46 +570,46 @@ class Authenticate(NTLMMessage):
                 self.mic = mic
 
     @property
-    def lm_challenge_response(self):  # type: () -> Optional[bytes]
+    def lm_challenge_response(self) -> typing.Optional[bytes]:
         """ The LmChallengeResponse or None if not set. """
         return _unpack_payload(self._data, 12)
 
     @property
-    def nt_challenge_response(self):  # type: () -> Optional[bytes]
+    def nt_challenge_response(self) -> typing.Optional[bytes]:
         """ The NtChallengeResponse or None if not set. """
         return _unpack_payload(self._data, 20)
 
     @property
-    def domain_name(self):  # type: () -> Optional[text_type]
+    def domain_name(self) -> typing.Optional[str]:
         """ The domain or computer name hosting the user account. """
         return to_text(_unpack_payload(self._data, 28), encoding=self._encoding, nonstring='passthru')
 
     @property
-    def user_name(self):  # type: () -> Optional[text_type]
+    def user_name(self) -> typing.Optional[str]:
         """ The name of the user to be authenticated. """
         return to_text(_unpack_payload(self._data, 36), encoding=self._encoding, nonstring='passthru')
 
     @property
-    def workstation(self):  # type: () -> Optional[text_type]
+    def workstation(self) -> typing.Optional[str]:
         """ The name of the computer to which the user is logged on. """
         return to_text(_unpack_payload(self._data, 44), encoding=self._encoding, nonstring='passthru')
 
     @property
-    def encrypted_random_session_key(self):  # type: () -> Optional[bytes]
+    def encrypted_random_session_key(self) -> typing.Optional[bytes]:
         """ The client's encrypted random session key. """
         return _unpack_payload(self._data, 52)
 
     @property
-    def flags(self):  # type: () -> int
+    def flags(self) -> int:
         """ The negotiate flags supported by the client and server. """
         return struct.unpack("<I", self._data[60:64].tobytes())[0]
 
     @flags.setter
-    def flags(self, value):  # type: (int) -> None
+    def flags(self, value: int) -> None:
         self._data[60:64] = struct.pack("<I", value)
 
     @property
-    def version(self):  # type: () -> Optional[Version]
+    def version(self) -> typing.Optional["Version"]:
         """ The client NTLM version. """
         payload_offset = self._payload_offset
 
@@ -608,14 +618,14 @@ class Authenticate(NTLMMessage):
             return Version.unpack(self._data[64:72].tobytes())
 
     @property
-    def mic(self):  # type: () -> Optional[bytes]
+    def mic(self) -> typing.Optional[bytes]:
         """ The MIC for the Authenticate message. """
         mic_offset = self._get_mic_offset()
         if mic_offset:
             return self._data.tobytes()[mic_offset:mic_offset + 16]
 
     @mic.setter
-    def mic(self, value):  # type: (bytes) -> None
+    def mic(self, value: bytes) -> None:
         if len(value) != 16:
             raise ValueError("NTLM Authenticate MIC must be 16 bytes long")
 
@@ -626,11 +636,11 @@ class Authenticate(NTLMMessage):
             raise ValueError("Cannot set MIC on an Authenticate message with no MIC present")
 
     @property
-    def _payload_offset(self):  # type: () -> int
+    def _payload_offset(self) -> int:
         """ Gets the offset of the first payload value. """
         return _get_payload_offset(self._data, [12, 20, 28, 36, 44, 52])
 
-    def _get_mic_offset(self):  # type: () -> int
+    def _get_mic_offset(self) -> int:
         """ Gets the offset of the MIC structure if present. """
         payload_offset = self._payload_offset
 
@@ -664,7 +674,7 @@ class FileTime(datetime.datetime):
 
     _EPOCH_FILETIME = 116444736000000000  # 1970-01-01 as FILETIME.
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: typing.Any, **kwargs: typing.Any) -> "FileTime":
         ns = 0
         if 'nanosecond' in kwargs:
             ns = kwargs.pop('nanosecond')
@@ -675,17 +685,17 @@ class FileTime(datetime.datetime):
         return dt
 
     @classmethod
-    def now(cls, tz=None):  # type: (datetime.tzinfo) -> FileTime
+    def now(cls, tz: typing.Optional[datetime.tzinfo] = None) -> "FileTime":
         """ Construct a FileTime from the current time and optional time zone info. """
         return FileTime.from_datetime(datetime.datetime.now(tz=tz))
 
     @classmethod
-    def from_datetime(cls, dt, ns=0):  # type: (datetime.datetime, int) -> FileTime
+    def from_datetime(cls, dt: datetime.datetime, ns: int = 0) -> "FileTime":
         """ Creates a FileTime object from a datetime object. """
         return FileTime(year=dt.year, month=dt.month, day=dt.day, hour=dt.hour, minute=dt.minute, second=dt.second,
                         microsecond=dt.microsecond, tzinfo=dt.tzinfo, nanosecond=ns)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ Displays the datetime in ISO 8601 including the 100th nanosecond internal like .NET does. """
         fraction_seconds = ""
 
@@ -704,10 +714,10 @@ class FileTime(datetime.datetime):
         return '{0}-{1:02d}-{2:02d}T{3:02d}:{4:02d}:{5:02d}{6}{7}'.format(
             self.year, self.month, self.day, self.hour, self.minute, self.second, fraction_seconds, timezone)
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the structure to bytes. """
         # Make sure we are dealing with a timezone aware datetime
-        utc_tz = UTC()
+        utc_tz = datetime.timzeone.utc
         utc_dt = self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz)
 
         # Get the time since UTC EPOCH in microseconds
@@ -720,7 +730,7 @@ class FileTime(datetime.datetime):
         return struct.pack("<Q", ns100)
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> FileTime
+    def unpack(b_data: bytes) -> "FileTime":
         """ Unpacks the structure from bytes. """
         filetime = struct.unpack("<Q", b_data)[0]  # 100 nanosecond intervals since 1601-01-01.
 
@@ -750,8 +760,13 @@ class NTClientChallengeV2:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/aee311d6-21a7-4470-92a5-c4ecb022a87b
     """
 
-    def __init__(self, time_stamp=None, client_challenge=None, av_pairs=None, _b_data=None):
-        # type: (Optional[FileTime], Optional[bytes], Optional[TargetInfo], Optional[bytes]) -> None
+    def __init__(
+        self,
+        time_stamp: typing.Optional["FileTime"] = None,
+        client_challenge: typing.Optional[bytes] = None,
+        av_pairs: typing.Optional["TargetInfo"] = None,
+        _b_data: typing.Optional[bytes] = None,
+    ) -> None:
         if _b_data:
             if len(_b_data) < 32:
                 raise ValueError("Invalid NTClientChallengeV2 raw byte length")
@@ -773,54 +788,54 @@ class NTClientChallengeV2:
             self.challenge_from_client = client_challenge
 
     @property
-    def resp_type(self):  # type: () -> int
+    def resp_type(self) -> int:
         """ The current response type version, must be set to 1. """
         return struct.unpack("B", self._data[:1].tobytes())[0]
 
     @resp_type.setter
-    def resp_type(self, value):  # type: (int) -> None
+    def resp_type(self, value: int) -> None:
         self._data[:1] = struct.pack("B", value)
 
     @property
-    def hi_resp_type(self):  # type: () -> int
+    def hi_resp_type(self) -> int:
         """ The maximum response type supported, must be set to 1. """
         return struct.unpack("B", self._data[1:2].tobytes())[0]
 
     @hi_resp_type.setter
-    def hi_resp_type(self, value):  # type: (int) -> None
+    def hi_resp_type(self, value: int) -> None:
         self._data[1:2] = struct.pack("B", value)
 
     @property
-    def time_stamp(self):  # type: () -> FileTime
+    def time_stamp(self) -> "FileTime":
         """ The current system time. """
         return FileTime.unpack(self._data[8:16].tobytes())
 
     @time_stamp.setter
-    def time_stamp(self, value):  # type: (FileTime) -> None
+    def time_stamp(self, value: "FileTime") -> None:
         self._data[8:16] = value.pack()
 
     @property
-    def challenge_from_client(self):  # type: () -> bytes
+    def challenge_from_client(self) -> bytes:
         """ 8 byte client challenge. """
         return self._data[16:24].tobytes()
 
     @challenge_from_client.setter
-    def challenge_from_client(self, value):  # type: (bytes) -> None
+    def challenge_from_client(self, value: bytes) -> None:
         if len(value) != 8:
             raise ValueError("NTClientChallengeV2 ChallengeFromClient must be 8 bytes long")
         self._data[16:24] = value
 
     @property
-    def av_pairs(self):  # type: () -> TargetInfo
+    def av_pairs(self) -> "TargetInfo":
         """ The target info AV_PAIR structures. """
         return TargetInfo.unpack(self._data[28:].tobytes())
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the NTClientChallengeV2 to bytes. """
         return self._data.tobytes()
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> NTClientChallengeV2
+    def unpack(b_data: bytes) -> "NTClientChallengeV2":
         """ Unpacks the raw bytes to the NTClientChallengeV2 structure. """
         return NTClientChallengeV2(_b_data=b_data)
 
@@ -843,7 +858,7 @@ class TargetInfo(collections.OrderedDict):
         'struct': (AvId.timestamp, AvId.single_host),
     }
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: AvId, value: typing.Any) -> None:
         if isinstance(value, bytes):
             if key == AvId.timestamp:
                 value = FileTime.unpack(value)
@@ -852,7 +867,7 @@ class TargetInfo(collections.OrderedDict):
 
         super(TargetInfo, self).__setitem__(key, value)
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the structure to bytes. """
         b_data = io.BytesIO()
 
@@ -862,7 +877,7 @@ class TargetInfo(collections.OrderedDict):
                 continue
 
             if av_id in self._FIELD_TYPES['text']:
-                b_value = to_bytes(value, encoding='utf-16-le')
+                b_value = value.encode('utf-16-le')
             elif av_id in self._FIELD_TYPES['int32']:
                 b_value = struct.pack("<I", value)
             elif av_id in self._FIELD_TYPES['struct']:
@@ -876,7 +891,7 @@ class TargetInfo(collections.OrderedDict):
         return b_data.getvalue()
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> TargetInfo
+    def unpack(b_data: bytes) -> "TargetInfo":
         """ Unpacks the structure from bytes. """
         target_info = TargetInfo()
         b_io = io.BytesIO(b_data)
@@ -890,7 +905,7 @@ class TargetInfo(collections.OrderedDict):
 
             if av_id in TargetInfo._FIELD_TYPES['text']:
                 # All AV_PAIRS are UNICODE encoded.
-                value = to_text(b_value, encoding='utf-16-le')
+                value = b_value.decode('utf-16-le')
 
             elif av_id in TargetInfo._FIELD_TYPES['int32']:
                 value = AvFlags(struct.unpack("<I", b_value)[0])
@@ -935,8 +950,14 @@ class SingleHost:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/f221c061-cc40-4471-95da-d2ff71c85c5b
     """
 
-    def __init__(self, size=0, z4=0, custom_data=None, machine_id=None, _b_data=None):
-        # type: (int, int, Optional[bytes], Optional[bytes], Optional[bytes]) -> None
+    def __init__(
+        self,
+        size: int = 0,
+        z4: int = 0,
+        custom_data: typing.Optional[bytes] = None,
+        machine_id: typing.Optional[bytes] = None,
+        _b_data: typing.Optional[bytes] = None,
+    ) -> None:
         if _b_data:
             if len(_b_data) != 48:
                 raise ValueError("SingleHost bytes must have a length of 48")
@@ -949,7 +970,7 @@ class SingleHost:
             self.custom_data = custom_data or b"\x00" * 8
             self.machine_id = machine_id or b"\x00" * 32
 
-    def __eq__(self, other):  # type: (Union[bytes, SingleHost]) -> bool
+    def __eq__(self, other: typing.Union[bytes, "SingleHost"]) -> bool:
         if not isinstance(other, (bytes, SingleHost)):
             return False
 
@@ -959,49 +980,49 @@ class SingleHost:
         return self.pack() == other
 
     @property
-    def size(self):  # type: () -> None
+    def size(self) -> None:
         return struct.unpack("<I", self._data[:4].tobytes())[0]
 
     @size.setter
-    def size(self, value):  # type: (int) -> None
+    def size(self, value: int) -> None:
         self._data[:4] = struct.pack("<I", value)
 
     @property
-    def z4(self):  # type: () -> int
+    def z4(self) -> int:
         return struct.unpack("<I", self._data[4:8].tobytes())[0]
 
     @z4.setter
-    def z4(self, value):  # type: (int) -> None
+    def z4(self, value: int) -> None:
         self._data[4:8] = struct.pack("<I", value)
 
     @property
-    def custom_data(self):  # type: () -> bytes
+    def custom_data(self) -> bytes:
         return self._data[8:16].tobytes()
 
     @custom_data.setter
-    def custom_data(self, value):  # type: (bytes) -> None
+    def custom_data(self, value: bytes) -> None:
         if len(value) != 8:
             raise ValueError("custom_data length must be 8 bytes long")
 
         self._data[8:16] = value
 
     @property
-    def machine_id(self):  # type:() -> bytes
+    def machine_id(self) -> bytes:
         return self._data[16:48].tobytes()
 
     @machine_id.setter
-    def machine_id(self, value):  # type: (bytes) -> None
+    def machine_id(self, value: bytes) -> None:
         if len(value) != 32:
             raise ValueError("machine_id length must be 32 bytes long")
 
         self._data[16:48] = value
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the structure to bytes. """
         return self._data.tobytes()
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> SingleHost
+    def unpack(b_data: bytes) -> "SingleHost":  # type: (bytes) -> SingleHost
         """ Creates a SignleHost object from raw bytes. """
         return SingleHost(_b_data=b_data)
 
@@ -1031,8 +1052,14 @@ class Version:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b1a6ceb2-f8ad-462b-b5af-f18527c48175
     """
 
-    def __init__(self, major=0, minor=0, build=0, revision=0x0F, _b_data=None):
-        # type: (int, int, int, int, Optional[bytes]) -> None
+    def __init__(
+        self,
+        major: int = 0,
+        minor: int = 0,
+        build: int = 0,
+        revision: int = 0x0F,
+        _b_data: typing.Optional[bytes] = None,
+    ) -> None:
         if _b_data:
             if len(_b_data) != 8:
                 raise ValueError("Version bytes must have a length of 8")
@@ -1059,54 +1086,54 @@ class Version:
         return 8
 
     @property
-    def major(self):  # type: () -> int
+    def major(self) -> int:
         return struct.unpack("B", self._data[0:1].tobytes())[0]
 
     @major.setter
-    def major(self, value):  # type: (int) -> None
+    def major(self, value: int) -> None:
         self._data[0:1] = struct.pack("B", value)
 
     @property
-    def minor(self):  # type: () -> int
+    def minor(self) -> int:
         return struct.unpack("B", self._data[1:2].tobytes())[0]
 
     @minor.setter
-    def minor(self, value):  # type: (int) -> None
+    def minor(self, value: int) -> None:
         self._data[1:2] = struct.pack("B", value)
 
     @property
-    def build(self):  # type: () -> int
+    def build(self) -> int:
         return struct.unpack("<H", self._data[2:4].tobytes())[0]
 
     @build.setter
-    def build(self, value):  # type: (int) -> None
+    def build(self, value: int) -> None:
         self._data[2:4] = struct.pack("<H", value)
 
     @property
-    def reserved(self):  # type: () -> bytes
+    def reserved(self) -> bytes:
         return self._data[4:7].tobytes()
 
     @property
-    def revision(self):  # type: () -> int
+    def revision(self) -> int:
         return struct.unpack("B", self._data[7:8].tobytes())[0]
 
     @revision.setter
-    def revision(self, value):  # type: (int) -> None
+    def revision(self, value: int) -> None:
         self._data[7:8] = struct.pack("B", value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<{0}.{1} {2}.{3}.{4}.{5}>".format(type(self).__module__, type(self).__name__, self.major, self.minor,
                                                   self.build, self.revision)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "%s.%s.%s.%s" % (self.major, self.minor, self.build, self.revision)
 
-    def pack(self):  # type: () -> bytes
+    def pack(self) -> bytes:
         """ Packs the structure to bytes. """
         return self._data.tobytes()
 
     @staticmethod
-    def get_current():  # type: () -> Version
+    def get_current() -> "Version":
         """ Generates an NTLM Version structure based on the pyspnego package version. """
         versions = []
         for v in pyspnego_version.split('.', 3):
@@ -1122,6 +1149,6 @@ class Version:
         return Version(major=int(versions[0]), minor=int(versions[1]), build=int(versions[2]))
 
     @staticmethod
-    def unpack(b_data):  # type: (bytes) -> Version
+    def unpack(b_data: bytes) -> "Version":
         """ Creates a Version object from raw bytes. """
         return Version(_b_data=b_data)
