@@ -7,11 +7,13 @@ __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import os
 import socket
+import ssl
 
 import pytest
 
 import spnego
 import spnego.channel_bindings
+import spnego.credssp
 import spnego.gss
 import spnego.iov
 import spnego.sspi
@@ -63,6 +65,10 @@ def _message_test(client, server):
     assert c_unwrap_result.data == plaintext
     assert c_unwrap_result.encrypted
     assert c_unwrap_result.qop == 0
+
+    # CredSSP doesnt' have signature methods
+    if hasattr(client, 'client_credential'):
+        return
 
     # Client sign, server verify
     plaintext = os.urandom(3)
@@ -516,3 +522,155 @@ def test_gssapi_kerberos_auth(kerb_cred):
     assert s.client_principal == kerb_cred.user_princ
 
     _message_test(c, s)
+
+
+# CredSSP scenarios
+
+@pytest.mark.parametrize('options, protocol, version', [
+    (spnego.NegotiateOptions.use_negotiate, None, None),
+    (spnego.NegotiateOptions.use_negotiate, None, 2),
+    (spnego.NegotiateOptions.use_negotiate, ssl.PROTOCOL_TLSv1_2, None),
+    # Using NTLM directly results in a slightly separate behaviour for the pub key.
+    (spnego.NegotiateOptions.use_ntlm, None, None),
+    (spnego.NegotiateOptions.use_ntlm, None, 5),
+    (spnego.NegotiateOptions.use_ntlm, ssl.PROTOCOL_TLSv1_2, None),
+])
+def test_credssp_ntlm_creds(options, protocol, version, ntlm_cred, monkeypatch):
+    if protocol:
+        monkeypatch.setattr(spnego.credssp, '_PROTOCOL_TLS', protocol)
+
+    if version:
+        monkeypatch.setattr(spnego.credssp, '_CREDSSP_VERSION', version)
+
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='credssp', options=options)
+    s = spnego.server(protocol='credssp', options=options)
+
+    assert c.client_principal is None
+    assert c.client_credential is None
+    assert c.negotiated_protocol is None
+
+    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
+    # For NTLM the auth context will be present after the first exchange of NTLM tokens.
+    server_tls_token = None
+    while c._auth_context is None:
+        client_tls_token = c.step(server_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+        server_tls_token = s.step(client_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+    ntlm3_pub_key = c.step(server_tls_token)
+    assert not c.complete
+    assert not s.complete
+
+    server_pub_key = s.step(ntlm3_pub_key)
+    assert not c.complete
+    assert not s.complete
+
+    credential = c.step(server_pub_key)
+    assert c.complete
+    assert not s.complete
+
+    final_token = s.step(credential)
+    assert final_token is None
+    assert c.complete
+    assert s.complete
+
+    assert c.negotiated_protocol == 'ntlm'
+    assert s.negotiated_protocol == 'ntlm'
+
+    domain, username = ntlm_cred[0].split('\\')
+    assert s.client_credential.username == username
+    assert s.client_credential.domain_name == domain
+    assert s.client_credential.password == ntlm_cred[1]
+
+    _message_test(c, s)
+
+    plaintext = os.urandom(16)
+    c_winrm_result = c.wrap_winrm(plaintext)
+    assert isinstance(c_winrm_result, WinRMWrapResult)
+    assert isinstance(c_winrm_result.header, bytes)
+    assert isinstance(c_winrm_result.data, bytes)
+    assert isinstance(c_winrm_result.padding_length, int)
+
+    s_winrm_result = s.unwrap_winrm(c_winrm_result.header, c_winrm_result.data)
+    assert s_winrm_result == plaintext
+
+    plaintext = os.urandom(16)
+    s_winrm_result = s.wrap_winrm(plaintext)
+    assert isinstance(s_winrm_result, WinRMWrapResult)
+    assert isinstance(s_winrm_result.header, bytes)
+    assert isinstance(s_winrm_result.data, bytes)
+    assert isinstance(s_winrm_result.padding_length, int)
+
+    c_winrm_result = c.unwrap_winrm(s_winrm_result.header, s_winrm_result.data)
+    assert c_winrm_result == plaintext
+
+
+@pytest.mark.parametrize('protocol', [None, ssl.PROTOCOL_TLSv1_2])
+def test_credssp_kerberos_creds(protocol, kerb_cred, monkeypatch):
+    if protocol:
+        monkeypatch.setattr(spnego.credssp, '_PROTOCOL_TLS', protocol)
+
+    c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), hostname=socket.getfqdn(), protocol='credssp')
+    s = spnego.server(protocol='credssp')
+
+    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
+    # For Kerberos the auth context will be present after the first exchange of tokens.
+    server_tls_token = None
+    while c._auth_context is None:
+        client_tls_token = c.step(server_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+        server_tls_token = s.step(client_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+    client_pub_key = c.step(server_tls_token)
+    assert not c.complete
+    assert not s.complete
+
+    server_pub_key = s.step(client_pub_key)
+    assert not c.complete
+    assert not s.complete
+
+    credential = c.step(server_pub_key)
+    assert c.complete
+    assert not s.complete
+
+    final_token = s.step(credential)
+    assert final_token is None
+    assert c.complete
+    assert s.complete
+
+    assert c.negotiated_protocol == 'kerberos'
+    assert s.negotiated_protocol == 'kerberos'
+
+    assert s.client_principal == kerb_cred.user_princ
+    assert s.client_credential.username == kerb_cred.user_princ
+    assert s.client_credential.password == kerb_cred.password('user')
+
+    _message_test(c, s)
+
+    plaintext = os.urandom(16)
+    c_winrm_result = c.wrap_winrm(plaintext)
+    assert isinstance(c_winrm_result, WinRMWrapResult)
+    assert isinstance(c_winrm_result.header, bytes)
+    assert isinstance(c_winrm_result.data, bytes)
+    assert isinstance(c_winrm_result.padding_length, int)
+
+    s_winrm_result = s.unwrap_winrm(c_winrm_result.header, c_winrm_result.data)
+    assert s_winrm_result == plaintext
+
+    plaintext = os.urandom(16)
+    s_winrm_result = s.wrap_winrm(plaintext)
+    assert isinstance(s_winrm_result, WinRMWrapResult)
+    assert isinstance(s_winrm_result.header, bytes)
+    assert isinstance(s_winrm_result.data, bytes)
+    assert isinstance(s_winrm_result.padding_length, int)
+
+    c_winrm_result = c.unwrap_winrm(s_winrm_result.header, s_winrm_result.data)
+    assert c_winrm_result == plaintext

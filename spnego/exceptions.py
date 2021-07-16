@@ -15,6 +15,16 @@ except NameError:
     WinError = ()
 
 
+class NativeError(Exception):
+    """ Stub for a native error that can be used to generate a SpnegoError from a known platform native code. """
+
+    def __init__(self, msg: str, **kwargs: typing.Any) -> None:
+        self.msg = msg
+        for key in ['maj_code', 'winerror']:
+            if key in kwargs:
+                setattr(self, key, kwargs[key])
+
+
 class NegotiateOptions(enum.IntFlag):
     """Flags that the caller can use to control the negotiation behaviour.
 
@@ -24,6 +34,8 @@ class NegotiateOptions(enum.IntFlag):
     are installed, what GSSAPI implementation is present, and what Python libraries are available.
 
     This is a pretty advanced feature and is mostly a way to control the kerberos to ntlm fallback behaviour on Linux.
+    The `use_*` options when combined with `protocol='credssp'` control the underlying auth proxy provider that is used
+    in the CredSSP authentication process and not the parent context proxy the user interacts with.
 
     These are the currently implemented feature flags:
 
@@ -50,7 +62,8 @@ class NegotiateOptions(enum.IntFlag):
         Ensure that the authenticated context will be able to return the session key that was negotiated between the
         client and the server. Older versions of `gss-ntlmssp`_ do not expose the functions required to retrieve this
         info so when this feature flag is set then the NTLM fallback process will use a builtin NTLM process and not
-        `gss-ntlmssp`_ if the latter is too old to retrieve the session key.
+        `gss-ntlmssp`_ if the latter is too old to retrieve the session key. Cannot be used in combination with
+        `protocol='credssp'` as CredSSP does not provide a session key.
 
     wrapping_iov:
         The GSSAPI IOV methods are extensions to the Kerberos spec and not implemented or exposed on all platforms,
@@ -62,6 +75,12 @@ class NegotiateOptions(enum.IntFlag):
     wrapping_winrm:
         To created a wrapped WinRM message the IOV extensions are required when using Kerberos auth. Setting this flag
         will skip Kerberos when `protocol='negotiate'` if the IOV headers aren't present and just fallback to NTLM.
+
+    credssp_allow_tlsv1:
+        By default CredSSP will only use TLSv1.2 or newer when negotiating a protocol. By setting this option the
+        minimum TLS protocol will be TLSv1.0 instead allowing you to authenticate with older servers that do not
+        support TLSv1.2. TLSv1.0 is highly discouraged due to weaknesses in the protocol and this options should only
+        be used with careful consideration.
 
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
@@ -78,6 +97,7 @@ class NegotiateOptions(enum.IntFlag):
     session_key = 0x00000020
     wrapping_iov = 0x00000040
     wrapping_winrm = 0x00000080
+    credssp_allow_tlsv1 = 0x00000100
 
 
 class FeatureMissingError(Exception):
@@ -92,11 +112,13 @@ class FeatureMissingError(Exception):
             NegotiateOptions.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
                                                  'negotiated.',
 
-            NegotiateOptions.wrapping_iov: 'The system is missing the GSSAPI IOV extension headers or NTLM is being '
-                                           'requested, cannot utilitze wrap_iov and unwrap_iov',
+            NegotiateOptions.wrapping_iov: 'The system is missing the GSSAPI IOV extension headers or NTLM or CredSSP '
+                                           'is being requested, cannot utilize wrap_iov and unwrap_iov',
 
             NegotiateOptions.wrapping_winrm: 'The system is missing the GSSAPI IOV extension headers required for '
                                              'WinRM encryption with Kerberos.',
+
+            NegotiateOptions.session_key: 'The protocol selected does not support getting the session key.',
 
         }.get(self.feature_id, 'Unknown option flag: %d' % self.feature_id)
 
@@ -124,7 +146,7 @@ class ErrorCode(enum.IntEnum):
     no_cred = 7  # NoCredentialError
     no_context = 8  # NoContextError
     invalid_token = 9  # InvalidTokenError
-    # invalid_credential = 10  # No real equivalent in SSPI, shouldn't happen in our code.
+    invalid_credential = 10  # InvalidCredentialError
     credentials_expired = 11  # CredentialsExpiredError
     context_expired = 12  # ContextExpiredError
     failure = 13  # This is a generic error with the error coming from the minor code, uses SpnegoError directly.
@@ -225,6 +247,12 @@ class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
         super(SpnegoError, self).__init__(self.message)
 
     @property
+    def nt_status(self) -> int:
+        """ The Windows NT Status code that represents this error. """
+        codes = getattr(self, '_SSPI_CODE', self._error_code) or 0xFFFFFFFF
+        return codes[0] if isinstance(codes, (list, tuple)) else codes
+
+    @property
     def message(self) -> str:
         error_code = self._error_code if self._error_code is not None else 0xFFFFFFFF
 
@@ -295,6 +323,14 @@ class InvalidTokenError(SpnegoError):
     _BASE_MESSAGE = "A token was invalid, or the logon was denied"
     _GSSAPI_CODE = 589824  # GSS_S_DEFECTIVE_TOKEN
     _SSPI_CODE = [-2146893044, -2146893048]  # SEC_E_LOGON_DENIED, SEC_E_INVALID_TOKEN
+
+
+class InvalidCredentialError(SpnegoError):
+    ERROR_CODE = ErrorCode.invalid_credential
+
+    _BASE_MESSAGE = "A credential was invalid"
+    _GSSAPI_CODE = 655360  # GSS_S_DEFECTIVE_CREDENTIAL
+    _SSPI_CODE = -1073741715  # STATUS_LOGON_FAILURE
 
 
 class CredentialsExpiredError(SpnegoError):

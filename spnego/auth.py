@@ -12,6 +12,10 @@ from spnego.channel_bindings import (
     GssChannelBindings,
 )
 
+from spnego.credssp import (
+    CredSSPProxy,
+)
+
 from spnego.exceptions import (
     NegotiateOptions,
 )
@@ -53,8 +57,14 @@ def _new_context(
     use_specified = options & use_flags != 0
 
     proxy: typing.Type[ContextProxy]
-    if options & NegotiateOptions.use_sspi or (not use_specified and
-                                               proto in SSPIProxy.available_protocols(options=options)):
+
+    # If the protocol is CredSSP then we can only use CredSSPProxy. The use_flags still control what underlying
+    # Negotiate auth is used in the CredSSP authentication process.
+    if proto == 'credssp':
+        proxy = CredSSPProxy
+
+    elif options & NegotiateOptions.use_sspi or (not use_specified and
+                                                 proto in SSPIProxy.available_protocols(options=options)):
         proxy = SSPIProxy
 
     elif options & NegotiateOptions.use_gssapi or (not use_specified and (proto == 'kerberos' or
@@ -67,6 +77,7 @@ def _new_context(
 
     elif options & NegotiateOptions.use_ntlm or (not use_specified and proto == 'ntlm'):
         # Finally if GSSAPI does not support ntlm, use our own wrapper.
+        proto = 'ntlm' if proto == 'negotiate' else proto
         proxy = NTLMProxy
 
     else:
@@ -94,8 +105,7 @@ def client(
         service: The service part of the SPN. This is required for Kerberos auth to build the SPN.
         channel_bindings: The optional :class:`spnego.channel_bindings.GssChannelBindings` for the context.
         context_req: The :class:`spnego.ContextReq` flags to use when setting up the context.
-        protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, or `negotiate`. Not all providers
-            support all three protocols as that is handled by :class:`SPNEGOContext`.
+        protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, `negotiate`, or `credssp`.
         options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
 
     Returns:
@@ -120,8 +130,7 @@ def server(
         service: The service part of the SPN. This is required for Kerberos auth to build the SPN.
         channel_bindings: The optional :class:`spnego.channel_bindings.GssChannelBindings` for the context.
         context_req: The :class:`spnego.ContextReq` flags to use when setting up the context.
-        protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, or `negotiate`. Not all providers
-            support all three protocols as that is handled by :class:`SPNEGOContext`.
+        protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, `negotiate`, or `credssp`.
         options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
 
     Returns:

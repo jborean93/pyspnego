@@ -20,7 +20,6 @@ import struct
 import sys
 import typing
 
-
 from spnego._context import (
     GSSMech,
 )

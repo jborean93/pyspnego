@@ -7,6 +7,7 @@ import getpass
 import io
 import os
 import pytest
+import re
 import requests
 import socket
 import spnego
@@ -32,6 +33,7 @@ HOSTNAME = socket.gethostname()
 HOST_FQDN = '%s.{{ domain_name }}' % HOSTNAME
 WIN_SERVER_UNTRUSTED = '{{ groups["win_children"][0] }}.{{ domain_name }}'  # Not trusted for delegation in AD
 WIN_SERVER_TRUSTED = '{{ groups["win_children"][1] }}.{{ domain_name }}'  # Trusted for delegation in AD
+WIN_SERVER_TRUSTED_IP = socket.gethostbyname(WIN_SERVER_TRUSTED)
 KERBEROS_PROVIDER = '{{ krb_provider }}'
 
 IS_SYSTEM = False
@@ -69,6 +71,61 @@ WSMAN_NS = {
     "xml": "http://www.w3.org/XML/1998/namespace",
     "pwsh": "http://schemas.microsoft.com/powershell",
 }
+
+
+class HTTPWinRMAuth(requests.auth.AuthBase):
+
+    def __init__(self, context):
+        self.context = context
+        self.header = None
+
+        if context.protocol == 'credssp':
+            self.valid_protocols = ['CredSSP']
+        else:
+            self.valid_protocols = ['Negotiate', 'Kerberos', 'NTLM']
+        self._regex = re.compile(r'(%s)\s*([^,]*),?' % '|'.join(self.valid_protocols), re.I)
+
+    def __call__(self, request):
+        request.headers['Connection'] = 'Keep-Alive'
+        request.register_hook('response', self.response_hook)
+
+        return request
+
+    def response_hook(self, response, **kwargs):
+        if response.status_code == 401:
+            response = self.handle_401(response, **kwargs)
+
+        return response
+
+    def handle_401(self, response, **kwargs):
+        auth_supported = response.headers.get('www-authenticate', '')
+        matched_protocols = [p for p in self.valid_protocols if p.upper() in auth_supported.upper()]
+        if not matched_protocols:
+            return response
+        self.header = matched_protocols = matched_protocols[0]
+
+        out_token = self.context.step()
+        while not self.context.complete or out_token is not None:
+            response.content
+            response.raw.release_conn()
+            request = response.request.copy()
+
+            auth_header = b'%s %s' % (self.header.encode(), base64.b64encode(out_token))
+            request.headers['Authorization'] = auth_header
+            response = response.connection.send(request, **kwargs)
+
+            in_token = None
+            auth_header = response.headers.get('www-authenticate', '')
+            token_match = self._regex.search(auth_header)
+            if token_match:
+                in_token = token_match.group(2)
+
+            if not in_token:
+                break
+
+            out_token = self.context.step(base64.b64decode(in_token))
+
+        return response
 
 
 def get_cbt_data(server):
@@ -183,41 +240,31 @@ def smb_unpack_session(data):
     return SMBSessionResponse(flags=flags, buffer=sec_buffer)
 
 
-def winrm_run(context, server, command, arguments=None, ssl=False):
-    auth_token = context.step()
-
+def winrm_run(context, expected_header, server, command, arguments=None, ssl=False):
     http = requests.Session()
+    http.auth = HTTPWinRMAuth(context)
     warnings.simplefilter('ignore', category=InsecureRequestWarning)
     http.headers = {
-        'User-Agent': 'pysnego_client',
+        'User-Agent': 'pyspnego_client',
     }
 
     if ssl:
         endpoint = 'https://%s:5986/wsman' % server
-
         http.verify = False
 
     else:
         endpoint = 'http://%s:5985/wsman' % server
 
         # We need to ensure we have set up the context already so we can start encrypting the data.
-        headers = {
-            'Authorization': 'Negotiate %s' % base64.b64encode(auth_token).decode(),
-            'Content-Length': '0',
-        }
-        request = http.prepare_request(requests.Request('POST', endpoint, headers=headers))
-        response = http.send(request)
+        request = requests.Request('POST', endpoint, data=None)
+        prep_request = http.prepare_request(request)
+        response = http.send(prep_request)
         response.raise_for_status()
 
-        in_token = base64.b64decode(response.headers['www-authenticate'].split(' ')[1])
-        context.step(in_token)
-        auth_token = None
-
-    setattr(http, 'context', context)
     setattr(http, 'endpoint', endpoint)
     setattr(http, 'session_id', str(uuid.uuid4()).upper())
 
-    shell_id = wsman_create(http, auth_token=auth_token)
+    shell_id = wsman_create(http)
     try:
         cmd_id = wsman_command(http, shell_id, command, arguments)
         rc, stdout, stderr = wsman_receive(http, shell_id, cmd_id)
@@ -235,6 +282,9 @@ def winrm_run(context, server, command, arguments=None, ssl=False):
                 errors.append(error.text)
 
             stderr = "".join(errors).replace('_x000D_', '\r').replace('_x000A_', '\n')
+
+        # Make sure the protocol authentication protocol was actually tested.
+        assert http.auth.header == expected_header
 
         return rc, stdout, stderr
 
@@ -257,7 +307,7 @@ def wsman_command(http, shell_id, command, arguments=None):
     return command_response.find('s:Body/rsp:CommandResponse/rsp:CommandId', WSMAN_NS).text
 
 
-def wsman_create(http, auth_token=None):
+def wsman_create(http):
     rsp = WSMAN_NS['rsp']
 
     shell = ET.Element('{%s}Shell' % rsp)
@@ -265,7 +315,7 @@ def wsman_create(http, auth_token=None):
     ET.SubElement(shell, '{%s}OutputStreams' % rsp).text = 'stdout stderr'
 
     create_response = wsman_envelope('http://schemas.xmlsoap.org/ws/2004/09/transfer/Create', http, body=shell,
-                                     option_set={'WINRS_CODEPAGE': 65001}, auth_token=auth_token)
+                                     option_set={'WINRS_CODEPAGE': 65001})
     return create_response.find('s:Body/rsp:Shell/rsp:ShellId', WSMAN_NS).text
 
 
@@ -311,7 +361,7 @@ def wsman_signal(http, shell_id, command_id, code):
                    selector_set={'ShellId': shell_id})
 
 
-def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, auth_token=None):
+def wsman_envelope(action, http, selector_set=None, option_set=None, body=None):
     s = WSMAN_NS['s']
     wsa = WSMAN_NS['wsa']
     wsman = WSMAN_NS['wsman']
@@ -363,20 +413,31 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
     boundary = 'Encrypted Boundary'
 
     if http.endpoint.startswith('http://'):
-        header, wrapped_content, padding_len = http.context.wrap_winrm(content)
-        protocol = 'application/HTTP-SPNEGO-session-encrypted'
+        auth_protocol = 'CredSSP' if http.auth.context.protocol == 'credssp' else 'SPNEGO'
+        protocol = 'application/HTTP-%s-session-encrypted' % auth_protocol
 
-        content = '\r\n'.join([
-            '--%s' % boundary,
-            'Content-Type: %s' % protocol,
-            'OriginalContent: type=application/soap+xml;charset=UTF-8;Length=%s' % (len(content) + padding_len,),
-            '--%s' % boundary,
-            'Content-Type: application/octet-stream',
-            '',
-        ])
-        content = content.encode() + struct.pack("<i", len(header)) + header + wrapped_content + \
-            b'--%s--\r\n' % boundary.encode()
-        content_type = 'multipart/encrypted;protocol="%s";boundary="%s"' % (protocol, boundary)
+        max_size = 16384 if auth_protocol == 'CredSSP' else len(content)
+        chunks = [content[i:i + max_size] for i in range(0, len(content), max_size)]
+        encrypted_chunks = []
+        for chunk in chunks:
+            header, wrapped_data, padding_length = http.auth.context.wrap_winrm(chunk)
+            wrapped_data = struct.pack("<i", len(header)) + header + wrapped_data
+            msg_length = str(len(content) + padding_length)
+
+            content = "\r\n".join([
+                '--%s' % boundary,
+                '\tContent-Type: %s' % protocol,
+                '\tOriginalContent: type=application/soap+xml;charset=UTF-8;Length=%s' % msg_length,
+                '--%s' % boundary,
+                '\tContent-Type: application/octet-stream',
+                '',
+            ])
+            encrypted_chunks.append(content.encode() + wrapped_data)
+
+        content_sub_type = 'multipart/encrypted' if len(encrypted_chunks) == 1 \
+            else 'multipart/x-multi-encrypted'
+        content_type = '%s;protocol="%s";boundary="%s"' % (content_sub_type, protocol, boundary)
+        content = b"".join(encrypted_chunks) + ("--%s--\r\n" % boundary).encode()
 
     else:
         content_type = 'application/soap+xml;charset=UTF-8'
@@ -385,16 +446,16 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
         'Content-Length': str(len(content)),
         'Content-Type': content_type,
     }
-    if auth_token:
-        headers['Authorization'] = 'Negotiate %s' % base64.b64encode(auth_token).decode()
 
     request = http.prepare_request(requests.Request('POST', http.endpoint, data=content, headers=headers))
     response = http.send(request)
     response.raise_for_status()
     content = response.content
 
-    if response.headers['Content-Type'].startswith('multipart/encrypted'):
-        parts = content.split(b"--%s\r\n" % boundary.encode())
+    content_type = response.headers.get('content-type', '')
+    if content_type.startswith('multipart/encrypted;') or content_type.startswith('multipart/x-multi-encrypted;'):
+        boundary = re.search('boundary=[''|\\"](.*)[''|\\"]', content_type).group(1)
+        parts = re.compile((r"--\s*%s\r\n" % re.escape(boundary)).encode()).split(content)
         parts = list(filter(None, parts))
 
         content = b""
@@ -405,17 +466,14 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None, 
             expected_length = int(header.split(b"Length=")[1])
 
             # remove the end MIME block if it exists
-            if payload.endswith(b"--%s--\r\n" % boundary.encode()):
-                payload = payload[:len(payload) - 24]
+            payload = re.sub((r'--\s*%s--\r\n$' % boundary).encode(), b'', payload)
 
-            if payload.startswith(b"\t"):
-                payload = payload[1:]
-            enc_content = payload.replace(b"Content-Type: application/octet-stream\r\n", b"")
+            wrapped_data = payload.replace(b"\tContent-Type: application/octet-stream\r\n", b"")
+            header_length = struct.unpack("<i", wrapped_data[:4])[0]
+            header = wrapped_data[4:4 + header_length]
+            wrapped_data = wrapped_data[4 + header_length:]
 
-            enc_header_len = struct.unpack("<I", enc_content[:4])[0]
-            enc_header = enc_content[4:enc_header_len + 4]
-            enc_data = enc_content[4 + enc_header_len:]
-            unwrapped_data = http.context.unwrap_winrm(enc_header, enc_data)
+            unwrapped_data = http.auth.context.unwrap_winrm(header, wrapped_data)
             assert len(unwrapped_data) == expected_length
             content += unwrapped_data
 
@@ -539,7 +597,7 @@ default_tgs_enctypes = arcfour-hmac-md5''')
 
         monkeypatch.setenv('KRB5_CONFIG', '%s:/etc/krb5.conf' % temp_cfg.name)
         c = spnego.client(**context_kwargs)
-        winrm_run(c, WIN_SERVER_TRUSTED, 'hostname.exe')
+        winrm_run(c, 'Negotiate', WIN_SERVER_TRUSTED, 'hostname.exe')
 
 
 def test_winrm_no_delegate():
@@ -556,7 +614,8 @@ def test_winrm_no_delegate():
     pwsh_script = base64.b64encode('''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp\\test_integration.py).FullName
 '''.format(WIN_SERVER_UNTRUSTED).encode('utf-16-le')).decode()
-    rc, stdout, stderr = winrm_run(c, WIN_SERVER_TRUSTED, 'powershell.exe', ['-EncodedCommand', pwsh_script])
+    rc, stdout, stderr = winrm_run(c, 'Negotiate', WIN_SERVER_TRUSTED, 'powershell.exe',
+                                   ['-EncodedCommand', pwsh_script])
 
     # Without the delegate flag being set in the context we will fail to access any network paths
     assert rc == 1
@@ -579,7 +638,8 @@ def test_winrm_delegate(kinit):
     pwsh_script = base64.b64encode('''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp\\test_integration.py).FullName
 '''.format(WIN_SERVER_UNTRUSTED).encode('utf-16-le')).decode()
-    rc, stdout, stderr = winrm_run(c, WIN_SERVER_TRUSTED, 'powershell.exe', ['-EncodedCommand', pwsh_script])
+    rc, stdout, stderr = winrm_run(c, 'Negotiate', WIN_SERVER_TRUSTED, 'powershell.exe',
+                                   ['-EncodedCommand', pwsh_script])
 
     assert rc == 0
     assert stdout.lower().strip() == '\\\\{0}\\c$\\temp\\test_integration.py'.format(WIN_SERVER_UNTRUSTED).lower()
@@ -604,7 +664,8 @@ def test_winrm_ok_as_delegate(kinit):
     pwsh_script = base64.b64encode('''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp).FullName
 '''.format(WIN_SERVER_TRUSTED).encode('utf-16-le')).decode()
-    rc, stdout, stderr = winrm_run(c, WIN_SERVER_UNTRUSTED, 'powershell.exe', ['-EncodedCommand', pwsh_script])
+    rc, stdout, stderr = winrm_run(c, 'Negotiate', WIN_SERVER_UNTRUSTED, 'powershell.exe',
+                                   ['-EncodedCommand', pwsh_script])
 
     assert rc == 0
     assert stdout.lower().strip() == '\\\\{0}\\c$\\temp'.format(WIN_SERVER_TRUSTED).lower()
@@ -630,7 +691,25 @@ def test_winrm_cbt(option):
 
     c = spnego.client(USERNAME, PASSWORD, hostname=WIN_SERVER_TRUSTED, service='HTTP', channel_bindings=cbt,
                       protocol=protocol, options=option)
-    winrm_run(c, WIN_SERVER_TRUSTED, 'hostname.exe', ssl=True)
+    winrm_run(c, 'Negotiate', WIN_SERVER_TRUSTED, 'hostname.exe', ssl=True)
+
+
+@pytest.mark.parametrize('target, protocol', [
+    (WIN_SERVER_TRUSTED, 'kerberos'),
+    (WIN_SERVER_TRUSTED_IP, 'ntlm'),  # Connecting with an IP breaks Kerberos authentication.
+])
+def test_winrm_credssp(target, protocol):
+    c = spnego.client(USERNAME, PASSWORD, hostname=target, service='HTTP', protocol='credssp')
+
+    pwsh_script = base64.b64encode(u'''$ErrorActionPreference = 'Stop'
+(Get-Item -LiteralPath \\\\{0}\\c$\\temp).FullName
+'''.format(WIN_SERVER_UNTRUSTED).encode('utf-16-le')).decode()
+    rc, stdout, stderr = winrm_run(c, 'CredSSP', target, 'powershell.exe', ['-EncodedCommand', pwsh_script])
+
+    assert rc == 0
+    assert stdout.lower().strip() == '\\\\{0}\\c$\\temp'.format(WIN_SERVER_UNTRUSTED).lower()
+    assert stderr == ''
+    assert c.negotiated_protocol == protocol
 
 
 def test_smb_auth():

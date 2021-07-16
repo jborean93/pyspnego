@@ -5,8 +5,8 @@
 [![PyPI version](https://badge.fury.io/py/pyspnego.svg)](https://badge.fury.io/py/pyspnego)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jborean93/pyspnego/blob/master/LICENSE)
 
-Library to handle SPNEGO (Negotiate, NTLM, Kerberos) authentication. Also includes a packet parser that can be used to
-decode raw NTLM/SPNEGO/Kerberos tokens into a human readable format.
+Library to handle SPNEGO (Negotiate, NTLM, Kerberos) and CredSSP authentication. Also includes a packet parser that can
+be used to decode raw NTLM/SPNEGO/Kerberos tokens into a human readable format.
 
 
 ## Requirements
@@ -84,6 +84,14 @@ dnf install gssntlmssp
 See [the examples section](docs/examples) for examples on how to use the authentication side of the library.
 
 _Note: While server/acceptor authentication is available for all protocols it is highly recommended you have the system GSSAPI and NTLM system libraries present for acceptor authentication. Pyspnego NTLM acceptor authentication should work but it is not as thoroughly tested as the GSSAPI implementation._
+
+
+### CredSSP Authentication
+
+Since version 0.2.0, pyspnego can be used for CredSSP authentication. While this isn't part of the SPNEGO/Negotiate
+protocol it uses common features and code like ASN.1 structures and even Negotiate auth as part of the CredSSP process.
+Both `initiate` and `accept` usages are supported when specifying `protocol='credssp'` but there are no guarantees the
+acceptor is free of any bugs so use with caution.
 
 
 ## Backlog

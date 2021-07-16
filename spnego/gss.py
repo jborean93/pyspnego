@@ -5,7 +5,6 @@ import base64
 import contextlib
 import logging
 import os
-from spnego.channel_bindings import GssChannelBindings
 import sys
 import tempfile
 import typing
@@ -27,6 +26,10 @@ from spnego._text import (
     to_text,
 )
 
+from spnego.channel_bindings import (
+    GssChannelBindings,
+)
+
 from spnego.exceptions import (
     GSSError as NativeError,
     NegotiateOptions,
@@ -42,7 +45,7 @@ from spnego.iov import (
 log = logging.getLogger(__name__)
 
 HAS_GSSAPI = True
-# GSSAPI_IMP_ERR = None
+GSSAPI_IMP_ERR = None
 try:
     import gssapi
 
@@ -54,10 +57,10 @@ try:
         inquire_sec_context_by_oid,
         set_sec_context_option,
     )
-except ImportError:
-    # GSSAPI_IMP_ERR = sys.exc_info()
+except ImportError as e:
+    GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False
-    log.debug("Python gssapi not available, cannot use any GSSAPIProxy protocols: %s" % str(sys.exc_info()[1]))
+    log.debug("Python gssapi not available, cannot use any GSSAPIProxy protocols: %s" % e)
 
 
 HAS_IOV = True
@@ -353,7 +356,7 @@ class GSSAPIProxy(ContextProxy):
     ) -> None:
 
         if not HAS_GSSAPI:
-            raise ImportError("GSSAPIProxy requires the Python gssapi library")
+            raise ImportError("GSSAPIProxy requires the Python gssapi library: %s" % GSSAPI_IMP_ERR)
 
         super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                           protocol, options, _is_wrapped)

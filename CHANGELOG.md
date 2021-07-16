@@ -1,8 +1,9 @@
 # Changelog
 
-## 1.0.0 - TBD
+## 0.2.0 - TBD
 
 * Drop support for Python 2.7 and 3.5 - new minimum is 3.6+
+* Added support for CredSSP authentication using `protocol='credssp'`
 
 ## 0.1.6 - 2021-05-07
 
