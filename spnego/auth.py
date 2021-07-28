@@ -49,12 +49,19 @@ def _new_context(
     usage: str,
 ) -> ContextProxy:
     proto = protocol.lower()
+    sspi_protocols = SSPIProxy.available_protocols(options=options)
+    gssapi_protocols = GSSAPIProxy.available_protocols(options=options)
 
     # Unless otherwise specified, we always favour the platform implementations (SSPI/GSSAPI) if they are available.
     # Otherwise fallback to the Python implementations (NegotiateProxy/NTLMProxy).
     use_flags = (NegotiateOptions.use_sspi | NegotiateOptions.use_gssapi | NegotiateOptions.use_negotiate |
                  NegotiateOptions.use_ntlm)
     use_specified = options & use_flags != 0
+
+    # When requesting a delegated context with explicit credentials we cannot rely on GSSAPI for Negotiate auth. There
+    # is no way to explicitly request a forwardable Kerberos ticket for use with SPNEGO.
+    if username and password and bool(context_req & ContextReq.delegate) and 'negotiate' in gssapi_protocols:
+        gssapi_protocols.remove('negotiate')
 
     proxy: typing.Type[ContextProxy]
 
@@ -63,12 +70,11 @@ def _new_context(
     if proto == 'credssp':
         proxy = CredSSPProxy
 
-    elif options & NegotiateOptions.use_sspi or (not use_specified and
-                                                 proto in SSPIProxy.available_protocols(options=options)):
+    elif options & NegotiateOptions.use_sspi or (not use_specified and proto in sspi_protocols):
         proxy = SSPIProxy
 
     elif options & NegotiateOptions.use_gssapi or (not use_specified and (proto == 'kerberos' or
-                                                   proto in GSSAPIProxy.available_protocols(options=options))):
+                                                   proto in gssapi_protocols)):
         proxy = GSSAPIProxy
 
     elif options & NegotiateOptions.use_negotiate or (not use_specified and proto == 'negotiate'):

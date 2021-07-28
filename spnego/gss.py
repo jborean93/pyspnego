@@ -2,11 +2,8 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import base64
-import contextlib
 import logging
-import os
 import sys
-import tempfile
 import typing
 
 from spnego._context import (
@@ -57,6 +54,8 @@ try:
         inquire_sec_context_by_oid,
         set_sec_context_option,
     )
+
+    import krb5
 except ImportError as e:
     GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False
@@ -118,38 +117,6 @@ def _create_iov_result(iov: "IOV") -> typing.Tuple[IOVBuffer, ...]:
     return tuple(buffers)
 
 
-@contextlib.contextmanager
-def _env_path(name: str, value: str, default_value: str) -> typing.Generator[None, None, None]:
-    """ Adds a value to a PATH-like env var and preserve the existing value if present. """
-    orig_value = os.environ.get(name, None)
-    os.environ[name] = '%s:%s' % (value, orig_value or default_value)
-    try:
-        yield
-
-    finally:
-        if orig_value:
-            os.environ[name] = orig_value
-
-        else:
-            del os.environ[name]
-
-
-@contextlib.contextmanager
-def _krb5_conf(forwardable: bool = False) -> typing.Generator[None, None, None]:
-    """ Runs with a custom krb5.conf file that extends the existing config if present. """
-    if forwardable:
-        with tempfile.NamedTemporaryFile() as temp_cfg:
-            temp_cfg.write(b"[libdefaults]\nforwardable = true\n")
-            temp_cfg.flush()
-
-            with _env_path('KRB5_CONFIG', temp_cfg.name, '/etc/krb5.conf'):
-                yield
-
-            return
-
-    yield
-
-
 def _get_gssapi_credential(
     mech: "gssapi.OID",
     usage: str,
@@ -184,6 +151,7 @@ def _get_gssapi_credential(
         usage: Either `initiate` for a client context or `accept` for a server context.
         username: The username to get the credentials for, if omitted then the default user is gotten from the cache.
         password: The password for the user, if omitted then the cached credentials is retrieved.
+        context_req: Context requirement flags that can control how the credential is retrieved.
 
     Returns:
         gssapi.creds.Credentials: The credential set that was created/retrieved.
@@ -191,28 +159,29 @@ def _get_gssapi_credential(
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
     """
+    principal = None
     if username:
         name_type = getattr(gssapi.NameType, 'user' if usage == 'initiate' else 'hostbased_service')
-        username = gssapi.Name(base=username, name_type=name_type)
+        principal = gssapi.Name(base=username, name_type=name_type)
 
-    if username and password:
-        # NOTE: MIT krb5 < 1.14 would store this cred in the global cache but later versions used a private cache in
-        # memory. There's not much we can do about this but document this behaviour and hope people upgrade to a newer
-        # version.
-        # GSSAPI offers no way to specify custom flags like forwardable. We use a temp conf file to ensure an explicit
-        # cred with the delegate flag will actually be forwardable.
-        forwardable = False
-        forwardable_mechs = [gssapi.OID.from_int_seq(GSSMech.kerberos.value),
-                             gssapi.OID.from_int_seq(GSSMech.spnego.value)]
-        if context_req and context_req & ContextReq.delegate and mech in forwardable_mechs:
-            forwardable = True
+    if principal and password:
+        if usage == "initiate" and mech == gssapi.OID.from_int_seq(GSSMech.kerberos.value):
+            # GSSAPI offers no way to specify custom flags like forwardable when getting a Kerberos credential. This
+            # calls the Kerberos API to get the ticket and convert it to a GSSAPI credential.
+            cred = _kinit(
+                to_bytes(username),
+                to_bytes(password),
+                forwardable=bool(context_req and context_req & ContextReq.delegate)
+            )
+        else:
+            # MIT krb5 < 1.14 would store the kerb cred in the global cache but later versions used a private cache in
+            # memory. There's not much we can do about this but document this behaviour and hope people upgrade to a
+            # newer version.
+            cred = acquire_cred_with_password(principal, to_bytes(password), usage=usage, mechs=[mech]).creds
 
-        with _krb5_conf(forwardable=forwardable):
-            cred = acquire_cred_with_password(username, to_bytes(password), usage=usage, mechs=[mech])
+        return cred
 
-        return cred.creds
-
-    cred = gssapi.Credentials(name=username, usage=usage, mechs=[mech])
+    cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
 
     # We don't need to check the actual lifetime, just trying to get the valid will have gssapi check the lifetime and
     # raise an ExpiredCredentialsError if it is expired.
@@ -332,6 +301,63 @@ def _gss_sasl_description(mech: "gssapi.OID") -> typing.Optional[bytes]:
     res[mech.dotted_form] = sasl_desc
     _gss_sasl_description.result = res  # type: ignore
     return _gss_sasl_description(mech)
+
+
+def _kinit(
+    username: bytes,
+    password: bytes,
+    forwardable: typing.Optional[bool] = None,
+) -> gssapi.raw.Creds:
+    """Gets a Kerberos credential.
+
+    This will get the GSSAPI credential that contains the Kerberos TGT inside
+    it. This is used instead of gss_acquire_cred_with_password as the latter
+    does not expose a way to request a forwardable ticket. This way makes it
+    possible to request whatever is needed before making it usable in GSSAPI.
+
+    Args:
+        username: The username to get the credential for.
+        password: The password to use to retrieve the credential.
+        forwardable: Whether to request a forwardable credential.
+
+    Returns:
+        gssapi.raw.Creds: The GSSAPI credential for the Kerberos mech.
+    """
+    ctx = krb5.init_context()
+    princ = krb5.parse_name_flags(ctx, username)
+    init_opt = krb5.get_init_creds_opt_alloc(ctx)
+
+    if hasattr(krb5, "get_init_creds_opt_set_default_flags"):
+        # Heimdal requires this to be set in order to load the default options from krb5.conf. This follows the same
+        # code that it's own gss_acquire_cred_with_password does.
+        realm = krb5.principal_get_realm(ctx, princ)
+        krb5.get_init_creds_opt_set_default_flags(ctx, init_opt, b"gss_krb5", realm)
+
+    krb5.get_init_creds_opt_set_canonicalize(init_opt, True)
+    if forwardable is not None:
+        krb5.get_init_creds_opt_set_forwardable(init_opt, forwardable)
+
+    cred = krb5.get_init_creds_password(ctx, princ, init_opt, password=password)
+
+    mem_ccache = krb5.cc_new_unique(ctx, b"MEMORY")
+    krb5.cc_initialize(ctx, mem_ccache, princ)
+    krb5.cc_store_cred(ctx, mem_ccache, cred)
+
+    # acquire_cred_from is less dangerous than krb5_import_cred which uses a raw pointer to access the ccache. Heimdal
+    # has only recently added this API (not in a release as of 2021) so there's a fallback to the latter API.
+    if hasattr(gssapi.raw, "acquire_cred_from"):
+        kerberos = gssapi.OID.from_int_seq('1.2.840.113554.1.2.2')
+        gssapi_creds = gssapi.raw.acquire_cred_from(
+            {b"ccache": b"MEMORY:" + mem_ccache.name},
+            mechs=[kerberos],
+            usage="initiate",
+        ).creds
+
+    else:
+        gssapi_creds = gssapi.raw.Creds()
+        gssapi.raw.krb5_import_cred(gssapi_creds, cache=mem_ccache.addr)
+
+    return gssapi_creds
 
 
 class GSSAPIProxy(ContextProxy):
