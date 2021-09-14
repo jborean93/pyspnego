@@ -307,7 +307,7 @@ def _kinit(
     username: bytes,
     password: bytes,
     forwardable: typing.Optional[bool] = None,
-) -> gssapi.raw.Creds:
+) -> "gssapi.raw.Creds":
     """Gets a Kerberos credential.
 
     This will get the GSSAPI credential that contains the Kerberos TGT inside
