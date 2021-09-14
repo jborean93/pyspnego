@@ -123,7 +123,7 @@ def _get_gssapi_credential(
     username: typing.Optional[str] = None,
     password: typing.Optional[str] = None,
     context_req: typing.Optional[ContextReq] = None,
-) -> "gssapi.creds.Credentials":
+) -> typing.Optional["gssapi.creds.Credentials"]:
     """Gets a set of credential(s).
 
     Will get a set of GSSAPI credential(s) for the mech specified. If the username and password is specified then a new
@@ -159,12 +159,16 @@ def _get_gssapi_credential(
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
     """
-    principal = None
-    if username:
-        name_type = getattr(gssapi.NameType, 'user' if usage == 'initiate' else 'hostbased_service')
-        principal = gssapi.Name(base=username, name_type=name_type)
+    if not username:
+        # https://github.com/jborean93/pyspnego/issues/15
+        # Using None as a credential when creating the sec context is better than getting the default credential as the
+        # former takes into account the target SPN when selecting the principal to use.
+        return None
 
-    if principal and password:
+    name_type = getattr(gssapi.NameType, 'user' if usage == 'initiate' else 'hostbased_service')
+    principal = gssapi.Name(base=username, name_type=name_type)
+
+    if password:
         if usage == "initiate" and mech == gssapi.OID.from_int_seq(GSSMech.kerberos.value):
             # GSSAPI offers no way to specify custom flags like forwardable when getting a Kerberos credential. This
             # calls the Kerberos API to get the ticket and convert it to a GSSAPI credential.
@@ -178,13 +182,12 @@ def _get_gssapi_credential(
             # newer version.
             cred = acquire_cred_with_password(principal, to_bytes(password), usage=usage, mechs=[mech]).creds
 
-        return cred
+    else:
+        cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
 
-    cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
-
-    # We don't need to check the actual lifetime, just trying to get the valid will have gssapi check the lifetime and
-    # raise an ExpiredCredentialsError if it is expired.
-    _ = cred.lifetime
+        # We don't need to check the actual lifetime, just trying to get the valid will have gssapi check the lifetime
+        # and raise an ExpiredCredentialsError if it is expired.
+        _ = cred.lifetime
 
     return cred
 
