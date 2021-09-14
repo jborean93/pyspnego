@@ -346,7 +346,7 @@ def _kinit(
     # acquire_cred_from is less dangerous than krb5_import_cred which uses a raw pointer to access the ccache. Heimdal
     # has only recently added this API (not in a release as of 2021) so there's a fallback to the latter API.
     if hasattr(gssapi.raw, "acquire_cred_from"):
-        kerberos = gssapi.OID.from_int_seq('1.2.840.113554.1.2.2')
+        kerberos = gssapi.OID.from_int_seq(GSSMech.kerberos.value)
         gssapi_creds = gssapi.raw.acquire_cred_from(
             {b"ccache": b"MEMORY:" + mem_ccache.name},
             mechs=[kerberos],

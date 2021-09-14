@@ -524,6 +524,50 @@ def test_gssapi_kerberos_auth(kerb_cred):
     _message_test(c, s)
 
 
+def test_gssapi_kerberos_auth_explicit_cred(kerb_cred):
+    context_req = spnego.ContextReq.default | spnego.ContextReq.delegate
+    c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), hostname=socket.getfqdn(), protocol='kerberos',
+                      options=spnego.NegotiateOptions.use_gssapi, context_req=context_req)
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = c.session_key
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = s.session_key
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == 'kerberos'
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    assert c.context_attr & spnego.ContextReq.delegate
+    assert s.context_attr & spnego.ContextReq.delegate
+
+    _message_test(c, s)
+
 # CredSSP scenarios
 
 @pytest.mark.parametrize('options, protocol, version', [
