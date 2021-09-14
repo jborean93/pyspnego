@@ -568,6 +568,7 @@ def test_gssapi_kerberos_auth_explicit_cred(kerb_cred):
 
     _message_test(c, s)
 
+
 # CredSSP scenarios
 
 @pytest.mark.parametrize('options, protocol, version', [
