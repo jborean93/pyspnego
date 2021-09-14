@@ -4,6 +4,7 @@
 
 * Drop support for Python 2.7 and 3.5 - new minimum is 3.6+
 * Added support for CredSSP authentication using `protocol='credssp'`
+* Use Kerberos API to acquire Kerberos credential to get a forwardable token in a thread safe manner
 
 ## 0.1.6 - 2021-05-07
 

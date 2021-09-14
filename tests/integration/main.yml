@@ -366,6 +366,7 @@
     pip:
       name:
       - gssapi
+      - krb5
       - pytest
       - pytest-forked
       - requests

@@ -50,6 +50,7 @@ all:
               - heimdal-libs
               - heimdal-path
               - heimdal-workstation
+              - libcom_err-devel
               krb_provider: Heimdal
       vars:
         ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no

@@ -480,35 +480,6 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None):
     return ET.fromstring(content)
 
 
-@pytest.fixture
-def kinit():
-    # We only need to call kinit when testing against Heimdal due to it not respecting the forwardable flag for
-    # delegation with gss_acquire_cred_with_password.
-    if KERBEROS_PROVIDER != 'Heimdal':
-        yield False
-        return
-
-    cache_env_var = 'KRB5CCNAME'
-    with tempfile.NamedTemporaryFile() as ccache:
-        ccache_path = 'FILE:%s' % ccache.name
-        os.environ[cache_env_var] = ccache_path
-
-        try:
-            # Use a temp password with kinit to store the credential in the temp cache.
-            with tempfile.NamedTemporaryFile() as temp_pass:
-                temp_pass.write(PASSWORD.encode())
-                temp_pass.flush()
-
-                cmd = ['/usr/lib/heimdal/bin/kinit', '-f', '--password-file=%s' % temp_pass.name, USERNAME]
-                p = subprocess.Popen(cmd, env={cache_env_var: ccache_path})
-                p.communicate()
-
-            yield True
-
-        finally:
-            del os.environ[cache_env_var]
-
-
 @pytest.mark.parametrize('service', ['HTTP', 'cifs'])
 def test_kerberos_authentication(service, monkeypatch):
     if os.name != 'nt':
@@ -623,13 +594,13 @@ def test_winrm_no_delegate():
     assert 'Access is denied' in stderr
 
 
-def test_winrm_delegate(kinit):
+def test_winrm_delegate():
     context_kwargs = {
         'hostname': WIN_SERVER_TRUSTED,
         'service': 'HTTP',
         'context_req': spnego.ContextReq.default | spnego.ContextReq.delegate,
     }
-    if not kinit and (os.name != 'nt' or IS_SYSTEM):
+    if os.name != 'nt' or IS_SYSTEM:
         context_kwargs['username'] = USERNAME
         context_kwargs['password'] = PASSWORD
 
@@ -647,17 +618,16 @@ def test_winrm_delegate(kinit):
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows always sets ok as delegate so nothing to test there')
-def test_winrm_ok_as_delegate(kinit):
+def test_winrm_ok_as_delegate():
     # In the environment setup, this host is not trusted for delegation in AD. This test shows that this flag isn't
     # used for GSSAPI unless set by the krb5.conf file.
     context_kwargs = {
         'hostname': WIN_SERVER_UNTRUSTED,
         'service': 'HTTP',
         'context_req': spnego.ContextReq.default | spnego.ContextReq.delegate,
+        'username': USERNAME,
+        'password': PASSWORD,
     }
-    if not kinit:
-        context_kwargs['username'] = USERNAME
-        context_kwargs['password'] = PASSWORD
 
     c = spnego.client(**context_kwargs)
 
