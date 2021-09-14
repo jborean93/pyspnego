@@ -115,7 +115,7 @@ def _create_tls_context(usage, options):  # type: (str, NegotiateOptions) -> TLS
     # OP_NO_* options.
     use_tls1 = bool(options & NegotiateOptions.credssp_allow_tlsv1)
     try:
-        ctx.minimum_version = ssl.TLSVersion.TLSv1 if use_tls1 else ssl.TLSVersion.TLSv1_3
+        ctx.minimum_version = ssl.TLSVersion.TLSv1 if use_tls1 else ssl.TLSVersion.TLSv1_2
     except (ValueError, AttributeError):
         ctx.options |= ssl.Options.OP_NO_SSLv2 | ssl.Options.OP_NO_SSLv3
         if not use_tls1:
