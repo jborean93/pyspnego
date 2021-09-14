@@ -524,7 +524,11 @@ def test_gssapi_kerberos_auth(kerb_cred):
     _message_test(c, s)
 
 
-def test_gssapi_kerberos_auth_explicit_cred(kerb_cred):
+@pytest.mark.parametrize('acquire_cred_from', [False, True])
+def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkeypatch):
+    if not acquire_cred_from:
+        monkeypatch.delattr("gssapi.raw.acquire_cred_from")
+
     context_req = spnego.ContextReq.default | spnego.ContextReq.delegate
     c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), hostname=socket.getfqdn(), protocol='kerberos',
                       options=spnego.NegotiateOptions.use_gssapi, context_req=context_req)
