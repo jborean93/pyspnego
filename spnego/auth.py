@@ -60,7 +60,8 @@ def _new_context(
 
     # When requesting a delegated context with explicit credentials we cannot rely on GSSAPI for Negotiate auth. There
     # is no way to explicitly request a forwardable Kerberos ticket for use with SPNEGO.
-    if username and password and bool(context_req & ContextReq.delegate) and 'negotiate' in gssapi_protocols:
+    forwardable = bool(context_req & ContextReq.delegate or context_req & ContextReq.delegate_policy)
+    if username and password and forwardable and 'negotiate' in gssapi_protocols:
         gssapi_protocols.remove('negotiate')
 
     proxy: typing.Type[ContextProxy]

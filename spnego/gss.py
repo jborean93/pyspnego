@@ -168,11 +168,10 @@ def _get_gssapi_credential(
         if usage == "initiate" and mech == gssapi.OID.from_int_seq(GSSMech.kerberos.value):
             # GSSAPI offers no way to specify custom flags like forwardable when getting a Kerberos credential. This
             # calls the Kerberos API to get the ticket and convert it to a GSSAPI credential.
-            cred = _kinit(
-                to_bytes(username),
-                to_bytes(password),
-                forwardable=bool(context_req and context_req & ContextReq.delegate)
+            forwardable = bool(
+                context_req and (context_req & ContextReq.delegate or context_req & ContextReq.delegate_policy)
             )
+            cred = _kinit(to_bytes(username), to_bytes(password), forwardable=forwardable)
         else:
             # MIT krb5 < 1.14 would store the kerb cred in the global cache but later versions used a private cache in
             # memory. There's not much we can do about this but document this behaviour and hope people upgrade to a
