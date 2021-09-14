@@ -483,8 +483,13 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 
 # Kerberos scenarios
 
-def test_gssapi_kerberos_auth(kerb_cred):
-    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol='kerberos',
+@pytest.mark.parametrize('explicit_user', [False, True])
+def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
+    username = None
+    if explicit_user:
+        username = kerb_cred.user_princ
+
+    c = spnego.client(username, None, hostname=socket.getfqdn(), protocol='kerberos',
                       options=spnego.NegotiateOptions.use_gssapi)
     s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
 
