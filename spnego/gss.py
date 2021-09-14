@@ -123,7 +123,7 @@ def _get_gssapi_credential(
     username: typing.Optional[str] = None,
     password: typing.Optional[str] = None,
     context_req: typing.Optional[ContextReq] = None,
-) -> "gssapi.creds.Credentials":
+) -> typing.Optional["gssapi.creds.Credentials"]:
     """Gets a set of credential(s).
 
     Will get a set of GSSAPI credential(s) for the mech specified. If the username and password is specified then a new
@@ -178,13 +178,18 @@ def _get_gssapi_credential(
             # newer version.
             cred = acquire_cred_with_password(principal, to_bytes(password), usage=usage, mechs=[mech]).creds
 
-        return cred
+    elif principal or usage == 'accept':
+        cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
 
-    cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
+        # We don't need to check the actual lifetime, just trying to get the valid will have gssapi check the lifetime
+        # and raise an ExpiredCredentialsError if it is expired.
+        _ = cred.lifetime
 
-    # We don't need to check the actual lifetime, just trying to get the valid will have gssapi check the lifetime and
-    # raise an ExpiredCredentialsError if it is expired.
-    _ = cred.lifetime
+    else:
+        # https://github.com/jborean93/pyspnego/issues/15
+        # Using None as a credential when creating the sec context is better than getting the default credential as the
+        # former takes into account the target SPN when selecting the principal to use.
+        cred = None
 
     return cred
 
