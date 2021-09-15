@@ -193,6 +193,12 @@ class NegotiateProxy(ContextProxy):
                 mech_list_mic = in_token.mech_list_mic
                 token = in_token.response_token
 
+                # https://github.com/jborean93/smbprotocol/issues/137
+                # Some really old SPNEGO implementations have mechListMIC with the same value as responseToken. This is
+                # a bug but needs to be handled by blanking out the mechListMIC.
+                if token and mech_list_mic == token:
+                    mech_list_mic = None
+
                 # If we have received the supported_mech then we don't need to send our own.
                 if in_token.supported_mech:
                     self.__chosen_mech = GSSMech.from_oid(in_token.supported_mech)
