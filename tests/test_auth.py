@@ -365,6 +365,7 @@ def test_negotiate_with_ntlm_and_duplicate_response_token(ntlm_cred):
 
     _message_test(c, s)
 
+
 # NTLM scenarios
 
 @pytest.mark.parametrize('lm_compat_level', [None, 0, 1, 2])
