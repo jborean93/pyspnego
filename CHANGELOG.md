@@ -6,6 +6,7 @@
 * Added support for CredSSP authentication using `protocol='credssp'`
 * Use Kerberos API to acquire Kerberos credential to get a forwardable token in a thread safe manner
 * Fix default credential logic when no username is provided based on GSSAPI rules rather than just the default principal - https://github.com/jborean93/pyspnego/issues/15
+* Ignore SPNEGO `mechListMIC` if it contains the same value as the `responseToken` due to an old Windows SPNEGO logic bug - https://github.com/krb5/krb5/blob/3f5a348287646d65700854650fe668b9c4249013/src/lib/gssapi/spnego/spnego_mech.c#L3734-L3744
 
 ## 0.1.6 - 2021-05-07
 

@@ -26,6 +26,8 @@ from spnego._context import (
     UnwrapResult,
 )
 
+from spnego._spnego import NegTokenResp, unpack_token
+
 from spnego.exceptions import (
     SpnegoError,
 )
@@ -321,6 +323,42 @@ def test_negotiate_with_raw_ntlm(ntlm_cred):
     assert not s.complete
 
     final = s.step(authenticate)
+    assert final is None
+    assert c.complete
+    assert s.complete
+
+    _message_test(c, s)
+
+
+def test_negotiate_with_ntlm_and_duplicate_response_token(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
+                      options=spnego.NegotiateOptions.use_negotiate)
+    s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
+
+    negotiate = c.step()
+    assert not c.complete
+    assert not s.complete
+
+    challenge = s.step(negotiate)
+
+    # Set the mechListMIC to the same value as responseToken in the challenge to replicate the bug this is testing
+    neg_token_resp = unpack_token(challenge)
+    assert isinstance(neg_token_resp, NegTokenResp)
+    neg_token_resp.mech_list_mic = neg_token_resp.response_token
+    challenge = neg_token_resp.pack()
+
+    assert not c.complete
+    assert not s.complete
+
+    authenticate = c.step(challenge)
+    assert not c.complete
+    assert not s.complete
+
+    mech_list = s.step(authenticate)
+    assert not c.complete
+    assert s.complete
+
+    final = c.step(mech_list)
     assert final is None
     assert c.complete
     assert s.complete
