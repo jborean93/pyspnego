@@ -9,6 +9,7 @@ import pytest
 
 import spnego._sspi
 import spnego.iov
+from spnego.exceptions import InvalidCredentialError
 
 
 @pytest.mark.skipif("ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Requires SSPI library")
@@ -83,3 +84,9 @@ def test_sspi_wrap_no_encryption(ntlm_cred):
     enc_data = c.wrap(plaintext, encrypt=False)
     dec_data = s.unwrap(enc_data.data)
     assert dec_data.data == plaintext
+
+
+@pytest.mark.skipif("ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Requires SSPI library")
+def test_sspi_no_valid_cred():
+    with pytest.raises(InvalidCredentialError, match="No applicable credentials available"):
+        spnego._sspi.SSPIProxy(spnego.KerberosKeytab("user_princ", "ccache"), protocol="kerberos")

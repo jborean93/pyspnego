@@ -314,6 +314,25 @@ def test_negotiate_invalid_size():
         messages.Negotiate.unpack(b"NTLMSSP\x00\x01\x00\x00\x00")
 
 
+def test_negotiate_unpack_invalid_msg():
+    with pytest.raises(ValueError, match="Input message was not a NTLM Negotiate message"):
+        messages.Negotiate.unpack(
+            b"\x4E\x54\x4C\x4D\x53\x53\x50\x00"
+            b"\x02\x00\x00\x00"
+            b"\x0C\x00"
+            b"\x0C\x00"
+            b"\x38\x00\x00\x00"
+            b"\x33\x82\x02\xE2"
+            b"\x01\x23\x45\x67\x89\xAB\xCD\xEF"
+            b"\x00\x00\x00\x00\x00\x00\x00\x00"
+            b"\x00\x00"
+            b"\x00\x00"
+            b"\x00\x00\x00\x00"
+            b"\x06\x00\x70\x17\x00\x00\x00\x0F"
+            b"\x53\x00\x65\x00\x72\x00\x76\x00\x65\x00\x72\x00"
+        )
+
+
 def test_challenge_pack():
     challenge = messages.Challenge()
 
@@ -589,6 +608,21 @@ def test_challenge_unpack_encoding():
     assert actual.server_challenge == b"\x11" * 8
     assert actual.target_info is None
     assert actual.version is None
+
+
+def test_challenge_unpack_invalid_msg():
+    with pytest.raises(ValueError, match="Input message was not a NTLM Challenge message"):
+        messages.Challenge.unpack(
+            b"\x4E\x54\x4C\x4D\x53\x53\x50\x00"
+            b"\x01\x00\x00\x00"
+            b"\x00\x00\x00\x00"
+            b"\x00\x00"
+            b"\x00\x00"
+            b"\x20\x00\x00\x00"
+            b"\x00\x00"
+            b"\x00\x00"
+            b"\x20\x00\x00\x00"
+        )
 
 
 def test_authenticate_pack():
@@ -1089,6 +1123,21 @@ def test_authenticate_unpack_mic_no_version():
 def test_authenticate_invalid_size():
     with pytest.raises(ValueError, match="Invalid NTLM Authenticate raw byte length"):
         messages.Authenticate.unpack(b"NTLMSSP\x00\x03\x00\x00\x00")
+
+
+def test_authenticate_unpack_invalid_msg():
+    with pytest.raises(ValueError, match="Input message was not a NTLM Authenticate message"):
+        messages.Authenticate.unpack(
+            b"\x4E\x54\x4C\x4D\x53\x53\x50\x00"
+            b"\x01\x00\x00\x00"
+            b"\x00\x00\x00\x00"
+            b"\x00\x00"
+            b"\x00\x00"
+            b"\x20\x00\x00\x00"
+            b"\x00\x00"
+            b"\x00\x00"
+            b"\x20\x00\x00\x00"
+        )
 
 
 def test_filetime_pack():

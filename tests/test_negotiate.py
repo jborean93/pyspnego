@@ -5,7 +5,9 @@
 import pytest
 
 import spnego
+import spnego._gss
 from spnego._context import GSSMech
+from spnego._negotiate import NegotiateProxy
 from spnego._spnego import NegState, NegTokenInit, NegTokenResp
 from spnego.exceptions import BadMechanismError, InvalidTokenError
 
@@ -75,3 +77,13 @@ def test_token_acceptor_first(ntlm_cred):
     assert final_token is None
     assert c.complete
     assert s.complete
+
+
+@pytest.mark.skipif("ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Requires SSPI library")
+def test_iov_available_sspi():
+    assert NegotiateProxy.iov_available()
+
+
+@pytest.mark.skipif(not spnego._gss.HAS_GSSAPI, reason="Requires the gssapi library to be installed for testing")
+def test_iov_available_gssapi():
+    assert NegotiateProxy.iov_available() == spnego._gss.GSSAPIProxy.iov_available()

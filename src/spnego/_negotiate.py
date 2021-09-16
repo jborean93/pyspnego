@@ -6,6 +6,7 @@ import logging
 import struct
 import typing
 
+import spnego
 from spnego._context import (
     IOV,
     ContextProxy,
@@ -17,8 +18,8 @@ from spnego._context import (
     WinRMWrapResult,
     WrapResult,
 )
+from spnego._credential import Credential, unify_credentials
 from spnego._gss import GSSAPIProxy
-from spnego._ntlm import NTLMProxy
 from spnego._spnego import (
     NegState,
     NegTokenInit,
@@ -26,6 +27,7 @@ from spnego._spnego import (
     pack_mech_type_list,
     unpack_token,
 )
+from spnego._sspi import SSPIProxy
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import BadMechanismError, InvalidTokenError, NegotiateOptions
 from spnego.iov import IOVBuffer
@@ -43,7 +45,7 @@ class NegotiateProxy(ContextProxy):
 
     def __init__(
         self,
-        username: typing.Optional[str] = None,
+        username: typing.Optional[typing.Union[str, Credential, typing.List[Credential]]] = None,
         password: typing.Optional[str] = None,
         hostname: typing.Optional[str] = None,
         service: typing.Optional[str] = None,
@@ -54,10 +56,12 @@ class NegotiateProxy(ContextProxy):
         options: NegotiateOptions = NegotiateOptions.none,
         **kwargs: typing.Any,
     ) -> None:
+        credentials = unify_credentials(username, password)
         super(NegotiateProxy, self).__init__(
-            username, password, hostname, service, channel_bindings, context_req, usage, protocol, options, False
+            credentials, hostname, service, channel_bindings, context_req, usage, protocol, options
         )
 
+        self._credentials = credentials
         self._hostname = hostname
         self._service = service
         self._complete = False
@@ -78,15 +82,20 @@ class NegotiateProxy(ContextProxy):
         protocols = ["ntlm", "negotiate"]
 
         # Make sure we add Kerberos first as the order is important.
-        if "kerberos" in GSSAPIProxy.available_protocols(options=options):
+        if "kerberos" in GSSAPIProxy.available_protocols(
+            options=options
+        ) or "kerberos" in SSPIProxy.available_protocols(options=options):
             protocols.insert(0, "kerberos")
 
         return protocols
 
     @classmethod
     def iov_available(cls) -> bool:
-        # NTLM does not support IOV so we can only say that IOV is available if GSSAPI IOV is available.
-        return GSSAPIProxy.iov_available()
+        # If SSPI is available then IOV is available, otherwise it's dependent on whether GSSAPI exposes the functions.
+        if SSPIProxy.available_protocols() == []:
+            return GSSAPIProxy.iov_available()
+        else:
+            return True
 
     @property
     def client_principal(self) -> typing.Optional[str]:
@@ -364,18 +373,12 @@ class NegotiateProxy(ContextProxy):
         mech_types: typing.Optional[typing.List[str]] = None,
     ) -> typing.List[str]:
         """Builds a new context list that are available to the client."""
-        context_kwargs = {
-            "username": self.username,
-            "password": self.password,
+        context_kwargs: typing.Dict[str, typing.Any] = {
             "hostname": self._hostname,
             "service": self._service,
             "channel_bindings": self.channel_bindings,
             "context_req": self.context_req,
-            "usage": self.usage,
-            "options": self.options,
-            "_is_wrapped": True,
         }
-        gssapi_protocols = GSSAPIProxy.available_protocols(options=self.options)
         all_protocols = self._preferred_mech_list()
 
         self._context_list = {}
@@ -387,13 +390,23 @@ class NegotiateProxy(ContextProxy):
 
             protocol = mech.name
             try:
-                proxy_obj = GSSAPIProxy if protocol in gssapi_protocols else NTLMProxy
-                log.debug("Checking %s with %s when building SPNEGO mech list" % (proxy_obj.__name__, protocol))
-                context = proxy_obj(protocol=protocol, **context_kwargs)
+                log.debug(f"Attempting to create {protocol} context when building SPNEGO mech list")
+
+                # Cannot use SSPI's NTLM as we need to reset the crypto state which SSPI does not expose.
+                options = self.options & ~NegotiateOptions.use_negotiate
+                if protocol == "ntlm" and "ntlm" in SSPIProxy.available_protocols(options=options):
+                    options |= NegotiateOptions.use_ntlm
+
+                if self.usage == "accept":
+                    context = spnego.server(protocol=protocol, options=options, **context_kwargs)
+                else:
+                    context = spnego.client(self._credentials, protocol=protocol, options=options, **context_kwargs)
+
+                context._is_wrapped = True
                 first_token = context.step() if self.usage == "initiate" else None
             except Exception as e:
                 last_err = e
-                log.debug("Failed to create gssapi context for SPNEGO protocol %s: %s", protocol, str(e))
+                log.debug("Failed to create context for SPNEGO protocol %s: %s", protocol, str(e))
                 continue
 
             self._context_list[mech] = (context, first_token)
