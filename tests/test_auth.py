@@ -32,6 +32,11 @@ from spnego.exceptions import (
     SpnegoError,
 )
 
+from spnego._ntlm_raw.crypto import (
+    lmowfv1,
+    ntowfv1
+)
+
 
 def _message_test(client, server):
     # Client wrap
@@ -510,6 +515,20 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
                       options=spnego.NegotiateOptions.use_ntlm)
     s = spnego.server(options=spnego.NegotiateOptions.use_sspi, protocol='ntlm')
+
+    _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
+
+def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
+    ntlm_hashes = f"{lmowfv1(ntlm_cred[1]).hex()}:{ntowfv1(ntlm_cred[1]).hex()}"
+    c = spnego.client(ntlm_cred[0], ntlm_hashes,
+                      hostname=socket.gethostname(), options=0, protocol='ntlm')
+    s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
     _ntlm_test(c, s)
 
