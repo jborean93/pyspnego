@@ -2,11 +2,21 @@
 
 ## 0.2.0 - TBD
 
+### Breaking Changes
+
 * Drop support for Python 2.7 and 3.5 - new minimum is 3.6+
+
+### Features
+
 * Added support for CredSSP authentication using `protocol='credssp'`
+
+### Bugfixes
+
 * Use Kerberos API to acquire Kerberos credential to get a forwardable token in a thread safe manner
 * Fix default credential logic when no username is provided based on GSSAPI rules rather than just the default principal - https://github.com/jborean93/pyspnego/issues/15
 * Ignore SPNEGO `mechListMIC` if it contains the same value as the `responseToken` due to an old Windows SPNEGO logic bug - https://github.com/krb5/krb5/blob/3f5a348287646d65700854650fe668b9c4249013/src/lib/gssapi/spnego/spnego_mech.c#L3734-L3744
+* Do not use SSPI when `auth='ntlm'` and the password is in the form `{lm_hash}:{nt_hash}`
+
 
 ## 0.1.6 - 2021-05-07
 
