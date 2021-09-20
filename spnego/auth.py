@@ -8,6 +8,10 @@ from spnego._context import (
     ContextReq,
 )
 
+from spnego._ntlm_raw.crypto import (
+    is_ntlm_hash
+)
+
 from spnego.channel_bindings import (
     GssChannelBindings,
 )
@@ -70,6 +74,12 @@ def _new_context(
     # Negotiate auth is used in the CredSSP authentication process.
     if proto == 'credssp':
         proxy = CredSSPProxy
+
+    # If the procotol has been explicitly set to NTLM and an NTLM hash has been provided as the password, do not favour
+    # the platform implementations. Instead, use the Python NTLMProxy implementation, since SSPI/GSSAPI so not allow
+    # authentication using hashes.
+    elif proto == 'ntlm' and password is not None and is_ntlm_hash(password):
+        proxy = NTLMProxy
 
     elif options & NegotiateOptions.use_sspi or (not use_specified and proto in sspi_protocols):
         proxy = SSPIProxy

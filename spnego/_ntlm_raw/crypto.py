@@ -65,7 +65,7 @@ class RC4Handle:
         self._handle = cipher.encryptor()
 
 
-def _is_ntlm_hash(password: str) -> bool:
+def is_ntlm_hash(password: str) -> bool:
     return bool(_NTLM_HASH_PATTERN.match(password))
 
 
@@ -332,7 +332,7 @@ def lmowfv1(password: str) -> bytes:
     .. _NTLM v1 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
     """
-    if _is_ntlm_hash(password):
+    if is_ntlm_hash(password):
         return base64.b16decode(password.split(':')[0].upper())
 
     # Fix the password to upper case and pad the length to exactly 14 bytes. While it is true LM only authentication
@@ -375,7 +375,7 @@ def ntowfv1(password: str) -> bytes:
     .. _NTLM v1 Authentication:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/464551a8-9fc4-428e-b3d3-bc5bfb2e73a5
     """
-    if _is_ntlm_hash(password):
+    if is_ntlm_hash(password):
         return base64.b16decode(password.split(':')[1].upper())
 
     return md4(password.encode('utf-16-le'))
