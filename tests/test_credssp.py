@@ -2,13 +2,10 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import pytest
 import re
 import socket
-import spnego.credssp as credssp
+import spnego._credssp as credssp
 
 from spnego._credssp_structures import (
     NegoData,
@@ -24,13 +21,12 @@ from spnego.exceptions import (
     SpnegoError,
 )
 
-
-def test_generate_credssp_certificate():
-    # Ensure running it twice results in the same cert
-    actual = credssp._generate_credssp_certificate()
-    actual2 = credssp._generate_credssp_certificate()
-
-    assert actual == actual2
+from spnego.tls import (
+    CredSSPTLSContext,
+    default_tls_context,
+    generate_tls_certificate,
+    get_certificate_public_key,
+)
 
 
 @pytest.mark.parametrize('expected, usage, nonce', [
@@ -110,6 +106,12 @@ def test_credssp_invalid_handshake(ntlm_cred):
 
     with pytest.raises(InvalidTokenError, match="TLS handshake for CredSSP"):
         c.step(b"\x00" + server_hello)
+
+
+def test_credssp_server_without_pub_key():
+    context = default_tls_context()
+    with pytest.raises(OperationNotAvailableError, match="Provided tls context does not have a public key set"):
+        credssp.CredSSPProxy("username", "password", usage="accept", credssp_tls_context=context)
 
 
 @pytest.mark.parametrize('version', [2, 5])

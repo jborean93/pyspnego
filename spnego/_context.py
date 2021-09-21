@@ -286,7 +286,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
         self._context_attr = 0  # Provider specific context attributes, set by self.step().
 
         # Whether the context is wrapped inside another context.
-        self._is_wrapped = _is_wrapped  # type: bool
+        self._is_wrapped = _is_wrapped
 
         if options & NegotiateOptions.negotiate_kerberos and (self.protocol == 'negotiate' and
                                                               'kerberos' not in self.available_protocols()):

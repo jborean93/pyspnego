@@ -8,36 +8,36 @@ from spnego._context import (
     ContextReq,
 )
 
+from spnego._credssp import (
+    CredSSPProxy,
+)
+
+from spnego._gss import (
+    GSSAPIProxy,
+)
+
+from spnego._negotiate import (
+    NegotiateProxy,
+)
+
+from spnego._ntlm import (
+    NTLMProxy,
+)
+
 from spnego._ntlm_raw.crypto import (
     is_ntlm_hash
+)
+
+from spnego._sspi import (
+    SSPIProxy,
 )
 
 from spnego.channel_bindings import (
     GssChannelBindings,
 )
 
-from spnego.credssp import (
-    CredSSPProxy,
-)
-
 from spnego.exceptions import (
     NegotiateOptions,
-)
-
-from spnego.gss import (
-    GSSAPIProxy,
-)
-
-from spnego.negotiate import (
-    NegotiateProxy,
-)
-
-from spnego.ntlm import (
-    NTLMProxy,
-)
-
-from spnego.sspi import (
-    SSPIProxy,
 )
 
 
@@ -51,6 +51,7 @@ def _new_context(
     protocol: str,
     options: NegotiateOptions,
     usage: str,
+    **kwargs: typing.Any,
 ) -> ContextProxy:
     proto = protocol.lower()
     sspi_protocols = SSPIProxy.available_protocols(options=options)
@@ -100,7 +101,7 @@ def _new_context(
     else:
         raise ValueError("Invalid protocol specified '%s', must be kerberos, negotiate, or ntlm" % protocol)
 
-    return proxy(username, password, hostname, service, channel_bindings, context_req, usage, proto, options)
+    return proxy(username, password, hostname, service, channel_bindings, context_req, usage, proto, options, **kwargs)
 
 
 def client(
@@ -112,6 +113,7 @@ def client(
     context_req: ContextReq = ContextReq.default,
     protocol: str = 'negotiate',
     options: NegotiateOptions = NegotiateOptions.none,
+    **kwargs: typing.Any,
 ) -> ContextProxy:
     """Create a client context to be used for authentication.
 
@@ -124,12 +126,13 @@ def client(
         context_req: The :class:`spnego.ContextReq` flags to use when setting up the context.
         protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, `negotiate`, or `credssp`.
         options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
+        kwargs: Optional arguments to pass through to the authentiction context.
 
     Returns:
         ContextProxy: The context proxy for a client.
     """
     return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options,
-                        'initiate')
+                        'initiate', **kwargs)
 
 
 def server(
@@ -139,6 +142,7 @@ def server(
     context_req: ContextReq = ContextReq.default,
     protocol: str = 'negotiate',
     options: NegotiateOptions = NegotiateOptions.none,
+    **kwargs: typing.Any,
 ) -> ContextProxy:
     """Create a server context to be used for authentication.
 
@@ -149,9 +153,10 @@ def server(
         context_req: The :class:`spnego.ContextReq` flags to use when setting up the context.
         protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, `negotiate`, or `credssp`.
         options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
+        kwargs: Optional arguments to pass through to the authentiction context.
 
     Returns:
         ContextProxy: The context proxy for a client.
     """
     return _new_context(None, None, hostname, service, channel_bindings, context_req, protocol, options,
-                        'accept')
+                        'accept', **kwargs)

@@ -40,16 +40,16 @@ class NegotiateOptions(enum.IntFlag):
     These are the currently implemented feature flags:
 
     use_sspi:
-        Ensures the context proxy used is :class:`spnego.sspi.SSPIProxy`.
+        Ensures the context proxy used is :class:`spnego._sspi.SSPIProxy`.
 
     use_gssapi:
-        Ensures the context proxy used is :class:`spnego.gss.GSSAPIProxy`.
+        Ensures the context proxy used is :class:`spnego._gss.GSSAPIProxy`.
 
     use_negotiate:
-        Ensures the context proxy used is :class:`spnego.negotiate.NegotiateProxy`.
+        Ensures the context proxy used is :class:`spnego._negotiate.NegotiateProxy`.
 
     use_ntlm:
-        Ensures the context proxy used is :class:`spnego.ntlm.NTLMProxy`.
+        Ensures the context proxy used is :class:`spnego._ntlm.NTLMProxy`.
 
     negotiate_kerberos:
         Will make sure that Kerberos is at least available to try for authentication when using the `negotiate`
@@ -76,12 +76,6 @@ class NegotiateOptions(enum.IntFlag):
         To created a wrapped WinRM message the IOV extensions are required when using Kerberos auth. Setting this flag
         will skip Kerberos when `protocol='negotiate'` if the IOV headers aren't present and just fallback to NTLM.
 
-    credssp_allow_tlsv1:
-        By default CredSSP will only use TLSv1.2 or newer when negotiating a protocol. By setting this option the
-        minimum TLS protocol will be TLSv1.0 instead allowing you to authenticate with older servers that do not
-        support TLSv1.2. TLSv1.0 is highly discouraged due to weaknesses in the protocol and this options should only
-        be used with careful consideration.
-
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
     """
@@ -97,7 +91,6 @@ class NegotiateOptions(enum.IntFlag):
     session_key = 0x00000020
     wrapping_iov = 0x00000040
     wrapping_winrm = 0x00000080
-    credssp_allow_tlsv1 = 0x00000100
 
 
 class FeatureMissingError(Exception):

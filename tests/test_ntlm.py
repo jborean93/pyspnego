@@ -13,9 +13,9 @@ import socket
 
 import spnego
 import spnego.channel_bindings
-import spnego.gss
-import spnego.ntlm as ntlm
-import spnego.sspi
+import spnego._gss as gss
+import spnego._ntlm as ntlm
+import spnego._sspi as sspi
 
 from spnego._ntlm_raw.messages import (
     Authenticate,
@@ -203,11 +203,11 @@ def test_ntlm_no_encoding_flags():
 ])
 def test_ntlm_bad_bindings(client_opt, present, ntlm_cred):
     if client_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     elif client_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through SSPI')
 
     initiator_cbt = None
@@ -428,11 +428,11 @@ def test_ntlm_no_nt_v1_allowed(ntlm_cred, monkeypatch):
 ])
 def test_ntlm_invalid_password(client_opt, ntlm_cred):
     if client_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     elif client_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through SSPI')
 
     c = spnego.client(ntlm_cred[0], "Invalid", hostname=socket.gethostname(), options=client_opt, protocol='ntlm')
@@ -451,11 +451,11 @@ def test_ntlm_invalid_password(client_opt, ntlm_cred):
 ])
 def test_ntlm_verify_fail(client_opt, ntlm_cred):
     if client_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     elif client_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through SSPI')
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm')

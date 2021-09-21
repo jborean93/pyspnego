@@ -5,10 +5,13 @@
 ### Breaking Changes
 
 * Drop support for Python 2.7 and 3.5 - new minimum is 3.6+
+* Made the `gss`, `negotiate`, `ntlm`, `sspi` exports private, use the `spnego.client` and `spnego.server` functions instead
+  * A deprecation warning is raised when importing from these package directly and this will be removed in the next major release
 
 ### Features
 
 * Added support for CredSSP authentication using `protocol='credssp'`
+* Allow optional keyword arguments to be used with `spnego.client` and `spnego.server` to control authentication specific options
 
 ### Bugfixes
 
