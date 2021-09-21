@@ -10,16 +10,16 @@ import pytest
 import socket
 
 import spnego.iov
-import spnego.sspi
+import spnego._sspi
 
 
-@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
+@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
 def test_build_iov_list(ntlm_cred):
     class Sizes:
         security_trailer = 10
         block_size = 2
 
-    c = spnego.sspi.SSPIProxy(ntlm_cred[0], ntlm_cred[1], protocol='ntlm')
+    c = spnego._sspi.SSPIProxy(ntlm_cred[0], ntlm_cred[1], protocol='ntlm')
     c._attr_sizes = Sizes()
 
     actual = c._build_iov_list([
@@ -46,13 +46,13 @@ def test_build_iov_list(ntlm_cred):
     assert actual[5].buffer == b"\x02"
 
 
-@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
+@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
 def test_build_iov_list_fail_auto_alloc(ntlm_cred):
     class Sizes:
         security_trailer = 10
         block_size = 2
 
-    c = spnego.sspi.SSPIProxy(ntlm_cred[0], ntlm_cred[1], protocol='ntlm')
+    c = spnego._sspi.SSPIProxy(ntlm_cred[0], ntlm_cred[1], protocol='ntlm')
     c._attr_sizes = Sizes()
 
     with pytest.raises(ValueError, match="Cannot auto allocate buffer of type BufferType.data"):
@@ -60,24 +60,24 @@ def test_build_iov_list_fail_auto_alloc(ntlm_cred):
 
 
 def test_no_sspi_library(monkeypatch):
-    monkeypatch.setattr(spnego.sspi, 'HAS_SSPI', False)
+    monkeypatch.setattr(spnego._sspi, 'HAS_SSPI', False)
 
     with pytest.raises(ImportError, match="SSPIProxy requires the SSPI Cython extension to be compiled"):
-        spnego.sspi.SSPIProxy()
+        spnego._sspi.SSPIProxy()
 
 
-@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
+@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
 def test_sspi_invalid_qop():
-    c = spnego.sspi.SSPIProxy('user', 'pass')
+    c = spnego._sspi.SSPIProxy('user', 'pass')
 
     with pytest.raises(ValueError, match="Cannot set qop with SECQOP_WRAP_NO_ENCRYPT and encrypt=True"):
         c.wrap(b"\x00", True, qop=0x80000001)
 
 
-@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
+@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(), reason='Requires SSPI library')
 def test_sspi_wrap_no_encryption(ntlm_cred):
-    c = spnego.sspi.SSPIProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname())
-    s = spnego.sspi.SSPIProxy(usage='accept')
+    c = spnego._sspi.SSPIProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname())
+    s = spnego._sspi.SSPIProxy(usage='accept')
 
     s.step(c.step(s.step(c.step())))
 

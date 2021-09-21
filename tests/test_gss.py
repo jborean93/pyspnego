@@ -6,13 +6,13 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import collections
-import os
 import pytest
 import re
 
 import spnego
-import spnego.gss
+
 import spnego.iov
+import spnego._gss
 
 from spnego.exceptions import (
     FeatureMissingError,
@@ -27,23 +27,23 @@ def test_gss_sasl_description_fail(mocker, monkeypatch):
     mock_inquire_sasl.side_effect = [Exception, SASLResult(b'result')]
     monkeypatch.setattr(gssapi.raw, 'inquire_saslname_for_mech', mock_inquire_sasl)
 
-    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3'))
+    actual = spnego._gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3'))
     assert actual is None
 
-    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3'))
+    actual = spnego._gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3'))
     assert actual is None
 
-    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3.4'))
+    actual = spnego._gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3.4'))
     assert actual == b'result'
 
-    actual = spnego.gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3.4'))
+    actual = spnego._gss._gss_sasl_description(gssapi.OID.from_int_seq('1.2.3.4'))
     assert actual == b'result'
 
     assert mock_inquire_sasl.call_count == 2
 
 
 def test_build_iov_list(kerb_cred):
-    c = spnego.gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
     actual = c._build_iov_list([
         (spnego.iov.BufferType.header, b"\x01"),
         (spnego.iov.BufferType.data, 1),
@@ -63,7 +63,7 @@ def test_build_iov_list(kerb_cred):
 
 
 def test_build_iov_list_invalid_tuple(kerb_cred):
-    c = spnego.gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
 
     expected = "IOV entry tuple must contain 2 values, the type and data, see IOVBuffer."
     with pytest.raises(ValueError, match=expected):
@@ -71,7 +71,7 @@ def test_build_iov_list_invalid_tuple(kerb_cred):
 
 
 def test_build_iov_list_invalid_buffer_type(kerb_cred):
-    c = spnego.gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
 
     expected = "IOV entry[0] must specify the BufferType as an int"
     with pytest.raises(ValueError, match=re.escape(expected)):
@@ -79,7 +79,7 @@ def test_build_iov_list_invalid_buffer_type(kerb_cred):
 
 
 def test_build_iov_list_invalid_data(kerb_cred):
-    c = spnego.gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
 
     expected = "IOV entry[1] must specify the buffer bytes, length of the buffer, or whether it is auto allocated."
     with pytest.raises(ValueError, match=re.escape(expected)):
@@ -87,7 +87,7 @@ def test_build_iov_list_invalid_data(kerb_cred):
 
 
 def test_build_iov_list_invalid_value(kerb_cred):
-    c = spnego.gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol='kerberos')
 
     expected = "IOV entry must be a IOVBuffer tuple, int, or bytes"
     with pytest.raises(ValueError, match=re.escape(expected)):
@@ -95,20 +95,20 @@ def test_build_iov_list_invalid_value(kerb_cred):
 
 
 def test_no_gssapi_library(monkeypatch):
-    monkeypatch.setattr(spnego.gss, 'HAS_GSSAPI', False)
+    monkeypatch.setattr(spnego._gss, 'HAS_GSSAPI', False)
 
     with pytest.raises(ImportError, match="GSSAPIProxy requires the Python gssapi library"):
-        spnego.gss.GSSAPIProxy()
+        spnego._gss.GSSAPIProxy()
 
 
-@pytest.mark.skipif(not spnego.gss.HAS_GSSAPI, reason='Requires the gssapi library to be installed for testing')
+@pytest.mark.skipif(not spnego._gss.HAS_GSSAPI, reason='Requires the gssapi library to be installed for testing')
 def test_gssapi_no_kerberos(monkeypatch):
     def available_protocols(*args, **kwargs):
         return ['negotiate', 'ntlm']
 
-    monkeypatch.setattr(spnego.gss, 'HAS_GSSAPI', True)
-    monkeypatch.setattr(spnego.gss, '_available_protocols', available_protocols)
+    monkeypatch.setattr(spnego._gss, 'HAS_GSSAPI', True)
+    monkeypatch.setattr(spnego._gss, '_available_protocols', available_protocols)
 
     with pytest.raises(FeatureMissingError, match="The Python gssapi library is not installed so Kerberos cannot be "
                                                   "negotiated."):
-        spnego.gss.GSSAPIProxy(None, None, options=spnego.NegotiateOptions.negotiate_kerberos)
+        spnego._gss.GSSAPIProxy(None, None, options=spnego.NegotiateOptions.negotiate_kerberos)

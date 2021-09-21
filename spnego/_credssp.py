@@ -1,28 +1,17 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import base64
-import collections
-import datetime
 import hashlib
 import logging
 import os
-import platform
 import re
 import shutil
 import spnego
 import ssl
 import struct
 import tempfile
-
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+import typing
 
 from spnego._context import (
     ContextProxy,
@@ -44,6 +33,10 @@ from spnego._text import (
     to_text,
 )
 
+from spnego.channel_bindings import (
+    GssChannelBindings,
+)
+
 from spnego.exceptions import (
     BadBindingsError,
     ErrorCode,
@@ -55,75 +48,33 @@ from spnego.exceptions import (
     SpnegoError,
 )
 
-from typing import (
-    Generator,
-    Optional,
-    Tuple,
+from spnego.tls import (
+    CredSSPTLSContext,
+    default_tls_context,
+    generate_tls_certificate,
+    get_certificate_public_key,
 )
-
-TLSContext = collections.namedtuple('TLSContext', ['context', 'public_key'])
-"""A TLS context generated for CredSSP.
-
-Defines the TLS context and public key used in the context for an acceptor.
-
-Attributes:
-    context (ssl.SSLContext): The TLS context generated for CredSSP
-    public_key (Optional[bytes]): When generating the TLS context for an acceptor this is the public key bytes for the
-        generated cert in the TLS context.
-"""
-
-# Used by test to test a specific TLS version
-_PROTOCOL_TLS = ssl.PROTOCOL_TLS
-
-# The protocol version understood by the client and server.
-_CREDSSP_VERSION = 6
-
 
 log = logging.getLogger(__name__)
 
+# The protocol version understood by the client and server.
+_CREDSSP_VERSION = 6
+_X509_CERTIFICATE: typing.Optional[typing.Tuple[bytes, bytes, bytes]] = None
 
-def _create_tls_context(usage, options):  # type: (str, NegotiateOptions) -> TLSContext
-    """Creates the TLS context.
 
-    Creates the TLS context used to generate the SSL object for CredSSP authentication. By default the TLS context will
-    set the minimum protocol to TLSv1.2. Verification is also disabled for both the initiator and acceptor as per the
-    `MS-CSSP Events and Sequencing Rules`_ in step 1.
-
-    The following options can be set to control the behaviour of the new TLS context that is created:
-
-    NegotiateOptions.credssp_allow_tlsv1:
-        Set the minimum protocol to TLSv1.0 for use when authenticating with a host that does not support TLSv1.2.
-
-    Params:
-        usage: Set to `initiate` or `accept` to define whether the context is for the initiator or acceptor.
-        options: The context requirements of :class:`NegotiationOptions` that control the TLS context behaviour.
-
-    Returns:
-        TLSContext: The TLS context and optional public key for the acceptor context.
-
-    .. _MS-CSSP Events and Sequencing Rules:
-        https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c
-    """
+def _create_tls_context(
+    usage: str,
+) -> CredSSPTLSContext:
     log.debug("Creating TLS context")
-    ctx = ssl.SSLContext(_PROTOCOL_TLS)
+    ctx = default_tls_context()
 
-    # Required to interop with SChannel which does not support compression, TLS padding, and empty fragments
-    # SSL_OP_NO_COMPRESSION | SSL_OP_TLS_BLOCK_PADDING_BUG | SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS
-    ctx.options |= ssl.OP_NO_COMPRESSION | 0x00000200 | 0x00000800
+    if usage == "accept":
+        # Cache the result for future operations
+        global _X509_CERTIFICATE
+        if not _X509_CERTIFICATE:
+            _X509_CERTIFICATE = generate_tls_certificate()
 
-    # The minimum_version field requires OpenSSL 1.1.0g or newer, fallback to the deprecated method of setting the
-    # OP_NO_* options.
-    use_tls1 = bool(options & NegotiateOptions.credssp_allow_tlsv1)
-    try:
-        ctx.minimum_version = ssl.TLSVersion.TLSv1 if use_tls1 else ssl.TLSVersion.TLSv1_2
-    except (ValueError, AttributeError):
-        ctx.options |= ssl.Options.OP_NO_SSLv2 | ssl.Options.OP_NO_SSLv3
-        if not use_tls1:
-            ctx.options |= ssl.Options.OP_NO_TLSv1 | ssl.Options.OP_NO_TLSv1_1
-
-    public_key = None
-    if usage == 'accept':
-        cert_pem, key_pem, public_key = _generate_credssp_certificate()
+        cert_pem, key_pem, public_key = _X509_CERTIFICATE
 
         # Can't use tempfile.NamedTemporaryFile() as load_cert_chain() opens the file on another handle which fails
         # on Windows as the tempfile requires DELETE share access for that to work.
@@ -134,62 +85,26 @@ def _create_tls_context(usage, options):  # type: (str, NegotiateOptions) -> TLS
                 fd.write(cert_pem)
                 fd.write(key_pem)
 
-            ctx.load_cert_chain(cert_path)
+            ctx.context.load_cert_chain(cert_path)
+            ctx.public_key = public_key
 
         finally:
             shutil.rmtree(temp_dir)
 
-    return TLSContext(ctx, public_key)
+    return ctx
 
 
-def _generate_credssp_certificate():  # type: () -> Tuple[bytes, bytes, bytes]
-    """Generates X509 cert and key for CredSSP acceptor.
-
-    Generates a random TLS X509 certificate and key that is used by a CredSSP acceptor for authentication. This
-    certificate is a barebones certificate that is modelled after the one that the WSMan CredSSP service presents.
-
-    Returns:
-        Tuple[bytes, bytes, bytes]: The X509 PEM encoded certificate, PEM encoded key, and DER encoded public key.
-    """
-    # Cache the result as this can be expensive to create if running multiple acceptors
-    try:
-        return _generate_credssp_certificate.result
-    except AttributeError:
-        pass
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
-
-    # socket.getfqdn() can block for a few seconds if DNS is not set up properly.
-    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, 'CREDSSP-%s' % platform.node())])
-
-    now = datetime.datetime.utcnow()
-    cert = (
-        x509.CertificateBuilder()
-            .subject_name(name)
-            .issuer_name(name)
-            .public_key(key.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(now)
-            .not_valid_after(now + datetime.timedelta(days=365))
-            .sign(key, hashes.SHA256(), default_backend())
-    )
-    cert_pem = cert.public_bytes(encoding=serialization.Encoding.PEM)
-    key_pem = key.private_bytes(encoding=serialization.Encoding.PEM,
-                                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                                encryption_algorithm=serialization.NoEncryption())
-    public_key = cert.public_key().public_bytes(serialization.Encoding.DER,
-                                                serialization.PublicFormat.PKCS1)
-
-    _generate_credssp_certificate.result = cert_pem, key_pem, public_key
-    return _generate_credssp_certificate()
-
-
-def _get_pub_key_auth(pub_key, usage, nonce=None):  # type: (bytes, str, Optional[bytes]) -> bytes
+def _get_pub_key_auth(
+    pub_key: bytes,
+    usage: str,
+    nonce: typing.Optional[bytes] = None,
+) -> bytes:
     """Computes the public key authentication value.
 
     Params:
         pub_key: The public key to transform.
-        usage: Either `initiate` or `accept` to denote if the key is for the client to server or vice versa.
+        usage: Either `initiate` or `accept` to denote if the key is for the
+            client to server or vice versa.
         nonce: A 32 byte nonce used for CredSSP version 5 or newer.
 
     Returns:
@@ -210,18 +125,25 @@ def _get_pub_key_auth(pub_key, usage, nonce=None):  # type: (bytes, str, Optiona
     return key_auth
 
 
-def _tls_trailer_length(data_length, protocol, cipher_suite):  # type: (int, str, str) -> int
+def _tls_trailer_length(
+    data_length: int,
+    protocol: str,
+    cipher_suite: str,
+) -> int:
     """Gets the length of the TLS trailer.
 
-    WinRM wrapping needs to split the trailer/header with the data but the length of the trailer is dependent on the
-    cipher suite that was negotiated. On Windows you can get this length by calling `QueryContextAttributes`_ with the
-    `SecPkgContext_StreamSizes`_ structure. Unfortunately we need to work on other platforms so we calculate it
-    manually.
+    WinRM wrapping needs to split the trailer/header with the data but the
+    length of the trailer is dependent on the cipher suite that was negotiated.
+    On Windows you can get this length by calling `QueryContextAttributes`_
+    with the `SecPkgContext_StreamSizes`_ structure. Unfortunately we need to
+    work on other platforms so we calculate it manually.
 
     Params:
-        data_length: The length of the TLS data used to calculate the padding size.
+        data_length: The length of the TLS data used to calculate the padding
+            size.
         protocol: The TLS protocol negotiated between the client and server.
-        cipher_suite: The TLS cipher suite negotiated between the client and server.
+        cipher_suite: The TLS cipher suite negotiated between the client and
+            server.
 
     Returns:
         int: The length of the trailer.
@@ -288,14 +210,39 @@ def _wrap_ssl_error(context):
 class CredSSPProxy(ContextProxy):
     """CredSSP proxy class CredSSP authentication.
 
-    This proxy class for CredSSP can be used to exchange CredSSP tokens. It uses the NegotiateProxy provider for the
-    underlying authentication but exchanges the tokens in the exchange required by CredSSP. The main advantage of
-    CredSSP is that it allows you to delegate the user's credentials to the server.
+    This proxy class for CredSSP can be used to exchange CredSSP tokens.
+    It uses the NegotiateProxy provider for the underlying authentication but
+    exchanges the tokens in the exchange required by CredSSP. The main
+    advantage of CredSSP is that it allows you to delegate the user's
+    credentials to the server.
 
-    The acceptor logic is mostly done as a proof of concept and for use with testing. Use at your own risk.
+    The acceptor logic is mostly done as a proof of concept and for use with
+    testing. Use at your own risk.
+
+    Optional kwargs supports by CredSSPProxy:
+
+        credssp_negotiate_context: Use this contest for the underlying
+            authentication negotiation. This allows the caller to restrict the
+            auth to Kerberos or set any other setting specific to their
+            environment:
+
+        credssp_tls_context: Custom :class:`CredSSPTLSContext` to use for the
+            CredSSP exchange. See `spnego.tls` for helper methods to generate
+            a custom TLS context.
     """
-    def __init__(self, username, password, hostname=None, service=None, channel_bindings=None,
-                 context_req=ContextReq.default, usage='initiate', protocol='credssp', options=0):
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        hostname: typing.Optional[str] = None,
+        service: typing.Optional[str] = None,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+        context_req: ContextReq = ContextReq.default,
+        usage: str = 'initiate',
+        protocol: str = 'credssp',
+        options: NegotiateOptions = NegotiateOptions.none,
+        **kwargs: typing.Any,
+    ) -> None:
         super(CredSSPProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                            protocol, options, False)
 
@@ -306,15 +253,24 @@ class CredSSPProxy(ContextProxy):
         self._service = service
         self._options = options & ~NegotiateOptions.wrapping_winrm  # WinRM wrapping won't apply for auth context.
 
-        self._auth_context = None
+        self._auth_context: typing.Optional[ContextProxy] = kwargs.get("credssp_negotiate_context", None)
         self._client_credential = None
         self._complete = False
         self._step_gen = None
 
+        self._tls_context: CredSSPTLSContext
+        if "credssp_tls_context" in kwargs:
+            self._tls_context = kwargs["credssp_tls_context"]
+
+            if usage == "accept" and not self._tls_context.public_key:
+                raise OperationNotAvailableError(context_msg="Provided tls context does not have a public key set")
+        else:
+            self._tls_context = _create_tls_context(usage)
+
         self._in_buff = ssl.MemoryBIO()
         self._out_buff = ssl.MemoryBIO()
-        ctx, self._public_key = _create_tls_context(usage, options)
-        self._tls_context = ctx.wrap_bio(self._in_buff, self._out_buff, server_side=(usage == 'accept'))
+        self._tls_object = self._tls_context.context.wrap_bio(self._in_buff, self._out_buff,
+                                                              server_side=(usage == "accept"))
 
     @classmethod
     def available_protocols(cls, options=None):
@@ -360,18 +316,20 @@ class CredSSPProxy(ContextProxy):
         log.debug("CredSSP step output: %s", to_text(base64.b64encode(out_token or b"")))
         return out_token
 
-    def _step_initiate(self, in_token):  # type: (Optional[bytes]) -> Generator[bytes, bytes, None]
+    def _step_initiate(
+        self,
+        in_token: typing.Optional[bytes],
+    ) -> typing.Generator[bytes, bytes, None]:
         """ The initiator authentication steps of CredSSP. """
         yield from self._step_tls(in_token)
 
-        server_certificate = self._tls_context.getpeercert(True)
-        cert = x509.load_der_x509_certificate(server_certificate, default_backend())
-        self._public_key = cert.public_key().public_bytes(serialization.Encoding.DER,
-                                                          serialization.PublicFormat.PKCS1)
+        server_certificate = self._tls_object.getpeercert(True)
+        public_key = get_certificate_public_key(server_certificate)
 
         log.debug("Starting CredSSP authentication phase")
-        self._auth_context = spnego.client(self.username, self.password, hostname=self._hostname,
-                                           service=self._service, protocol='negotiate', options=self._options)
+        if not self._auth_context:
+            self._auth_context = spnego.client(self.username, self.password, hostname=self._hostname,
+                                               service=self._service, protocol='negotiate', options=self._options)
 
         round = 0
         out_token = self._auth_context.step()
@@ -393,7 +351,7 @@ class CredSSPProxy(ContextProxy):
 
         pub_key_nego_token = NegoData(out_token) if out_token else None
         nonce = os.urandom(32) if version > 4 else None
-        pub_value = _get_pub_key_auth(self._public_key, 'initiate', nonce=nonce)
+        pub_value = _get_pub_key_auth(public_key, 'initiate', nonce=nonce)
         pub_key_request = TSRequest(version=_CREDSSP_VERSION, nego_tokens=pub_key_nego_token, client_nonce=nonce,
                                     pub_key_auth=self._auth_context.wrap(pub_value).data)
 
@@ -406,7 +364,7 @@ class CredSSPProxy(ContextProxy):
             self._auth_context.step(pub_key_response.nego_tokens[0].nego_token)
 
         response_key = self._auth_context.unwrap(pub_key_response.pub_key_auth).data
-        expected_key = _get_pub_key_auth(self._public_key, 'accept', nonce=nonce)
+        expected_key = _get_pub_key_auth(public_key, 'accept', nonce=nonce)
         if expected_key != response_key:
             raise BadBindingsError(context_msg="Public key verification failed, potential man in the middle attack")
 
@@ -419,7 +377,10 @@ class CredSSPProxy(ContextProxy):
 
         yield from self._yield_ts_request(credential_request, "Credential exchange")
 
-    def _step_accept(self, in_token):  # type: (Optional[bytes]) -> Generator[bytes, bytes, None]
+    def _step_accept(
+        self,
+        in_token: typing.Optional[bytes],
+    ) -> typing.Generator[bytes, bytes, None]:
         """ The acceptor authentication steps of CredSSP. """
         in_token = yield from self._step_tls(in_token)
 
@@ -431,8 +392,9 @@ class CredSSPProxy(ContextProxy):
 
         try:
             log.debug("Starting CredSSP authentication phase")
-            self._auth_context = spnego.server(hostname=self._hostname, service=self._service, protocol='negotiate',
-                                               options=self._options)
+            if not self._auth_context:
+                self._auth_context = spnego.server(hostname=self._hostname, service=self._service,
+                                                   protocol='negotiate', options=self._options)
 
             round = 0
             while True:
@@ -458,12 +420,13 @@ class CredSSPProxy(ContextProxy):
             return
 
         actual_key = self._auth_context.unwrap(auth_request.pub_key_auth).data
-        expected_key = _get_pub_key_auth(self._public_key, 'initiate', nonce=auth_request.client_nonce)
+        public_key = self._tls_context.public_key
+        expected_key = _get_pub_key_auth(public_key, 'initiate', nonce=auth_request.client_nonce)
         if actual_key != expected_key:
             raise BadBindingsError(context_msg="Public key verification failed, potential man in the middle attack")
 
         nego_token = NegoData(nego_out_token) if nego_out_token else None
-        server_key = self._auth_context.wrap(_get_pub_key_auth(self._public_key, 'accept',
+        server_key = self._auth_context.wrap(_get_pub_key_auth(public_key, 'accept',
                                                                nonce=auth_request.client_nonce)).data
         pub_key_response = TSRequest(_CREDSSP_VERSION, nego_tokens=nego_token, pub_key_auth=server_key)
         auth_request = yield from self._yield_ts_request(pub_key_response, "Public key exchange")
@@ -485,7 +448,7 @@ class CredSSPProxy(ContextProxy):
 
                 want_read = False
                 try:
-                    self._tls_context.do_handshake()
+                    self._tls_object.do_handshake()
                 except ssl.SSLWantReadError:
                     # The handshake process requires more data to be exchanged.
                     want_read = True
@@ -505,12 +468,15 @@ class CredSSPProxy(ContextProxy):
         except ssl.SSLError as e:
             raise InvalidTokenError(context_msg="TLS handshake for CredSSP: %s" % e) from e
 
-        cipher, protocol, _ = self._tls_context.cipher()
+        cipher, protocol, _ = self._tls_object.cipher()
         log.debug("TLS handshake complete, negotiation details: %s %s", protocol, cipher)
         return out_token
 
-    def _yield_ts_request(self, ts_request, context_msg):
-        # type: (TSRequest, str) -> Generator[bytes, bytes, TSRequest]
+    def _yield_ts_request(
+        self,
+        ts_request: TSRequest,
+        context_msg: str,
+    ) -> typing.Generator[bytes, bytes, TSRequest]:
         """ Exchanges a TSRequest between the initiator and acceptor. """
         out_request = ts_request.pack()
         log.debug("CredSSP TSRequest output: %s" % to_text(base64.b64encode(out_request)))
@@ -529,7 +495,7 @@ class CredSSPProxy(ContextProxy):
 
     @_wrap_ssl_error("Invalid TLS state when wrapping data")
     def wrap(self, data, encrypt=True, qop=None):
-        self._tls_context.write(data)
+        self._tls_object.write(data)
         return WrapResult(data=self._out_buff.read(), encrypted=True)
 
     def wrap_iov(self, iov, encrypt=True, qop=None):
@@ -537,7 +503,7 @@ class CredSSPProxy(ContextProxy):
 
     def wrap_winrm(self, data):
         enc_data = self.wrap(data).data
-        cipher_negotiated, tls_protocol, _ = self._tls_context.cipher()
+        cipher_negotiated, tls_protocol, _ = self._tls_object.cipher()
         trailer_length = _tls_trailer_length(len(data), tls_protocol, cipher_negotiated)
 
         return WinRMWrapResult(header=enc_data[:trailer_length], data=enc_data[trailer_length:], padding_length=0)
@@ -549,7 +515,7 @@ class CredSSPProxy(ContextProxy):
         chunks = []
         while True:
             try:
-                chunks.append(self._tls_context.read())
+                chunks.append(self._tls_object.read())
             except ssl.SSLWantReadError:
                 break
 

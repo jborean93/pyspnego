@@ -13,10 +13,11 @@ import pytest
 
 import spnego
 import spnego.channel_bindings
-import spnego.credssp
-import spnego.gss
 import spnego.iov
-import spnego.sspi
+import spnego.tls
+import spnego._credssp
+import spnego._gss
+import spnego._sspi
 
 from spnego._context import (
     IOVWrapResult,
@@ -251,15 +252,15 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
         def available_protocols(*args, **kwargs):
             return []
 
-        monkeypatch.setattr(spnego.gss, '_available_protocols', available_protocols)
-        monkeypatch.setattr(spnego.sspi, '_available_protocols', available_protocols)
+        monkeypatch.setattr(spnego._gss, '_available_protocols', available_protocols)
+        monkeypatch.setattr(spnego._sspi, '_available_protocols', available_protocols)
 
     elif client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through SSPI')
 
     # Build the initial context and assert the defaults.
@@ -399,11 +400,11 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
 ])
 def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     if client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego.gss.GSSAPIProxy.available_protocols():
+        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through GSSAPI')
 
     elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego.sspi.SSPIProxy.available_protocols():
+        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
             pytest.skip('Test requires NTLM to be available through SSPI')
 
     # Build the initial context and assert the defaults.
@@ -429,7 +430,7 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     c.verify(plaintext, s_sig)
 
 
-@pytest.mark.skipif('ntlm' not in spnego.gss.GSSAPIProxy.available_protocols(),
+@pytest.mark.skipif('ntlm' not in spnego._gss.GSSAPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through GSSAPI')
 @pytest.mark.parametrize('client_opt, server_opt, cbt', [
     (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, False),
@@ -451,7 +452,7 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     s = spnego.server(options=server_opt, **kwargs)
 
     # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    test_session_key = 'ntlm' in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
 
     assert c.client_principal is None
@@ -460,7 +461,7 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego.gss.GSSAPIProxy.available_protocols(),
+@pytest.mark.skipif('ntlm' not in spnego._gss.GSSAPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through GSSAPI')
 @pytest.mark.parametrize('lm_compat_level', [0, 1, 2, 3])
 def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
@@ -470,7 +471,7 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='ntlm')
 
     # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = 'ntlm' in spnego.gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    test_session_key = 'ntlm' in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
 
     assert c.client_principal is None
@@ -479,7 +480,7 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),
+@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through SSPI')
 @pytest.mark.parametrize('client_opt, server_opt, cbt', [
     (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, False),
@@ -507,7 +508,7 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego.sspi.SSPIProxy.available_protocols(),
+@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(),
                     reason='Test requires NTLM to be available through SSPI')
 @pytest.mark.parametrize('lm_compat_level', [1, 2, 3])
 def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
@@ -637,24 +638,39 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
 
 # CredSSP scenarios
 
-@pytest.mark.parametrize('options, protocol, version', [
-    (spnego.NegotiateOptions.use_negotiate, None, None),
-    (spnego.NegotiateOptions.use_negotiate, None, 2),
-    (spnego.NegotiateOptions.use_negotiate, ssl.PROTOCOL_TLSv1_2, None),
+@pytest.mark.parametrize('options, restrict_tlsv12, version', [
+    (spnego.NegotiateOptions.use_negotiate, False, None),
+    (spnego.NegotiateOptions.use_negotiate, False, 2),
+    (spnego.NegotiateOptions.use_negotiate, True, None),
     # Using NTLM directly results in a slightly separate behaviour for the pub key.
-    (spnego.NegotiateOptions.use_ntlm, None, None),
-    (spnego.NegotiateOptions.use_ntlm, None, 5),
-    (spnego.NegotiateOptions.use_ntlm, ssl.PROTOCOL_TLSv1_2, None),
+    (spnego.NegotiateOptions.use_ntlm, False, None),
+    (spnego.NegotiateOptions.use_ntlm, False, 5),
+    (spnego.NegotiateOptions.use_ntlm, True, None),
 ])
-def test_credssp_ntlm_creds(options, protocol, version, ntlm_cred, monkeypatch):
-    if protocol:
-        monkeypatch.setattr(spnego.credssp, '_PROTOCOL_TLS', protocol)
+def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkeypatch, tmp_path):
+    context_kwargs = {}
+    if restrict_tlsv12:
+        credssp_context = spnego.tls.default_tls_context()
+
+        try:
+            credssp_context.context.maximum_version = ssl.TLSVersion.TLSv1_2
+        except (ValueError, AttributeError):
+            credssp_context.context.options |= ssl.Options.OP_NO_TLSv1_3
+
+        cert_pem, key_pem, pub_key = spnego.tls.generate_tls_certificate()
+        with open(tmp_path / "ca.pem", mode="wb") as fd:
+            fd.write(cert_pem)
+            fd.write(key_pem)
+
+        credssp_context.context.load_cert_chain(tmp_path / "ca.pem")
+        credssp_context.public_key = pub_key
+        context_kwargs["credssp_tls_context"] = credssp_context
 
     if version:
-        monkeypatch.setattr(spnego.credssp, '_CREDSSP_VERSION', version)
+        monkeypatch.setattr(spnego._credssp, '_CREDSSP_VERSION', version)
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='credssp', options=options)
-    s = spnego.server(protocol='credssp', options=options)
+    s = spnego.server(protocol='credssp', options=options, **context_kwargs)
 
     assert c.client_principal is None
     assert c.client_credential is None
@@ -720,35 +736,39 @@ def test_credssp_ntlm_creds(options, protocol, version, ntlm_cred, monkeypatch):
     assert c_winrm_result == plaintext
 
 
-@pytest.mark.parametrize('protocol', [None, ssl.PROTOCOL_TLSv1_2])
-def test_credssp_kerberos_creds(protocol, kerb_cred, monkeypatch):
-    if protocol:
-        monkeypatch.setattr(spnego.credssp, '_PROTOCOL_TLS', protocol)
+@pytest.mark.parametrize('restrict_tlsv12', [False, True])
+def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
+    c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol='kerberos')
+    s_kerb_context = spnego.server(protocol="kerberos")
 
-    c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), hostname=socket.getfqdn(), protocol='credssp')
-    s = spnego.server(protocol='credssp')
+    client_kwargs = {}
+    if restrict_tlsv12:
+        tls_context = spnego.tls.default_tls_context()
 
-    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
-    # For Kerberos the auth context will be present after the first exchange of tokens.
-    server_tls_token = None
-    while c._auth_context is None:
-        client_tls_token = c.step(server_tls_token)
+        try:
+            tls_context.context.maximum_version = ssl.TLSVersion.TLSv1_2
+        except (ValueError, AttributeError):
+            tls_context.context.options |= ssl.Options.OP_NO_TLSv1_3
+
+        client_kwargs["credssp_tls_context"] = tls_context
+
+    c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), protocol='credssp',
+                      credssp_negotiate_context=c_kerb_context, **client_kwargs)
+    s = spnego.server(protocol='credssp', credssp_negotiate_context=s_kerb_context)
+
+    server_token = None
+    while not c_kerb_context.complete:
+        client_token = c.step(server_token)
         assert not c.complete
         assert not s.complete
 
-        server_tls_token = s.step(client_tls_token)
+        server_token = s.step(client_token)
         assert not c.complete
         assert not s.complete
 
-    client_pub_key = c.step(server_tls_token)
-    assert not c.complete
-    assert not s.complete
+    assert s_kerb_context.complete
 
-    server_pub_key = s.step(client_pub_key)
-    assert not c.complete
-    assert not s.complete
-
-    credential = c.step(server_pub_key)
+    credential = c.step(server_token)
     assert c.complete
     assert not s.complete
 
@@ -759,6 +779,8 @@ def test_credssp_kerberos_creds(protocol, kerb_cred, monkeypatch):
 
     assert c.negotiated_protocol == 'kerberos'
     assert s.negotiated_protocol == 'kerberos'
+    assert c_kerb_context.negotiated_protocol == 'kerberos'
+    assert s_kerb_context.negotiated_protocol == 'kerberos'
 
     assert s.client_principal == kerb_cred.user_princ
     assert s.client_credential.username == kerb_cred.user_princ
