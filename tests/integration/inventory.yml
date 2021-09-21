@@ -6,15 +6,15 @@ all:
           hosts:
             DC01:
               ansible_host: 192.168.65.10
-              vagrant_box: jborean93/WindowsServer2019
+              vagrant_box: jborean93/WindowsServer2022
         win_children:
           hosts:
             SERVER2012R2:
               ansible_host: 192.168.65.11
               vagrant_box: jborean93/WindowsServer2012R2
-            SERVER2019:
+            SERVER2022:
               ansible_host: 192.168.65.12
-              vagrant_box: jborean93/WindowsServer2019
+              vagrant_box: jborean93/WindowsServer2022
       vars:
         ansible_connection: psrp
         ansible_port: 5985

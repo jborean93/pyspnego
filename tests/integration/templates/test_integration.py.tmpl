@@ -13,6 +13,7 @@ import socket
 import spnego
 import spnego.channel_bindings
 import spnego.iov
+import spnego.tls
 import ssl
 import struct
 import subprocess
@@ -664,12 +665,39 @@ def test_winrm_cbt(option):
     winrm_run(c, 'Negotiate', WIN_SERVER_TRUSTED, 'hostname.exe', ssl=True)
 
 
-@pytest.mark.parametrize('target, protocol', [
-    (WIN_SERVER_TRUSTED, 'kerberos'),
-    (WIN_SERVER_TRUSTED_IP, 'ntlm'),  # Connecting with an IP breaks Kerberos authentication.
+# FUTURE: Enable TLSv1.3 tests once Windows supports it
+@pytest.mark.parametrize('target, protocol, tls_protocol', [
+    (WIN_SERVER_TRUSTED, 'kerberos', None),
+    (WIN_SERVER_TRUSTED, 'kerberos', "TLSv1.2"),
+    # (WIN_SERVER_TRUSTED, 'kerberos', "TLSv1.3"),
+    # Connecting with an IP breaks Kerberos authentication.
+    (WIN_SERVER_TRUSTED_IP, 'ntlm', None),
+    (WIN_SERVER_TRUSTED_IP, 'ntlm', "TLSv1.2"),
+    # (WIN_SERVER_TRUSTED_IP, 'ntlm', "TLSv1.3"),
 ])
-def test_winrm_credssp(target, protocol):
-    c = spnego.client(USERNAME, PASSWORD, hostname=target, service='HTTP', protocol='credssp')
+def test_winrm_credssp(target, protocol, tls_protocol):
+    client_kwargs = {}
+    if tls_protocol:
+        tls_context = spnego.tls.default_tls_context()
+
+        default_opt = ssl.Options.OP_NO_SSLv2 | \
+            ssl.Options.OP_NO_SSLv3 | \
+            ssl.Options.OP_NO_TLSv1 | \
+            ssl.Options.OP_NO_TLSv1_1 | \
+            ssl.Options.OP_NO_TLSv1_2 | \
+            ssl.Options.OP_NO_TLSv1_3
+
+        try:
+            ver = ssl.TLSVersion.TLSv1_2 if tls_protocol == "TLSv1.2" else ssl.TLSVersion.TLSv1_3
+            tls_context.context.minimum_version = ver
+            tls_context.context.maximum_version = ver
+        except (ValueError, AttributeError):
+            remove_opt = ssl.Options.OP_NO_TLSv1_2 if tls_protocol == "TLSv1.2" else ssl.Options.OP_NO_TLSv1_3
+            tls_context.context.options |= ~remove_opt
+
+        client_kwargs["credssp_tls_context"] = tls_context
+
+    c = spnego.client(USERNAME, PASSWORD, hostname=target, service='HTTP', protocol='credssp', **client_kwargs)
 
     pwsh_script = base64.b64encode(u'''$ErrorActionPreference = 'Stop'
 (Get-Item -LiteralPath \\\\{0}\\c$\\temp).FullName
@@ -680,6 +708,9 @@ def test_winrm_credssp(target, protocol):
     assert stdout.lower().strip() == '\\\\{0}\\c$\\temp'.format(WIN_SERVER_UNTRUSTED).lower()
     assert stderr == ''
     assert c.negotiated_protocol == protocol
+
+    if tls_protocol:
+        assert c._tls_object.cipher()[1] == tls_protocol
 
 
 def test_smb_auth():

@@ -105,7 +105,7 @@
           Set-ADComputer -Identity $computerName -TrustedForDelegation $true
           $true
       }
-    when: inventory_hostname == 'SERVER2019'  # We only want to have this hosted with delegation for testing
+    when: inventory_hostname == 'SERVER2022'  # We only want to have this hosted with delegation for testing
     register: delegate_actual
     changed_when: delegate_actual.stdout | trim | bool
     delegate_to: '{{ groups["win_controller"][0] }}'
