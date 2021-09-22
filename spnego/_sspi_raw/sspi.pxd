@@ -2,18 +2,15 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 from spnego._sspi_raw.security cimport (
+    SEC_WINNT_AUTH_IDENTITY_W,
     CredHandle,
     CtxtHandle,
     PSecBuffer,
     PSecBufferDesc,
-    SecBuffer as NativeSecBuffer,
-    SecBufferDesc as NativeSecBufferDesc,
-    SEC_WINNT_AUTH_IDENTITY_W,
 )
-
-from spnego._sspi_raw.text cimport (
-    WideChar,
-)
+from spnego._sspi_raw.security cimport SecBuffer as NativeSecBuffer
+from spnego._sspi_raw.security cimport SecBufferDesc as NativeSecBufferDesc
+from spnego._sspi_raw.text cimport WideChar
 
 
 cdef class Credential:

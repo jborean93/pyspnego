@@ -5,12 +5,12 @@ import typing
 
 from spnego._asn1 import (
     ASN1Value,
+    TagClass,
     get_sequence_value,
     pack_asn1,
     pack_asn1_integer,
     pack_asn1_octet_string,
     pack_asn1_sequence,
-    TagClass,
     unpack_asn1,
     unpack_asn1_integer,
     unpack_asn1_octet_string,

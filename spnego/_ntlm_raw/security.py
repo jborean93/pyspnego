@@ -4,20 +4,9 @@
 import struct
 import typing
 
-from spnego._ntlm_raw.crypto import (
-    crc32,
-    hmac_md5,
-    rc4,
-    RC4Handle,
-)
-
-from spnego._ntlm_raw.messages import (
-    NegotiateFlags,
-)
-
-from spnego.exceptions import (
-    OperationNotAvailableError,
-)
+from spnego._ntlm_raw.crypto import RC4Handle, crc32, hmac_md5, rc4
+from spnego._ntlm_raw.messages import NegotiateFlags
+from spnego.exceptions import OperationNotAvailableError
 
 
 def seal(

@@ -10,33 +10,19 @@ import typing
 from spnego._context import (
     ContextProxy,
     ContextReq,
-    IOVWrapResult,
     IOVUnwrapResult,
-    split_username,
+    IOVWrapResult,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
+    split_username,
     wrap_system_error,
 )
-
-from spnego.iov import (
-    BufferType,
-    IOVBuffer,
-)
-
-from spnego._text import (
-    to_text,
-)
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
-from spnego.exceptions import (
-    NegotiateOptions,
-    SpnegoError,
-    WinError as NativeError,
-)
+from spnego._text import to_text
+from spnego.channel_bindings import GssChannelBindings
+from spnego.exceptions import NegotiateOptions, SpnegoError
+from spnego.exceptions import WinError as NativeError
+from spnego.iov import BufferType, IOVBuffer
 
 log = logging.getLogger(__name__)
 
@@ -44,25 +30,27 @@ HAS_SSPI = True
 SSPI_IMP_ERR = None
 try:
     from spnego._sspi_raw import (
-        accept_security_context,
-        acquire_credentials_handle,
         ClientContextReq,
         CredentialUse,
-        decrypt_message,
-        encrypt_message,
-        initialize_security_context,
-        make_signature,
-        query_context_attributes,
         SecBuffer,
         SecBufferDesc,
         SecBufferType,
         SecPkgAttr,
         SecStatus,
-        SecurityContext as SSPISecContext,
+    )
+    from spnego._sspi_raw import SecurityContext as SSPISecContext
+    from spnego._sspi_raw import (
         ServerContextReq,
         SSPIQoP,
-        verify_signature,
         WinNTAuthIdentity,
+        accept_security_context,
+        acquire_credentials_handle,
+        decrypt_message,
+        encrypt_message,
+        initialize_security_context,
+        make_signature,
+        query_context_attributes,
+        verify_signature,
     )
 except ImportError as e:
     SSPI_IMP_ERR = str(e)

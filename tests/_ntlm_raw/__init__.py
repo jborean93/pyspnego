@@ -1,12 +1,7 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
-from spnego._ntlm_raw.messages import (
-    NegotiateFlags,
-)
+from spnego._ntlm_raw.messages import NegotiateFlags
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/7fc694c9-397a-446a-bd80-4635000f2c0f
 TEST_USER = "User"

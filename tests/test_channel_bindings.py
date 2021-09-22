@@ -1,13 +1,9 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import sys
 
 import spnego.channel_bindings as cb
-
 
 TEST_DATA = cb.GssChannelBindings(cb.AddressType.inet, b"\x01\x02\x03\x04", cb.AddressType.unspecified,
                                   b"\x05\x06\x07\x08", b"caf\xC3\xA9")

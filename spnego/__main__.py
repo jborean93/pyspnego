@@ -20,24 +20,14 @@ import struct
 import sys
 import typing
 
-from spnego._context import (
-    GSSMech,
-)
-
+from spnego._context import GSSMech
 from spnego._kerberos import (
     KerberosV5Msg,
     parse_enum,
     parse_flags,
     parse_kerberos_token,
 )
-
-from spnego._ntlm_raw.crypto import (
-    hmac_md5,
-    ntowfv1,
-    ntowfv2,
-    rc4k,
-)
-
+from spnego._ntlm_raw.crypto import hmac_md5, ntowfv1, ntowfv2, rc4k
 from spnego._ntlm_raw.messages import (
     Authenticate,
     AvId,
@@ -48,17 +38,8 @@ from spnego._ntlm_raw.messages import (
     TargetInfo,
     Version,
 )
-
-from spnego._text import (
-    to_bytes,
-)
-
-from spnego._spnego import (
-    InitialContextToken,
-    NegTokenInit,
-    NegTokenResp,
-    unpack_token,
-)
+from spnego._spnego import InitialContextToken, NegTokenInit, NegTokenResp, unpack_token
+from spnego._text import to_bytes
 
 try:
     import argcomplete

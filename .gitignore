@@ -106,7 +106,7 @@ ENV/
 *~
 
 # Visual Studio Code Files
-.vscode/
+.vscode/launch.json
 
 # MacOS File
 .DS_Store

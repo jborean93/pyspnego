@@ -6,18 +6,9 @@ import logging
 import logging.config
 import os
 
-from spnego._context import (
-    ContextReq,
-)
-
-from spnego.auth import (
-    client,
-    server,
-)
-
-from spnego.exceptions import (
-    NegotiateOptions,
-)
+from spnego._context import ContextReq
+from spnego.auth import client, server
+from spnego.exceptions import NegotiateOptions
 
 __all__ = [
     'ContextReq',

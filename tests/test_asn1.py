@@ -2,15 +2,12 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import datetime
-import pytest
 import re
 
-import spnego._asn1 as asn1
+import pytest
 
+import spnego._asn1 as asn1
 
 ASN1_TAG_TESTS = [
     # Simple universal

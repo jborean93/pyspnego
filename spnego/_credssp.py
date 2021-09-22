@@ -7,47 +7,38 @@ import logging
 import os
 import re
 import shutil
-import spnego
 import ssl
 import struct
 import tempfile
 import typing
 
+import spnego
 from spnego._context import (
     ContextProxy,
     ContextReq,
-    split_username,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
+    split_username,
 )
-
 from spnego._credssp_structures import (
     NegoData,
     TSCredentials,
     TSPasswordCreds,
     TSRequest,
 )
-
-from spnego._text import (
-    to_text,
-)
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
+from spnego._text import to_text
+from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import (
     BadBindingsError,
     ErrorCode,
-    InvalidTokenError,
     FeatureMissingError,
+    InvalidTokenError,
     NativeError,
     NegotiateOptions,
     OperationNotAvailableError,
     SpnegoError,
 )
-
 from spnego.tls import (
     CredSSPTLSContext,
     default_tls_context,

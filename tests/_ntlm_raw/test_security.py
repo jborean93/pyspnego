@@ -1,9 +1,6 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import re
 
 import pytest
@@ -16,23 +13,10 @@ from spnego._ntlm_raw.crypto import (
     sealkey,
     signkey,
 )
-
-from spnego._ntlm_raw.messages import (
-    NegotiateFlags,
-)
-
-from spnego._ntlm_raw.security import (
-    seal,
-    sign,
-)
-
-from spnego._text import (
-    to_bytes,
-)
-
-from spnego.exceptions import (
-    OperationNotAvailableError,
-)
+from spnego._ntlm_raw.messages import NegotiateFlags
+from spnego._ntlm_raw.security import seal, sign
+from spnego._text import to_bytes
+from spnego.exceptions import OperationNotAvailableError
 
 from .._ntlm_raw import (
     TEST_CLIENT_CHALLENGE,

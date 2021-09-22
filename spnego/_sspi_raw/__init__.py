@@ -3,17 +3,10 @@
 
 
 from spnego._sspi_raw.sspi import (
-    accept_security_context,
-    acquire_credentials_handle,
     ClientContextAttr,
     ClientContextReq,
     Credential,
     CredentialUse,
-    decrypt_message,
-    encrypt_message,
-    initialize_security_context,
-    make_signature,
-    query_context_attributes,
     SecBuffer,
     SecBufferDesc,
     SecBufferType,
@@ -26,6 +19,13 @@ from spnego._sspi_raw.sspi import (
     ServerContextReq,
     SSPIQoP,
     TargetDataRep,
-    verify_signature,
     WinNTAuthIdentity,
+    accept_security_context,
+    acquire_credentials_handle,
+    decrypt_message,
+    encrypt_message,
+    initialize_security_context,
+    make_signature,
+    query_context_attributes,
+    verify_signature,
 )

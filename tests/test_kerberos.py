@@ -5,23 +5,18 @@
 import datetime
 
 import spnego._kerberos as kerb
-
 import spnego._spnego as sp
-
 from spnego._asn1 import (
+    TagClass,
+    TypeTagNumber,
     pack_asn1,
     pack_asn1_bit_string,
     pack_asn1_general_string,
     pack_asn1_integer,
     pack_asn1_octet_string,
     pack_asn1_sequence,
-    TagClass,
-    TypeTagNumber,
 )
-
-from spnego._context import (
-    GSSMech,
-)
+from spnego._context import GSSMech
 
 from .conftest import get_data
 

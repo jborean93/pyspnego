@@ -3,42 +3,15 @@
 
 import typing
 
-from spnego._context import (
-    ContextProxy,
-    ContextReq,
-)
-
-from spnego._credssp import (
-    CredSSPProxy,
-)
-
-from spnego._gss import (
-    GSSAPIProxy,
-)
-
-from spnego._negotiate import (
-    NegotiateProxy,
-)
-
-from spnego._ntlm import (
-    NTLMProxy,
-)
-
-from spnego._ntlm_raw.crypto import (
-    is_ntlm_hash
-)
-
-from spnego._sspi import (
-    SSPIProxy,
-)
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
-from spnego.exceptions import (
-    NegotiateOptions,
-)
+from spnego._context import ContextProxy, ContextReq
+from spnego._credssp import CredSSPProxy
+from spnego._gss import GSSAPIProxy
+from spnego._negotiate import NegotiateProxy
+from spnego._ntlm import NTLMProxy
+from spnego._ntlm_raw.crypto import is_ntlm_hash
+from spnego._sspi import SSPIProxy
+from spnego.channel_bindings import GssChannelBindings
+from spnego.exceptions import NegotiateOptions
 
 
 def _new_context(

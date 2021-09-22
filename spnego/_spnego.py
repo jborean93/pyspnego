@@ -6,6 +6,8 @@ import struct
 import typing
 
 from spnego._asn1 import (
+    TagClass,
+    TypeTagNumber,
     get_sequence_value,
     pack_asn1,
     pack_asn1_bit_string,
@@ -14,8 +16,6 @@ from spnego._asn1 import (
     pack_asn1_object_identifier,
     pack_asn1_octet_string,
     pack_asn1_sequence,
-    TagClass,
-    TypeTagNumber,
     unpack_asn1,
     unpack_asn1_bit_string,
     unpack_asn1_enumerated,
@@ -25,18 +25,9 @@ from spnego._asn1 import (
     unpack_asn1_sequence,
     unpack_asn1_tagged_sequence,
 )
-
-from spnego._context import (
-    GSSMech,
-)
-
-from spnego._kerberos import (
-    KerberosV5Msg,
-)
-
-from spnego._ntlm_raw.messages import (
-    NTLMMessage,
-)
+from spnego._context import GSSMech
+from spnego._kerberos import KerberosV5Msg
+from spnego._ntlm_raw.messages import NTLMMessage
 
 
 def pack_mech_type_list(

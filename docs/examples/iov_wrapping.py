@@ -1,8 +1,9 @@
 #!/usr/bin/python
 
+import struct
+
 import spnego
 import spnego.iov
-import struct
 
 
 def exchange_data(data):

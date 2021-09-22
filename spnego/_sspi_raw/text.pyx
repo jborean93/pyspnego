@@ -1,17 +1,14 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from libc.stdlib cimport (
-    free,
-    malloc,
-)
+from libc.stdlib cimport free, malloc
 
 from spnego._sspi_raw.windows cimport (
     CP_UTF8,
     LPWSTR,
-    MultiByteToWideChar,
     WCHAR,
-    wchar_t
+    MultiByteToWideChar,
+    wchar_t,
 )
 
 

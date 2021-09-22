@@ -6,24 +6,10 @@ import collections
 import enum
 import typing
 
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
-from spnego.exceptions import (
-    FeatureMissingError,
-    NegotiateOptions,
-    SpnegoError,
-)
-
-from spnego.iov import (
-    BufferType,
-    IOVBuffer,
-)
-
-from spnego._text import (
-    to_text,
-)
+from spnego._text import to_text
+from spnego.channel_bindings import GssChannelBindings
+from spnego.exceptions import FeatureMissingError, NegotiateOptions, SpnegoError
+from spnego.iov import BufferType, IOVBuffer
 
 
 def split_username(username: typing.Optional[str]) -> typing.Tuple[typing.Optional[str], typing.Optional[str]]:

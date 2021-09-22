@@ -2,9 +2,6 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import os
 import socket
 import ssl
@@ -12,31 +9,22 @@ import ssl
 import pytest
 
 import spnego
-import spnego.channel_bindings
-import spnego.iov
-import spnego.tls
 import spnego._credssp
 import spnego._gss
 import spnego._sspi
-
+import spnego.channel_bindings
+import spnego.iov
+import spnego.tls
 from spnego._context import (
-    IOVWrapResult,
     IOVUnwrapResult,
+    IOVWrapResult,
+    UnwrapResult,
     WinRMWrapResult,
     WrapResult,
-    UnwrapResult,
 )
-
+from spnego._ntlm_raw.crypto import lmowfv1, ntowfv1
 from spnego._spnego import NegTokenResp, unpack_token
-
-from spnego.exceptions import (
-    SpnegoError,
-)
-
-from spnego._ntlm_raw.crypto import (
-    lmowfv1,
-    ntowfv1
-)
+from spnego.exceptions import SpnegoError
 
 
 def _message_test(client, server):

@@ -1,15 +1,14 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type  # noqa (fixes E402 for the imports below)
-
 import base64
 import os
 
 import pytest
 
 import spnego._ntlm_raw.crypto as crypto
+from spnego._ntlm_raw.messages import FileTime, NegotiateFlags, TargetInfo
+from spnego._text import to_text
 
 from .._ntlm_raw import (
     TEST_CLIENT_CHALLENGE,
@@ -21,16 +20,6 @@ from .._ntlm_raw import (
     TEST_TIME,
     TEST_USER,
     TEST_USER_DOM,
-)
-
-from spnego._ntlm_raw.messages import (
-    FileTime,
-    NegotiateFlags,
-    TargetInfo,
-)
-
-from spnego._text import (
-    to_text,
 )
 
 
