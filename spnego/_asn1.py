@@ -7,11 +7,7 @@ import enum
 import struct
 import typing
 
-from spnego._text import (
-    to_bytes,
-    to_text,
-)
-
+from spnego._text import to_bytes, to_text
 
 ASN1Value = collections.namedtuple('ASN1Value', ['tag_class', 'constructed', 'tag_number', 'b_data'])
 """A representation of an ASN.1 TLV as a Python object.

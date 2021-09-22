@@ -2,21 +2,22 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
+from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import base64
 import os
-import pytest
 import re
 import socket
 
+import pytest
+
 import spnego
-import spnego.channel_bindings
 import spnego._gss as gss
 import spnego._ntlm as ntlm
 import spnego._sspi as sspi
-
+import spnego.channel_bindings
 from spnego._ntlm_raw.messages import (
     Authenticate,
     AvId,
@@ -27,12 +28,7 @@ from spnego._ntlm_raw.messages import (
     TargetInfo,
     Version,
 )
-
-from spnego._text import (
-    to_bytes,
-    to_text,
-)
-
+from spnego._text import to_bytes, to_text
 from spnego.exceptions import (
     BadBindingsError,
     BadMICError,

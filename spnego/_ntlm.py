@@ -10,15 +10,15 @@ import typing
 from spnego._context import (
     ContextProxy,
     ContextReq,
-    IOVWrapResult,
     IOVUnwrapResult,
-    split_username,
+    IOVWrapResult,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
+    split_username,
 )
-
 from spnego._ntlm_raw.crypto import (
+    RC4Handle,
     compute_response_v1,
     compute_response_v2,
     hmac_md5,
@@ -26,18 +26,11 @@ from spnego._ntlm_raw.crypto import (
     md5,
     ntowfv1,
     ntowfv2,
-    RC4Handle,
     rc4init,
     rc4k,
     sealkey,
     signkey,
 )
-
-from spnego._ntlm_raw.security import (
-    seal,
-    sign,
-)
-
 from spnego._ntlm_raw.messages import (
     Authenticate,
     AvFlags,
@@ -50,15 +43,9 @@ from spnego._ntlm_raw.messages import (
     TargetInfo,
     Version,
 )
-
-from spnego._text import (
-    to_text,
-)
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
+from spnego._ntlm_raw.security import seal, sign
+from spnego._text import to_text
+from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import (
     BadBindingsError,
     BadMICError,
@@ -69,10 +56,7 @@ from spnego.exceptions import (
     SpnegoError,
     UnsupportedQop,
 )
-
-from spnego.iov import (
-    IOVBuffer,
-)
+from spnego.iov import IOVBuffer
 
 log = logging.getLogger(__name__)
 

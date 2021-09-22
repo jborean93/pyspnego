@@ -10,34 +10,18 @@ from spnego._context import (
     ContextProxy,
     ContextReq,
     GSSMech,
-    IOVWrapResult,
     IOVUnwrapResult,
+    IOVWrapResult,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
     wrap_system_error,
 )
-
-from spnego._text import (
-    to_bytes,
-    to_text,
-)
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
-from spnego.exceptions import (
-    GSSError as NativeError,
-    NegotiateOptions,
-    SpnegoError,
-)
-
-from spnego.iov import (
-    BufferType,
-    IOVBuffer,
-)
-
+from spnego._text import to_bytes, to_text
+from spnego.channel_bindings import GssChannelBindings
+from spnego.exceptions import GSSError as NativeError
+from spnego.exceptions import NegotiateOptions, SpnegoError
+from spnego.iov import BufferType, IOVBuffer
 
 log = logging.getLogger(__name__)
 
@@ -45,17 +29,10 @@ HAS_GSSAPI = True
 GSSAPI_IMP_ERR = None
 try:
     import gssapi
-
-    from gssapi.raw import (
-        acquire_cred_with_password,
-        ChannelBindings,
-        exceptions as gss_errors,
-        GSSError,
-        inquire_sec_context_by_oid,
-        set_sec_context_option,
-    )
-
     import krb5
+    from gssapi.raw import ChannelBindings, GSSError, acquire_cred_with_password
+    from gssapi.raw import exceptions as gss_errors
+    from gssapi.raw import inquire_sec_context_by_oid, set_sec_context_option
 except ImportError as e:
     GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False
@@ -65,12 +42,7 @@ except ImportError as e:
 HAS_IOV = True
 GSSAPI_IOV_IMP_ERR = None
 try:
-    from gssapi.raw import (
-        IOV,
-        IOVBufferType,
-        unwrap_iov,
-        wrap_iov,
-    )
+    from gssapi.raw import IOV, IOVBufferType, unwrap_iov, wrap_iov
 except ImportError as err:
     GSSAPI_IOV_IMP_ERR = sys.exc_info()
     HAS_IOV = False

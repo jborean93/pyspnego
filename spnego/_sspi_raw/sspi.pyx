@@ -1,83 +1,71 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from collections import (
-    namedtuple,
-)
+from collections import namedtuple
 
-from cpython.exc cimport (
-    PyErr_SetFromWindowsErr,
-)
+from cpython.exc cimport PyErr_SetFromWindowsErr
+from libc.stdlib cimport calloc, free, malloc
+from libc.string cimport memcpy
 
-from libc.stdlib cimport (
-    calloc,
-    free,
-    malloc,
-)
-
-from libc.string cimport (
-    memcpy,
-)
-
+from spnego. cimport SEC_E_CRYPTO_SYSTEM_INVALID as _SEC_E_CRYPTO_SYSTEM_INVALID
+from spnego. cimport SEC_E_NO_AUTHENTICATING_AUTHORITY as _SEC_E_NO_AUTHENTICATING_AUTHORITY
+from spnego. cimport SEC_I_COMPLETE_AND_CONTINUE as _SEC_I_COMPLETE_AND_CONTINUE
+from spnego. cimport SEC_I_INCOMPLETE_CREDENTIALS as _SEC_I_INCOMPLETE_CREDENTIALS
+from spnego. cimport _sspi_raw.
+from spnego._sspi_raw. cimport SEC_E_INCOMPLETE_MESSAGE as _SEC_E_INCOMPLETE_MESSAGE
+from spnego._sspi_raw. cimport SEC_E_INSUFFICIENT_MEMORY as _SEC_E_INSUFFICIENT_MEMORY
+from spnego._sspi_raw. cimport SEC_E_QOP_NOT_SUPPORTED as _SEC_E_QOP_NOT_SUPPORTED
+from spnego._sspi_raw. cimport SEC_E_UNKNOWN_CREDENTIALS as _SEC_E_UNKNOWN_CREDENTIALS
+from spnego._sspi_raw. cimport SEC_E_UNSUPPORTED_FUNCTION as _SEC_E_UNSUPPORTED_FUNCTION
+from spnego._sspi_raw. cimport security
 from spnego._sspi_raw.security cimport (
-    AcceptSecurityContext,
-    AcquireCredentialsHandleW,
-    ASC_REQ_DELEGATE,
-    ASC_REQ_MUTUAL_AUTH,
-    ASC_REQ_REPLAY_DETECT,
-    ASC_REQ_SEQUENCE_DETECT,
-    ASC_REQ_CONFIDENTIALITY,
-    ASC_REQ_USE_SESSION_KEY,
     ASC_REQ_ALLOCATE_MEMORY,
-    ASC_REQ_USE_DCE_STYLE,
-    ASC_REQ_DATAGRAM,
-    ASC_REQ_CONNECTION,
+    ASC_REQ_ALLOW_CONTEXT_REPLAY,
+    ASC_REQ_ALLOW_MISSING_BINDINGS,
+    ASC_REQ_ALLOW_NON_USER_LOGONS,
+    ASC_REQ_ALLOW_NULL_SESSION,
     ASC_REQ_CALL_LEVEL,
-    ASC_REQ_FRAGMENT_SUPPLIED,
+    ASC_REQ_CONFIDENTIALITY,
+    ASC_REQ_CONNECTION,
+    ASC_REQ_DATAGRAM,
+    ASC_REQ_DELEGATE,
     ASC_REQ_EXTENDED_ERROR,
-    ASC_REQ_STREAM,
+    ASC_REQ_FRAGMENT_SUPPLIED,
+    ASC_REQ_FRAGMENT_TO_FIT,
+    ASC_REQ_IDENTIFY,
     ASC_REQ_INTEGRITY,
     ASC_REQ_LICENSING,
-    ASC_REQ_IDENTIFY,
-    ASC_REQ_ALLOW_NULL_SESSION,
-    ASC_REQ_ALLOW_NON_USER_LOGONS,
-    ASC_REQ_ALLOW_CONTEXT_REPLAY,
-    ASC_REQ_FRAGMENT_TO_FIT,
+    ASC_REQ_MUTUAL_AUTH,
     ASC_REQ_NO_TOKEN,
     ASC_REQ_PROXY_BINDINGS,
-    ASC_REQ_ALLOW_MISSING_BINDINGS,
-    ASC_RET_DELEGATE,
-    ASC_RET_MUTUAL_AUTH,
-    ASC_RET_REPLAY_DETECT,
-    ASC_RET_SEQUENCE_DETECT,
-    ASC_RET_CONFIDENTIALITY,
-    ASC_RET_USE_SESSION_KEY,
+    ASC_REQ_REPLAY_DETECT,
+    ASC_REQ_SEQUENCE_DETECT,
+    ASC_REQ_STREAM,
+    ASC_REQ_USE_DCE_STYLE,
+    ASC_REQ_USE_SESSION_KEY,
     ASC_RET_ALLOCATED_MEMORY,
-    ASC_RET_USED_DCE_STYLE,
-    ASC_RET_DATAGRAM,
-    ASC_RET_CONNECTION,
+    ASC_RET_ALLOW_CONTEXT_REPLAY,
+    ASC_RET_ALLOW_NON_USER_LOGONS,
     ASC_RET_CALL_LEVEL,
-    ASC_RET_THIRD_LEG_FAILED,
+    ASC_RET_CONFIDENTIALITY,
+    ASC_RET_CONNECTION,
+    ASC_RET_DATAGRAM,
+    ASC_RET_DELEGATE,
     ASC_RET_EXTENDED_ERROR,
-    ASC_RET_STREAM,
+    ASC_RET_FRAGMENT_ONLY,
+    ASC_RET_IDENTIFY,
     ASC_RET_INTEGRITY,
     ASC_RET_LICENSING,
-    ASC_RET_IDENTIFY,
-    ASC_RET_NULL_SESSION,
-    ASC_RET_ALLOW_NON_USER_LOGONS,
-    ASC_RET_ALLOW_CONTEXT_REPLAY,
-    ASC_RET_FRAGMENT_ONLY,
-    ASC_RET_NO_TOKEN,
+    ASC_RET_MUTUAL_AUTH,
     ASC_RET_NO_ADDITIONAL_TOKEN,
-    CompleteAuthToken,
-    CredHandle,
-    CtxtHandle,
-    DecryptMessage,
-    DeleteSecurityContext,
-    EncryptMessage,
-    FreeContextBuffer,
-    FreeCredentialsHandle,
-    InitializeSecurityContextW,
+    ASC_RET_NO_TOKEN,
+    ASC_RET_NULL_SESSION,
+    ASC_RET_REPLAY_DETECT,
+    ASC_RET_SEQUENCE_DETECT,
+    ASC_RET_STREAM,
+    ASC_RET_THIRD_LEG_FAILED,
+    ASC_RET_USE_SESSION_KEY,
+    ASC_RET_USED_DCE_STYLE,
     ISC_REQ_ALLOCATE_MEMORY,
     ISC_REQ_CONFIDENTIALITY,
     ISC_REQ_CONNECTION,
@@ -93,68 +81,74 @@ from spnego._sspi_raw.security cimport (
     ISC_REQ_STREAM,
     ISC_REQ_USE_SESSION_KEY,
     ISC_REQ_USE_SUPPLIED_CREDS,
+    ISC_RET_ALLOCATED_MEMORY,
+    ISC_RET_CALL_LEVEL,
+    ISC_RET_CONFIDENTIALITY,
+    ISC_RET_CONNECTION,
+    ISC_RET_DATAGRAM,
     ISC_RET_DELEGATE,
+    ISC_RET_EXTENDED_ERROR,
+    ISC_RET_FORWARD_CREDENTIALS,
+    ISC_RET_FRAGMENT_ONLY,
+    ISC_RET_IDENTIFY,
+    ISC_RET_INTEGRITY,
+    ISC_RET_INTERMEDIATE_RETURN,
+    ISC_RET_MANUAL_CRED_VALIDATION,
     ISC_RET_MUTUAL_AUTH,
+    ISC_RET_NO_ADDITIONAL_TOKEN,
+    ISC_RET_NULL_SESSION,
+    ISC_RET_REAUTHENTICATION,
     ISC_RET_REPLAY_DETECT,
     ISC_RET_SEQUENCE_DETECT,
-    ISC_RET_CONFIDENTIALITY,
+    ISC_RET_STREAM,
     ISC_RET_USE_SESSION_KEY,
     ISC_RET_USED_COLLECTED_CREDS,
-    ISC_RET_USED_SUPPLIED_CREDS,
-    ISC_RET_ALLOCATED_MEMORY,
     ISC_RET_USED_DCE_STYLE,
-    ISC_RET_DATAGRAM,
-    ISC_RET_CONNECTION,
-    ISC_RET_INTERMEDIATE_RETURN,
-    ISC_RET_CALL_LEVEL,
-    ISC_RET_EXTENDED_ERROR,
-    ISC_RET_STREAM,
-    ISC_RET_INTEGRITY,
-    ISC_RET_IDENTIFY,
-    ISC_RET_NULL_SESSION,
-    ISC_RET_MANUAL_CRED_VALIDATION,
-    ISC_RET_FRAGMENT_ONLY,
-    ISC_RET_FORWARD_CREDENTIALS,
     ISC_RET_USED_HTTP_STYLE,
-    ISC_RET_NO_ADDITIONAL_TOKEN,
-    ISC_RET_REAUTHENTICATION,
-    MakeSignature,
-    PCtxtHandle,
+    ISC_RET_USED_SUPPLIED_CREDS,
     PSEC_WINNT_AUTH_IDENTITY_W,
-    PSecBuffer,
-    PSecPkgInfoW,
-    QueryContextAttributesW,
+)
+from spnego._sspi_raw.security cimport SEC_E_BUFFER_TOO_SMALL as _SEC_E_BUFFER_TOO_SMALL
+from spnego._sspi_raw.security cimport SEC_E_CONTEXT_EXPIRED as _SEC_E_CONTEXT_EXPIRED
+from spnego._sspi_raw.security cimport SEC_E_INTERNAL_ERROR as _SEC_E_INTERNAL_ERROR
+from spnego._sspi_raw.security cimport SEC_E_INVALID_HANDLE as _SEC_E_INVALID_HANDLE
+from spnego._sspi_raw.security cimport SEC_E_INVALID_TOKEN as _SEC_E_INVALID_TOKEN
+from spnego._sspi_raw.security cimport SEC_E_LOGON_DENIED as _SEC_E_LOGON_DENIED
+from spnego._sspi_raw.security cimport SEC_E_MESSAGE_ALTERED as _SEC_E_MESSAGE_ALTERED
+from spnego._sspi_raw.security cimport SEC_E_NO_CREDENTIALS as _SEC_E_NO_CREDENTIALS
+from spnego._sspi_raw.security cimport SEC_E_NOT_OWNER as _SEC_E_NOT_OWNER
+from spnego._sspi_raw.security cimport SEC_E_OK as _SEC_E_OK
+from spnego._sspi_raw.security cimport SEC_E_OUT_OF_SEQUENCE as _SEC_E_OUT_OF_SEQUENCE
+from spnego._sspi_raw.security cimport SEC_E_SECPKG_NOT_FOUND as _SEC_E_SECPKG_NOT_FOUND
+from spnego._sspi_raw.security cimport SEC_E_TARGET_UNKNOWN as _SEC_E_TARGET_UNKNOWN
+from spnego._sspi_raw.security cimport SEC_E_WRONG_PRINCIPAL as _SEC_E_WRONG_PRINCIPAL
+from spnego._sspi_raw.security cimport SEC_I_COMPLETE_NEEDED as _SEC_I_COMPLETE_NEEDED
+from spnego._sspi_raw.security cimport SEC_I_CONTINUE_NEEDED as _SEC_I_CONTINUE_NEEDED
+from spnego._sspi_raw.security cimport (
     SEC_WINNT_AUTH_IDENTITY_UNICODE,
     SEC_WINNT_AUTH_IDENTITY_W,
-    SecBuffer as NativeSecBuffer,
-    SecBufferDesc as NativeSecBufferDesc,
-    SECBUFFER_VERSION,
-    SECBUFFER_EMPTY,
+    SECBUFFER_ATTRMASK,
+    SECBUFFER_CHANGE_PASS_RESPONSE,
+    SECBUFFER_CHANNEL_BINDINGS,
     SECBUFFER_DATA,
-    SECBUFFER_TOKEN,
-    SECBUFFER_PKG_PARAMS,
-    SECBUFFER_MISSING,
+    SECBUFFER_EMPTY,
     SECBUFFER_EXTRA,
-    SECBUFFER_STREAM_TRAILER,
-    SECBUFFER_STREAM_HEADER,
-    SECBUFFER_NEGOTIATION_INFO,
-    SECBUFFER_PADDING,
-    SECBUFFER_STREAM,
     SECBUFFER_MECHLIST,
     SECBUFFER_MECHLIST_SIGNATURE,
-    SECBUFFER_TARGET,
-    SECBUFFER_CHANNEL_BINDINGS,
-    SECBUFFER_CHANGE_PASS_RESPONSE,
-    SECBUFFER_TARGET_HOST,
-    SECBUFFER_ATTRMASK,
+    SECBUFFER_MISSING,
+    SECBUFFER_NEGOTIATION_INFO,
+    SECBUFFER_PADDING,
+    SECBUFFER_PKG_PARAMS,
     SECBUFFER_READONLY,
     SECBUFFER_READONLY_WITH_CHECKSUM,
     SECBUFFER_RESERVED,
-    SecPkgContext_Names,
-    SecPkgContext_PackageInfoW,
-    SecPkgContext_SessionKey,
-    SecPkgContext_Sizes,
-    SecPkgInfoW,
+    SECBUFFER_STREAM,
+    SECBUFFER_STREAM_HEADER,
+    SECBUFFER_STREAM_TRAILER,
+    SECBUFFER_TARGET,
+    SECBUFFER_TARGET_HOST,
+    SECBUFFER_TOKEN,
+    SECBUFFER_VERSION,
     SECPKG_ATTR_NAMES,
     SECPKG_ATTR_PACKAGE_INFO,
     SECPKG_ATTR_SESSION_KEY,
@@ -166,38 +160,34 @@ from spnego._sspi_raw.security cimport (
     SECURITY_INTEGER,
     SECURITY_NATIVE_DREP,
     SECURITY_NETWORK_DREP,
-    SEC_E_BUFFER_TOO_SMALL as _SEC_E_BUFFER_TOO_SMALL,
-    SEC_E_CONTEXT_EXPIRED as _SEC_E_CONTEXT_EXPIRED,
-    SEC_E_CRYPTO_SYSTEM_INVALID as _SEC_E_CRYPTO_SYSTEM_INVALID,
-    SEC_E_INCOMPLETE_MESSAGE as _SEC_E_INCOMPLETE_MESSAGE,
-    SEC_E_INSUFFICIENT_MEMORY as _SEC_E_INSUFFICIENT_MEMORY,
-    SEC_E_INTERNAL_ERROR as _SEC_E_INTERNAL_ERROR,
-    SEC_E_INVALID_HANDLE as _SEC_E_INVALID_HANDLE,
-    SEC_E_INVALID_TOKEN as _SEC_E_INVALID_TOKEN,
-    SEC_E_LOGON_DENIED as _SEC_E_LOGON_DENIED,
-    SEC_E_MESSAGE_ALTERED as _SEC_E_MESSAGE_ALTERED,
-    SEC_E_NOT_OWNER as _SEC_E_NOT_OWNER,
-    SEC_E_NO_AUTHENTICATING_AUTHORITY as _SEC_E_NO_AUTHENTICATING_AUTHORITY,
-    SEC_E_NO_CREDENTIALS as _SEC_E_NO_CREDENTIALS,
-    SEC_E_OK as _SEC_E_OK,
-    SEC_E_OUT_OF_SEQUENCE as _SEC_E_OUT_OF_SEQUENCE,
-    SEC_E_QOP_NOT_SUPPORTED as _SEC_E_QOP_NOT_SUPPORTED,
-    SEC_E_SECPKG_NOT_FOUND as _SEC_E_SECPKG_NOT_FOUND,
-    SEC_E_TARGET_UNKNOWN as _SEC_E_TARGET_UNKNOWN,
-    SEC_E_UNKNOWN_CREDENTIALS as _SEC_E_UNKNOWN_CREDENTIALS,
-    SEC_E_UNSUPPORTED_FUNCTION as _SEC_E_UNSUPPORTED_FUNCTION,
-    SEC_E_WRONG_PRINCIPAL as _SEC_E_WRONG_PRINCIPAL,
-    SEC_I_COMPLETE_AND_CONTINUE as _SEC_I_COMPLETE_AND_CONTINUE,
-    SEC_I_COMPLETE_NEEDED as _SEC_I_COMPLETE_NEEDED,
-    SEC_I_CONTINUE_NEEDED as _SEC_I_CONTINUE_NEEDED,
-    SEC_I_INCOMPLETE_CREDENTIALS as _SEC_I_INCOMPLETE_CREDENTIALS,
+    AcceptSecurityContext,
+    AcquireCredentialsHandleW,
+    CompleteAuthToken,
+    CredHandle,
+    CtxtHandle,
+    DecryptMessage,
+    DeleteSecurityContext,
+    EncryptMessage,
+    FreeContextBuffer,
+    FreeCredentialsHandle,
+    InitializeSecurityContextW,
+    MakeSignature,
+    PCtxtHandle,
+    PSecBuffer,
+    PSecPkgInfoW,
+    QueryContextAttributesW,
+)
+from spnego._sspi_raw.security cimport SecBuffer as NativeSecBuffer
+from spnego._sspi_raw.security cimport SecBufferDesc as NativeSecBufferDesc
+from spnego._sspi_raw.security cimport (
+    SecPkgContext_Names,
+    SecPkgContext_PackageInfoW,
+    SecPkgContext_SessionKey,
+    SecPkgContext_Sizes,
+    SecPkgInfoW,
     VerifySignature,
 )
-
-from spnego._sspi_raw.text cimport (
-    u16_to_text,
-    WideChar,
-)
+from spnego._sspi_raw.text cimport WideChar, u16_to_text
 
 
 class ClientContextAttr:

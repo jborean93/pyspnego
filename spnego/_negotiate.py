@@ -9,21 +9,14 @@ from spnego._context import (
     ContextProxy,
     ContextReq,
     GSSMech,
-    IOVWrapResult,
     IOVUnwrapResult,
+    IOVWrapResult,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
 )
-
-from spnego._gss import (
-    GSSAPIProxy,
-)
-
-from spnego._ntlm import (
-    NTLMProxy,
-)
-
+from spnego._gss import GSSAPIProxy
+from spnego._ntlm import NTLMProxy
 from spnego._spnego import (
     NegState,
     NegTokenInit,
@@ -31,20 +24,9 @@ from spnego._spnego import (
     pack_mech_type_list,
     unpack_token,
 )
-
-from spnego.channel_bindings import (
-    GssChannelBindings,
-)
-
-from spnego.exceptions import (
-    BadMechanismError,
-    NegotiateOptions,
-    InvalidTokenError,
-)
-
-from spnego.iov import (
-    IOVBuffer,
-)
+from spnego.channel_bindings import GssChannelBindings
+from spnego.exceptions import BadMechanismError, InvalidTokenError, NegotiateOptions
+from spnego.iov import IOVBuffer
 
 log = logging.getLogger(__name__)
 

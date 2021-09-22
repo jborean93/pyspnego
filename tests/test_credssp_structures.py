@@ -2,10 +2,12 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
+from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import pytest
+
 import spnego._credssp_structures as credssp
 
 from .conftest import get_data

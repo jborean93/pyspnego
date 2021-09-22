@@ -2,32 +2,17 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
+from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import pytest
 
 import spnego._spnego as sp
-
-from spnego._asn1 import (
-    pack_asn1,
-    pack_asn1_object_identifier,
-    TagClass,
-)
-
-from spnego._context import (
-    GSSMech,
-)
-
-from spnego._kerberos import (
-    KrbApRep,
-    KrbApReq,
-)
-
-from spnego._ntlm_raw.messages import (
-    Challenge,
-    MessageType,
-)
+from spnego._asn1 import TagClass, pack_asn1, pack_asn1_object_identifier
+from spnego._context import GSSMech
+from spnego._kerberos import KrbApRep, KrbApReq
+from spnego._ntlm_raw.messages import Challenge, MessageType
 
 from .conftest import get_data
 

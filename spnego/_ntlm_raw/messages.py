@@ -9,13 +9,8 @@ import re
 import struct
 import typing
 
-from spnego._text import (
-    to_text,
-)
-
-from spnego._version import (
-    __version__ as pyspnego_version,
-)
+from spnego._text import to_text
+from spnego._version import __version__ as pyspnego_version
 
 
 class NegotiateFlags(enum.IntFlag):

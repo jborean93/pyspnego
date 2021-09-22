@@ -2,26 +2,16 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from __future__ import (absolute_import, division, print_function)
+from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type  # noqa (fixes E402 for the imports below)
 
 import pytest
+
 import spnego
-
-from spnego._context import (
-    GSSMech,
-)
-
-from spnego._spnego import (
-    NegState,
-    NegTokenInit,
-    NegTokenResp,
-)
-
-from spnego.exceptions import (
-    BadMechanismError,
-    InvalidTokenError,
-)
+from spnego._context import GSSMech
+from spnego._spnego import NegState, NegTokenInit, NegTokenResp
+from spnego.exceptions import BadMechanismError, InvalidTokenError
 
 
 def test_token_rejected(ntlm_cred):

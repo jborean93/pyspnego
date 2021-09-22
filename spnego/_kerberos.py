@@ -17,9 +17,9 @@ import typing
 
 from spnego._asn1 import (
     ASN1Value,
+    TagClass,
     extract_asn1_tlv,
     get_sequence_value,
-    TagClass,
     unpack_asn1,
     unpack_asn1_bit_string,
     unpack_asn1_general_string,
@@ -29,10 +29,7 @@ from spnego._asn1 import (
     unpack_asn1_sequence,
     unpack_asn1_tagged_sequence,
 )
-
-from spnego._text import (
-    to_text,
-)
+from spnego._text import to_text
 
 
 def _enum_labels(

@@ -1,9 +1,7 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-from spnego._sspi_raw.windows cimport (
-    LPWSTR,
-)
+from spnego._sspi_raw.windows cimport LPWSTR
 
 
 cdef class WideChar:

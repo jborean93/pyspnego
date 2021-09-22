@@ -2,6 +2,8 @@ cython
 gssapi>=1.5.0 ; sys_platform != 'win32'
 k5test ; sys_platform != 'win32'
 krb5 ; sys_platform != 'win32'
+isort
+pre-commit
 pycodestyle
 pytest
 pytest-cov

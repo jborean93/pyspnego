@@ -2,16 +2,13 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-import pytest
 import re
 import socket
+
+import pytest
+
 import spnego._credssp as credssp
-
-from spnego._credssp_structures import (
-    NegoData,
-    TSRequest,
-)
-
+from spnego._credssp_structures import NegoData, TSRequest
 from spnego.exceptions import (
     BadBindingsError,
     FeatureMissingError,
@@ -20,7 +17,6 @@ from spnego.exceptions import (
     OperationNotAvailableError,
     SpnegoError,
 )
-
 from spnego.tls import (
     CredSSPTLSContext,
     default_tls_context,

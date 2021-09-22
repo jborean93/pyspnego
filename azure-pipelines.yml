@@ -66,6 +66,7 @@ stages:
       displayName: Install
 
     - script: |
+        python -m isort . --check-only
         python -m pycodestyle . --verbose --show-source --statistics
       displayName: Lint
 
@@ -141,6 +142,7 @@ stages:
       displayName: Install
 
     - script: |
+        python -m isort . --check-only
         python -m pycodestyle . --verbose --show-source --statistics
       displayName: Lint
 
@@ -168,7 +170,7 @@ stages:
       timeoutInMinutes: 5
 
     - script: |
-        python setup.py clean --all build_ext --force --inplace 
+        python setup.py clean --all build_ext --force --inplace
         python setup.py bdist_wheel
       displayName: Create wheels for Windows
 

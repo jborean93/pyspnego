@@ -4,13 +4,11 @@
 
 import locale
 import os
-import pytest
 import socket
 
-from spnego._text import (
-    to_bytes,
-    to_text,
-)
+import pytest
+
+from spnego._text import to_bytes, to_text
 
 HAS_K5TEST = True
 try:
