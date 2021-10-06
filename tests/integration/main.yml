@@ -147,17 +147,23 @@
     - url: https://www.python.org/ftp/python/3.7.9/python-3.7.9-amd64.exe
       product_id: '{FF740026-2FC0-4F8A-A046-8B316AF4ECA6}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.6/python-3.8.6.exe
-      product_id: '{F9A958E5-FB7D-443C-9E13-74E691793CDA}'
+    - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe
+      product_id: '{}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.6/python-3.8.6-amd64.exe
-      product_id: '{04BA74DE-13BE-477C-8FE5-19F247C0D555}'
+    - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
+      product_id: '{}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.0/python-3.9.0.exe
-      product_id: '{6C445CC2-203D-4669-BA6C-1FE72468B62B}'
+    - url: https://www.python.org/ftp/python/3.9.7/python-3.9.7.exe
+      product_id: '{}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.0/python-3.9.0-amd64.exe
-      product_id: '{42480EE5-670F-4AF3-A619-2E761A398340}'
+    - url: https://www.python.org/ftp/python/3.9.7/python-3.9.7-amd64.exe
+      product_id: '{}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.10.0/python-3.10.0.exe
+      product_id: '{}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.10.0/python-3.10.0-amd64.exe
+      product_id: '{}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
   - name: ensure virtualenv package is installed for each Python install

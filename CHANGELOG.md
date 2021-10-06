@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 - TBD
+
+* Added Python 3.10 to the build matrix and Windows wheels
+
+
 ## 0.2.0 - 2021-09-22
 
 ### Breaking Changes
