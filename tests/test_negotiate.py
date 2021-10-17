@@ -20,6 +20,14 @@ def test_token_rejected(ntlm_cred):
         c.step(token_resp)
 
 
+def test_token_invalid_input(ntlm_cred):
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=spnego.NegotiateOptions.use_negotiate)
+
+    c.step()
+    with pytest.raises(InvalidTokenError, match="Failed to unpack input token"):
+        c.step(b"\x00")
+
+
 def test_token_no_common_mechs(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=spnego.NegotiateOptions.use_negotiate)
 

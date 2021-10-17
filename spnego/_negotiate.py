@@ -3,6 +3,7 @@
 
 import base64
 import logging
+import struct
 import typing
 
 from spnego._context import (
@@ -145,7 +146,10 @@ class NegotiateProxy(ContextProxy):
         is_spnego = True
 
         if in_token:
-            in_token = unpack_token(in_token)
+            try:
+                in_token = unpack_token(in_token)
+            except struct.error as e:
+                raise InvalidTokenError(base_error=e, context_msg=f"Failed to unpack input token {e!s}")
 
             if isinstance(in_token, NegTokenInit):
                 mech_list_mic = in_token.mech_list_mic
