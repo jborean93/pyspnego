@@ -189,7 +189,15 @@ def test_compute_response_v2():
     (NegotiateFlags.key_56, 'accept', b"\x58\x3E\x2F\x98\x95\x9B\x38\x5C\xD1\x58\xF3\x73\x4B\x5F\x5D\x3F"),
     (0, 'initiate', b"\x42\xF9\x64\xA4\x71\x09\x1A\x02\xFF\x4A\x77\x45\x53\x66\xE4\xE5"),
     (0, 'accept', b"\xC5\xD3\x85\x3B\x40\x6B\x7C\x12\x41\xC5\x95\xF0\xCE\x07\x50\xE2"),
-])
+], ids=[
+    'initiate-128',
+    'accept-128',
+    'initiate-56',
+    'accept-56',
+    'initiate-40',
+    'accept-40',
+]
+)
 def test_seal_key_ess(flags, usage, expected):
     actual = crypto.sealkey(NegotiateFlags.extended_session_security | flags, TEST_RANDOM_SESSION_KEY, usage)
 

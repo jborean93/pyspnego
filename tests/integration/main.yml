@@ -1,13 +1,3 @@
-- hosts: all
-  vars_prompt:
-  - name: artifact_url_prompt
-    prompt: Please enter the Azure Pipelines wheels download URL
-    private: no
-
-  tasks:
-  - set_fact:
-      artifact_url: '{{ artifact_url_prompt }}'
-
 - name: get network adapter for each Windows host
   hosts: windows
   gather_facts: no
@@ -147,17 +137,23 @@
     - url: https://www.python.org/ftp/python/3.7.9/python-3.7.9-amd64.exe
       product_id: '{FF740026-2FC0-4F8A-A046-8B316AF4ECA6}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.6/python-3.8.6.exe
-      product_id: '{F9A958E5-FB7D-443C-9E13-74E691793CDA}'
+    - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe
+      product_id: '{4196628C-AE5C-4304-B166-B7C1E93CDC25}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.6/python-3.8.6-amd64.exe
-      product_id: '{04BA74DE-13BE-477C-8FE5-19F247C0D555}'
+    - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
+      product_id: '{080E0048-853C-49FB-96ED-30DEF7AB6E34}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.0/python-3.9.0.exe
-      product_id: '{6C445CC2-203D-4669-BA6C-1FE72468B62B}'
+    - url: https://www.python.org/ftp/python/3.9.7/python-3.9.7.exe
+      product_id: '{E3343646-507D-4269-BF4C-68D78153FD0D}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.0/python-3.9.0-amd64.exe
-      product_id: '{42480EE5-670F-4AF3-A619-2E761A398340}'
+    - url: https://www.python.org/ftp/python/3.9.7/python-3.9.7-amd64.exe
+      product_id: '{05903EEF-72A2-4C1A-AD35-41AD6C7094A8}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.10.0/python-3.10.0.exe
+      product_id: '{88B95F8C-ECD7-42F1-A216-0880C9DE2F34}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.10.0/python-3.10.0-amd64.exe
+      product_id: '{BB3BA776-4C84-43FB-9CE6-5A37FFC23032}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
   - name: ensure virtualenv package is installed for each Python install
@@ -172,20 +168,25 @@
       creates: '{{ python_venv_path }}\{{ item | win_basename }}'
     with_items: '{{ python_interpreters }}'
 
-  - name: download wheel artifacts
-    win_get_url:
-      url: '{{ artifact_url }}'
+  - name: copy across wheel artifacts
+    win_copy:
+      src: artifact.zip
       dest: C:\temp\wheels.zip
+
+  - name: ensure wheel dir exists
+    win_file:
+      path: C:\temp\wheels
+      state: directory
 
   - name: extract wheel from archive
     win_unzip:
       src: C:\temp\wheels.zip
-      dest: C:\temp
+      dest: C:\temp\wheels
 
   - name: install pyspnego wheel into virtualenv
     win_shell: |
       &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install --no-index --find-links=C:/temp/wheels --no-deps pyspnego
-      &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install --find-links=C:/temp/wheels pyspnego pytest requests
+      &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install pyspnego pytest requests
     args:
       creates: '{{ python_venv_path }}\{{ item | win_basename }}\Lib\site-packages\spnego'
     with_items: '{{ python_interpreters }}'
@@ -340,17 +341,16 @@
     - HTTP
     - cifs
 
-  - name: download wheel artifacts
-    get_url:
-      url: '{{ artifact_url }}'
-      dest: ~/wheels.zip
+  - name: ensure wheel dir exists
+    file:
+      path: ~/wheels
+      state: directory
     become: no
 
   - name: extract wheel artifacts
     unarchive:
-      src: ~/wheels.zip
-      dest: ~/
-      remote_src: yes
+      src: artifact.zip
+      dest: ~/wheels
     become: no
 
   - name: find the universal wheel

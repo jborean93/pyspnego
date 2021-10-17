@@ -93,9 +93,8 @@ def ntlm_cred(tmpdir, monkeypatch):
 
 @pytest.fixture()
 def kerb_cred(monkeypatch):
-    test_kerberos = os.environ.get('PYSPNEGO_TEST_KERBEROS', None)
-    if not test_kerberos or not HAS_K5TEST:
-        pytest.skip("Cannot create Kerberos credential without PYSPNEGO_TEST_KERBEROS being set")
+    if not HAS_K5TEST:
+        pytest.skip("Cannot create Kerberos credential without k5test being installed")
 
     realm = K5Realm()
     try:

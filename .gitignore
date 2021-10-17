@@ -46,6 +46,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+test-results.xml
 
 # Translations
 *.mo
@@ -122,6 +123,7 @@ ENV/
 *.swp
 
 # Integration test files
+tests/integration/artifact.zip
 tests/integration/*.keytab
 tests/integration/.vagrant
 tests/integration/*.swp

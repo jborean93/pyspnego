@@ -196,6 +196,9 @@ def test_protocol_not_supported():
 # Negotiate scenarios
 
 def test_negotiate_with_kerberos(kerb_cred):
+    if kerb_cred.provider == "heimdal":
+        pytest.skip("Environment problem with Heimdal - skip")
+
     c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(),
                       options=spnego.NegotiateOptions.use_negotiate)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
@@ -531,6 +534,9 @@ def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
 
 @pytest.mark.parametrize('explicit_user', [False, True])
 def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
+    if kerb_cred.provider == "heimdal":
+        pytest.skip("Environment problem with Heimdal - skip")
+
     username = None
     if explicit_user:
         username = kerb_cred.user_princ
@@ -577,6 +583,9 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
 
 @pytest.mark.parametrize('acquire_cred_from', [False, True])
 def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkeypatch):
+    if kerb_cred.provider == "heimdal":
+        pytest.skip("Environment problem with Heimdal - skip")
+
     if not acquire_cred_from:
         monkeypatch.delattr("gssapi.raw.acquire_cred_from")
 
@@ -726,6 +735,9 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
 
 @pytest.mark.parametrize('restrict_tlsv12', [False, True])
 def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
+    if kerb_cred.provider == "heimdal":
+        pytest.skip("Environment problem with Heimdal - skip")
+
     c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol='kerberos')
     s_kerb_context = spnego.server(protocol="kerberos")
 
