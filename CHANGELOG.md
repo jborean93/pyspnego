@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 - TBD
+
+* Ensure bad SPNEGO token inputs are raised as `InvalidTokenError` rather than `struct.error`
+
+
 ## 0.2.0 - 2021-09-22
 
 ### Breaking Changes
