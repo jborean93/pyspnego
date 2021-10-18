@@ -1,6 +1,6 @@
 # Python SPNEGO Library
 
-[![Build Status](https://dev.azure.com/jborean93/jborean93/_apis/build/status/jborean93.pyspnego?branchName=main)](https://dev.azure.com/jborean93/jborean93/_build/latest?definitionId=2&branchName=main)
+[![Test workflow](https://github.com/jborean93/pyspnego/actions/workflows/ci.yml/badge.svg)](https://github.com/jborean93/pyspnego/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/jborean93/pyspnego/branch/main/graph/badge.svg)](https://codecov.io/gh/jborean93/pyspnego)
 [![PyPI version](https://badge.fury.io/py/pyspnego.svg)](https://badge.fury.io/py/pyspnego)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jborean93/pyspnego/blob/master/LICENSE)
@@ -20,7 +20,7 @@ See [How to Install](#how-to-install) for more details
 
 The following Python libraries can be installed to add extra features that do not come with the base package:
 
-* [python-gssapi](https://github.com/pythongssapi/python-gssapi) for Kerberos authentication on Linux
+* [python-gssapi](https://github.com/pythongssapi/python-gssapi) and [pykrb5](https://github.com/jborean93/pykrb5) for Kerberos authentication on Linux
 * [ruamel.yaml](https://pypi.org/project/ruamel.yaml/) for YAML output support on `pyspnego-parse`
 
 

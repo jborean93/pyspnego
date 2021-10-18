@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.2.1 - TBD
+## 0.3.0 - TBD
+
+### Packaging Changes
+
+* Changed project structure to a `src` layout
+* Include both Cython `pyx/pyd` and `C` files for SSPI in the sdist generated
+* Added Python 3.10 wheel
+
+### Bugfixes
 
 * Ensure bad SPNEGO token inputs are raised as `InvalidTokenError` rather than `struct.error`
 

@@ -1,4 +1,5 @@
-[run]
-plugins = Cython.Coverage
-omit =
-    *.pxd
+[paths]
+source =
+    src/spnego
+    **/dist-packages/spnego
+    **/site-packages/spnego

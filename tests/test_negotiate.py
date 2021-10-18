@@ -47,14 +47,14 @@ def test_token_acceptor_first(ntlm_cred):
     assert not c.complete
     assert not s.complete
     assert c._mech_list == []
-    assert s._mech_list == [GSSMech.ntlm.value]
+    assert GSSMech.ntlm.value in s._mech_list
 
     negotiate = c.step(token1)
     assert isinstance(negotiate, bytes)
     assert not c.complete
     assert not s.complete
     assert c._mech_list == [GSSMech.ntlm.value]
-    assert s._mech_list == [GSSMech.ntlm.value]
+    assert GSSMech.ntlm.value in s._mech_list
 
     challenge = s.step(negotiate)
     assert isinstance(challenge, bytes)
