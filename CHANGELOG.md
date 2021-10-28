@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 - TBD
+
+* Do not convert GSSAPI service to lowercase as it is case sensitive and the caller should provide the correct value
+
+
 ## 0.3.0 - 2021-10-19
 
 ### Packaging Changes
