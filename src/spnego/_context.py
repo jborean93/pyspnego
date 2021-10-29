@@ -258,7 +258,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         self.spn = None
         if service or hostname:
-            self.spn = to_text("%s/%s" % (service.upper() if service else "HOST", hostname or "unspecified"))
+            self.spn = to_text("%s/%s" % (service if service else "HOST", hostname or "unspecified"))
 
         self.channel_bindings = channel_bindings
         self.options = NegotiateOptions(options)

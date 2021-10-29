@@ -390,7 +390,7 @@ class GSSAPIProxy(ContextProxy):
             )
 
         if self.usage == 'initiate':
-            spn = "%s@%s" % (service.lower() if service else 'host', hostname or 'unspecified')
+            spn = "%s@%s" % (service if service else 'host', hostname or 'unspecified')
             context_kwargs['name'] = gssapi.Name(spn, name_type=gssapi.NameType.hostbased_service)
             context_kwargs['mech'] = mech
             context_kwargs['flags'] = self._context_req

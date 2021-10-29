@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 - TBD
+
+* Do not convert GSSAPI service to lowercase for GSSAPI and uppercase for SSPI
+  * SPNs are case insensitive on Windows but case sensitive on Linux
+  * Convering the service portion to upper or lower case could cause problems finding the target server on non-Windows GSSAPI implementations
+
+
 ## 0.3.0 - 2021-10-19
 
 ### Packaging Changes
