@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0 - TBD
+
+* Add `usage` argument for `tls.default_tls_context` to control whether the context is for a initiator or acceptor
+
+
 ## 0.3.1 - 2021-10-29
 
 * Do not convert GSSAPI service to lowercase for GSSAPI and uppercase for SSPI
