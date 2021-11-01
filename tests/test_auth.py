@@ -647,7 +647,7 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
 def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkeypatch, tmp_path):
     context_kwargs = {}
     if restrict_tlsv12:
-        credssp_context = spnego.tls.default_tls_context()
+        credssp_context = spnego.tls.default_tls_context(usage="accept")
 
         try:
             credssp_context.context.maximum_version = ssl.TLSVersion.TLSv1_2

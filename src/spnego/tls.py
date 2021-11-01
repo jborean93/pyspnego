@@ -57,7 +57,9 @@ class CredSSPTLSContext:
     public_key: typing.Optional[bytes] = None
 
 
-def default_tls_context() -> CredSSPTLSContext:
+def default_tls_context(
+    usage: str = "initiate",
+) -> CredSSPTLSContext:
     """CredSSP TLSContext with sane defaults.
 
     Creates the TLS context used to generate the SSL object for CredSSP
@@ -70,13 +72,23 @@ def default_tls_context() -> CredSSPTLSContext:
     This context is then passed in through the `credssp_tls_context` kwarg of
     :meth:`spnego.client` or :meth:`spnego.server`.
 
+    Args:
+        usage: Either `initiate` for a client context or `accept` for a server context.
+
     Returns:
         TLSContext: The TLS context that can be used with CredSSP auth.
 
     .. _MS-CSSP Events and Sequencing Rules:
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c
     """
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS)
+    if usage == "initiate":
+        # TLS_CLIENT enables CA/CN checking but CredSSP does not use this by default in the docs. The caller can
+        # re-enable this if needed.
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    else:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 
     # Required to interop with SChannel which does not support compression, TLS padding, and empty fragments
     # SSL_OP_NO_COMPRESSION | SSL_OP_TLS_BLOCK_PADDING_BUG | SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS

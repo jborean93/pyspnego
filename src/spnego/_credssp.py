@@ -57,7 +57,7 @@ def _create_tls_context(
     usage: str,
 ) -> CredSSPTLSContext:
     log.debug("Creating TLS context")
-    ctx = default_tls_context()
+    ctx = default_tls_context(usage=usage)
 
     if usage == "accept":
         # Cache the result for future operations

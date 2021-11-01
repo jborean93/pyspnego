@@ -105,7 +105,7 @@ def test_credssp_invalid_handshake(ntlm_cred):
 
 
 def test_credssp_server_without_pub_key():
-    context = default_tls_context()
+    context = default_tls_context(usage="accept")
     with pytest.raises(OperationNotAvailableError, match="Provided tls context does not have a public key set"):
         credssp.CredSSPProxy("username", "password", usage="accept", credssp_tls_context=context)
 
