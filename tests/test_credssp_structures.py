@@ -40,7 +40,7 @@ def test_ts_request_unpack():
 
 
 def test_ts_credential_unknown_credential_type():
-    credential = credssp.TSCredentials('failure')
+    credential = credssp.TSCredentials('failure')  # type: ignore[arg-type] # Testing this scenario
 
     with pytest.raises(ValueError, match='Invalid credential type set'):
         _ = credential.cred_type

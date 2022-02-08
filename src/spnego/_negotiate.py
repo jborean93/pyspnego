@@ -7,6 +7,7 @@ import struct
 import typing
 
 from spnego._context import (
+    IOV,
     ContextProxy,
     ContextReq,
     GSSMech,
@@ -305,7 +306,7 @@ class NegotiateProxy(ContextProxy):
 
     def wrap_iov(
         self,
-        iov: typing.List[IOVBuffer],
+        iov: typing.Iterable[IOV],
         encrypt: bool = True,
         qop: typing.Optional[int] = None,
     ) -> IOVWrapResult:
@@ -317,7 +318,10 @@ class NegotiateProxy(ContextProxy):
     def unwrap(self, data: bytes) -> UnwrapResult:
         return self._context.unwrap(data)
 
-    def unwrap_iov(self, iov: typing.List[IOVBuffer]) -> IOVUnwrapResult:
+    def unwrap_iov(
+        self,
+        iov: typing.Iterable[IOV],
+    ) -> IOVUnwrapResult:
         return self._context.unwrap_iov(iov)
 
     def unwrap_winrm(self, header: bytes, data: bytes) -> bytes:
@@ -347,9 +351,6 @@ class NegotiateProxy(ContextProxy):
     @property
     def _requires_mech_list_mic(self) -> bool:
         return self._context._requires_mech_list_mic
-
-    def _convert_iov_buffer(self, buffer: IOVBuffer) -> typing.Any:
-        pass  # Handled in the underlying context.  # pragma: no cover
 
     def _preferred_mech_list(self) -> typing.List[GSSMech]:
         """ Get a list of mechs that can be used in priority order (highest to lowest). """

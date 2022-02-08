@@ -2,14 +2,23 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import abc
-import collections
 import enum
 import typing
 
 from spnego._text import to_text
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import FeatureMissingError, NegotiateOptions, SpnegoError
-from spnego.iov import BufferType, IOVBuffer
+from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
+
+F = typing.TypeVar('F', bound=typing.Callable[..., typing.Any])
+NativeIOV = typing.TypeVar('NativeIOV', bound=typing.Any)
+IOV = typing.Union[
+    IOVBuffer,
+    IOVResBuffer,
+    typing.Tuple[typing.Union[BufferType, int], typing.Union[bool, bytes, int]],
+    typing.Union[BufferType, int],
+    bytes,
+]
 
 
 def split_username(username: typing.Optional[str]) -> typing.Tuple[typing.Optional[str], typing.Optional[str]]:
@@ -37,7 +46,7 @@ def split_username(username: typing.Optional[str]) -> typing.Tuple[typing.Option
     return to_text(domain, nonstring='passthru'), to_text(username, nonstring='passthru')
 
 
-def wrap_system_error(error_type: typing.Type, context: typing.Optional[str] = None) -> typing.Any:
+def wrap_system_error(error_type: typing.Type, context: typing.Optional[str] = None) -> typing.Callable[[F], F]:
     """Wraps a function that makes a native GSSAPI/SSPI syscall and convert native exceptions to a SpnegoError.
 
     Wraps a function that can potentially raise a WindowsError or GSSError and converts it to the common SpnegoError
@@ -49,60 +58,49 @@ def wrap_system_error(error_type: typing.Type, context: typing.Optional[str] = N
         error_type: The native error type that need to be wrapped.
         context: An optional context message to add to the error if raised.
     """
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: F) -> F:
+        def wrapper(*args: typing.Any, **kwargs: typing.Any) -> F:
             try:
                 return func(*args, **kwargs)
 
             except error_type as native_err:
                 raise SpnegoError(base_error=native_err, context_msg=context) from native_err
 
-        return wrapper
+        return typing.cast(F, wrapper)
     return decorator
 
 
-WrapResult = collections.namedtuple('WrapResult', ['data', 'encrypted'])
-"""Result of the `wrap()` function.
+class WrapResult(typing.NamedTuple):
+    """Result of the `wrap()` function."""
+    data: bytes  #: The bytes of the wrapped data.
+    encrypted: bool  #: Whether the data was encrypted (True) or not (False).
 
-Attributes:
-    data (bytes): The bytes of the wrapped data.
-    encrypted (bool): Whether the data was encrypted (True) or not (False).
-"""
 
-IOVWrapResult = collections.namedtuple('IOVWrapResult', ['buffers', 'encrypted'])
-"""Result of the `wrap_iov()` function.
+class IOVWrapResult(typing.NamedTuple):
+    """Result of the `wrap_iov()` function."""
+    buffers: typing.Tuple[IOVResBuffer, ...]  #: The wrapped IOV buffers.
+    encrypted: bool  #: Whether the buffer data was encrypted (True) or not (False).
 
-Attributes:
-    buffers (Tuple[IOVBuffer, ...]): The wrapped IOV buffers.
-    encrypted (bool): Whether the buffer data was encrypted (True) or not (False).
-"""
 
-WinRMWrapResult = collections.namedtuple('WinRMWrapResult', ['header', 'data', 'padding_length'])
-"""Result of the `wrap_winrm()` function.
+class WinRMWrapResult(typing.NamedTuple):
+    """Result of the `wrap_winrm()` function."""
+    header: bytes  #: The header of the wrapped result.
+    data: bytes  #: The wrapped data included any padding.
+    padding_length: int  #: The length of the bytes added to the data for padding.
 
-Attributes:
-    header (bytes): The header of the wrapped result.
-    data (bytes): The wrapped data included any padding.
-    padding_length (int): The length of the bytes added to the data for padding.
-"""
 
-UnwrapResult = collections.namedtuple('UnwrapResult', ['data', 'encrypted', 'qop'])
-"""Result of the `unwrap()` function.
+class UnwrapResult(typing.NamedTuple):
+    """Result of the `unwrap()` function."""
+    data: bytes  #: The bytes of the unwrapped data.
+    encrypted: bool  #: Whether the input data was encrypted (True) or not (False)
+    qop: int  #: The Quality of Protection used for the encrypted data.
 
-Attributes:
-    data (bytes): The bytes of the unwrapped data.
-    encrypted (bool): Whether the input data was encrypted (True) or not (False)
-    qop (int): The Quality of Protection used for the encrypted data.
-"""
 
-IOVUnwrapResult = collections.namedtuple('IOVUnwrapResult', ['buffers', 'encrypted', 'qop'])
-"""Result of the `unwrap_iov()` function.
-
-Attributes:
-    buffers (Tuple[IOVBuffer, ...]): The unwrapped IOV buffers.
-    encrypted (bool): Whether the input buffers were encrypted (True) or not (False)
-    qop (int): The Quality of Protection used for the encrypted buffers.
-"""
+class IOVUnwrapResult(typing.NamedTuple):
+    """Result of the `unwrap_iov()` function."""
+    buffers: typing.Tuple[IOVResBuffer, ...]  #: The unwrapped IOV buffers.
+    encrypted: bool  #: Whether the input buffers were encrypted (True) or not (False)
+    qop: int  #: The Quality of Protection used for the encrypted buffers.
 
 
 class ContextReq(enum.IntFlag):
@@ -454,7 +452,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def wrap_iov(
         self,
-        iov: typing.List[IOVBuffer],
+        iov: typing.Iterable[IOV],
         encrypt: bool = True,
         qop: typing.Optional[int] = None,
     ) -> IOVWrapResult:
@@ -527,7 +525,10 @@ class ContextProxy(metaclass=abc.ABCMeta):
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def unwrap_iov(self, iov: typing.List[IOVBuffer]) -> IOVUnwrapResult:
+    def unwrap_iov(
+        self,
+        iov: typing.Iterable[IOV],
+    ) -> IOVUnwrapResult:
         """Unwrap/Decrypt an IOV buffer.
 
         This method unwraps/decrypts an IOV buffer. The IOV buffers control how the data is to be processed. Because
@@ -630,6 +631,52 @@ class ContextProxy(metaclass=abc.ABCMeta):
         """
         pass  # pragma: no cover
 
+    def get_extra_info(
+        self,
+        name: str,
+        default: typing.Any = None,
+    ) -> typing.Any:
+        """Return information about the security context.
+
+        Returns extra information about the security context that is not defined
+        as part of the standard :class:`ContextProxy` attributes or properties.
+        By default there is no context specific information and it's up to the
+        sub classes to implement their own.
+
+        These names can be queried for a CredSSP context.
+
+            client_credential:
+                Used on an `acceptor` CredSSP context and contains the delegated
+                credential sent by the client to the server. This is only
+                available once the context is complete otherwise the default
+                value is returned. The types returned can be
+                :class:`TSPasswordCreds`, :class:`TSSmartCardCreds`, or
+                :class:`TSRemoteGuardCreds`.
+
+            sslcontext:
+                The :class:`ssl.SSLContext` instance used for the CredSSP
+                context.
+
+            ssl_object:
+                The :class:`ssl.SSLObject` instance used for the CredSSP
+                context.
+
+        Args:
+            name: The name/id of the information to retrieve.
+            default: The default value to return if the information is not
+                available on the current context proxy.
+
+        Args:
+            name: The name/id of the information to retrieve.
+            default: The default value to return if the information is not
+                available on the current context proxy.
+
+        Returns:
+            The information requested or the default value specified if the
+            information isn't found.
+        """
+        return default
+
     @property
     def _requires_mech_list_mic(self) -> bool:
         """Determine if the SPNEGO mechListMIC is required for the sec context.
@@ -655,8 +702,13 @@ class ContextProxy(metaclass=abc.ABCMeta):
         """
         return False  # pragma: no cover
 
-    def _build_iov_list(self, iov: typing.List[typing.Union[typing.Tuple, IOVBuffer, int, bytes]]) -> typing.List:
-        provider_iov = []
+    def _build_iov_list(
+        self,
+        iov: typing.Iterable[IOV],
+        native_convert: typing.Callable[[IOVBuffer], NativeIOV]
+    ) -> typing.List[NativeIOV]:
+        """Creates a list of IOV buffers for the native provider needed."""
+        provider_iov: typing.List[NativeIOV] = []
 
         for entry in iov:
             data: typing.Optional[typing.Union[bytes, int, bool]]
@@ -685,23 +737,9 @@ class ContextProxy(metaclass=abc.ABCMeta):
                 raise ValueError("IOV entry must be a IOVBuffer tuple, int, or bytes")
 
             iov_buffer = IOVBuffer(type=BufferType(buffer_type), data=data)
-            provider_iov.append(self._convert_iov_buffer(iov_buffer))
+            provider_iov.append(native_convert(iov_buffer))
 
         return provider_iov
-
-    @abc.abstractmethod
-    def _convert_iov_buffer(self, buffer: IOVBuffer) -> typing.Any:
-        """Convert a IOVBuffer object to a provider specific IOVBuffer value.
-
-        Converts the common IOVBuffer object to the provider specific value that it can use in the *_iov() functions.
-
-        Args:
-            buffer: The IOVBuffer to convert to the provider specific buffer type.
-
-        Return:
-            any: The provider specific buffer value
-        """
-        pass  # pragma: no cover
 
     def _reset_ntlm_crypto_state(self, outgoing: bool = True) -> None:
         """Reset the NTLM crypto handles after signing/verifying the SPNEGO mechListMIC.

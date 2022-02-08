@@ -39,22 +39,22 @@ def test_token_acceptor_first(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=spnego.NegotiateOptions.use_negotiate)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
-    assert c._mech_list == []
-    assert s._mech_list == []
+    assert getattr(c, "_mech_list", None) == []
+    assert getattr(s, "_mech_list", None) == []
 
     token1 = s.step()
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert c._mech_list == []
-    assert GSSMech.ntlm.value in s._mech_list
+    assert getattr(c, "_mech_list", None) == []
+    assert GSSMech.ntlm.value in getattr(s, "_mech_list", [])
 
     negotiate = c.step(token1)
     assert isinstance(negotiate, bytes)
     assert not c.complete
     assert not s.complete
-    assert c._mech_list == [GSSMech.ntlm.value]
-    assert GSSMech.ntlm.value in s._mech_list
+    assert getattr(c, "_mech_list", None) == [GSSMech.ntlm.value]
+    assert GSSMech.ntlm.value in getattr(s, "_mech_list", [])
 
     challenge = s.step(negotiate)
     assert isinstance(challenge, bytes)

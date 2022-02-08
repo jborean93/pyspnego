@@ -536,6 +536,7 @@ def test_padata_unknown_type():
 
     actual = kerb.parse_kerberos_token(padata)
 
+    assert isinstance(actual, dict)
     assert actual['padata-type'] == 'UNKNOWN (1024)'
     assert actual['padata-value'] == ''
 
@@ -560,6 +561,7 @@ def test_req_body_addresses():
     assert req_body.addresses[0].value == b'dc01.domain.local'
 
     actual = kerb.parse_kerberos_token(req_body)
+    assert isinstance(actual, dict)
     assert actual['addresses'][0]['addr-type'] == 'IPv4 (2)'
     assert actual['addresses'][0]['address'] == 'dc01.domain.local'
 
@@ -602,6 +604,7 @@ def test_req_body_ticket():
     assert req_body.additional_tickets[0].tkt_vno == 5
 
     actual = kerb.parse_kerberos_token(req_body)
+    assert isinstance(actual, dict)
     assert actual['additional-tickets'][0]['tkt-vno'] == 5
     assert actual['additional-tickets'][0]['realm'] == 'DOMAIN.LOCAL'
     assert actual['additional-tickets'][0]['sname']['name-type'] == 'NT-PRINCIPAL (1)'

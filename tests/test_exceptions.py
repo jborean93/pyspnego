@@ -8,15 +8,8 @@ import pytest
 
 import spnego.exceptions as exceptions
 
-try:
-    from gssapi.exceptions import GSSError
-except ImportError:
-    GSSError = ()
-
-try:
-    WinError = WindowsError
-except NameError:
-    WinError = ()
+GSSError = exceptions.GSSError
+WinError = exceptions.WinError
 
 
 @pytest.mark.parametrize('option, expected', [
@@ -84,8 +77,8 @@ def test_invalid_token_from_gssapi():
 
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_invalid_token_from_sspi():
-    base_error = WindowsError("Error")
-    base_error.winerror = -2146893048
+    base_error = WinError("Error")
+    setattr(base_error, "winerror", -2146893048)
 
     actual = exceptions.SpnegoError(base_error=base_error)
     assert isinstance(actual, exceptions.InvalidTokenError)
@@ -96,8 +89,8 @@ def test_invalid_token_from_sspi():
 
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_invalid_token_from_sspi_logon_denied():
-    base_error = WindowsError("Error")
-    base_error.winerror = -2146893044
+    base_error = WinError("Error")
+    setattr(base_error, "winerror", -2146893044)
 
     actual = exceptions.SpnegoError(base_error=base_error)
     assert isinstance(actual, exceptions.InvalidTokenError)
@@ -137,8 +130,8 @@ def test_operation_not_available_from_gssapi():
 
 @pytest.mark.skipif(not WinError, reason='Need a WindowsError to test this out')
 def test_operation_not_available_from_sspi():
-    base_error = WindowsError("Error")
-    base_error.winerror = -2146893054
+    base_error = WinError("Error")
+    setattr(base_error, "winerror", -2146893054)
 
     actual = exceptions.SpnegoError(base_error=base_error)
     assert isinstance(actual, exceptions.OperationNotAvailableError)

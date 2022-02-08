@@ -4,6 +4,7 @@
 
 import datetime
 import re
+import typing
 
 import pytest
 
@@ -188,7 +189,7 @@ def test_unpack_asn1_tlv_remaining_data():
 def test_pack_asn1_tlv_invalid_class():
     expected = "tag_class must be between 0 and 3"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        asn1.pack_asn1(10, False, 0, b"")
+        asn1.pack_asn1(10, False, 0, b"")  # type: ignore[arg-type]
 
 
 def test_pack_asn1_bit_string():
@@ -296,7 +297,7 @@ def test_pack_asn1_sequence():
 def test_unpack_asn1_sequence():
     value = b"\x30\x08\x04\x02\x01\x02\x04\x02\x01\x02"
 
-    def actual_test(expected):
+    def actual_test(expected: typing.List) -> bool:
         assert isinstance(expected, list)
 
         for a in expected:

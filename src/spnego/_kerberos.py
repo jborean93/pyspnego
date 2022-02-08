@@ -37,8 +37,8 @@ def _enum_labels(
     enum_type: typing.Optional[typing.Type] = None,
 ) -> typing.Dict[int, str]:
     """ Gets the human friendly labels of a known enum and what value they map to. """
-    def get_labels(v):
-        return getattr(v, 'native_labels', lambda: {})()
+    def get_labels(v: typing.Any) -> typing.Dict[int, str]:
+        return typing.cast(typing.Dict[int, str], getattr(v, 'native_labels', lambda: {})())
 
     return get_labels(enum_type) if enum_type else get_labels(value)
 
@@ -87,13 +87,12 @@ def parse_flags(
 
 
 def parse_kerberos_token(
-    token: "KerberosV5Msg",
+    token: typing.Union["KerberosV5Msg", "PAData", "PAETypeInfo2", "EncryptedData", "Ticket", "KdcReqBody"],
     secret: typing.Optional[str] = None,
     encoding: typing.Optional[str] = None,
-) -> typing.Dict[str, typing.Any]:
+) -> typing.Union[str, typing.Dict[str, typing.Any]]:
     """ Parses a KerberosV5Msg object to a dict. """
-    if not encoding:
-        encoding = 'utf-8'
+    text_encoding = encoding if encoding else 'utf-8'
 
     def parse_default(value: typing.Any) -> typing.Any:
         return value
@@ -102,7 +101,7 @@ def parse_kerberos_token(
         return value.isoformat()
 
     def parse_text(value: bytes) -> str:
-        return to_text(value, encoding=encoding, errors='replace')
+        return to_text(value, encoding=text_encoding, errors='replace')
 
     def parse_bytes(value: bytes) -> str:
         return base64.b16encode(value).decode()
@@ -119,14 +118,14 @@ def parse_kerberos_token(
             'address': parse_text(value.value),
         }
 
-    def parse_token(value: typing.Any) -> typing.Dict[str, typing.Any]:
-        return parse_kerberos_token(value, secret, encoding)
+    def parse_token(value: typing.Any) -> typing.Union[str, typing.Dict[str, typing.Any]]:
+        return parse_kerberos_token(value, secret, text_encoding)
 
     if isinstance(token, bytes):
         return parse_bytes(token)
 
     msg = {}
-    for name, attr_name, attr_type in token.PARSE_MAP:
+    for name, attr_name, attr_type in getattr(token, "PARSE_MAP", {}):
         attr_value = getattr(token, attr_name)
 
         parse_args = []
@@ -134,7 +133,7 @@ def parse_kerberos_token(
             parse_args.append(attr_type[1])
             attr_type = attr_type[0]
 
-        parse_func = {
+        parse_func: typing.Callable = {  # type: ignore[assignment] # No idea why
             ParseType.default: parse_default,
             ParseType.enum: parse_enum,
             ParseType.flags: parse_flags,
@@ -160,7 +159,7 @@ def parse_kerberos_token(
     return msg
 
 
-def unpack_hostname(value: ASN1Value) -> "HostAddress":
+def unpack_hostname(value: typing.Union[bytes, ASN1Value]) -> "HostAddress":
     """ Unpacks an ASN.1 value to a HostAddress. """
     s = unpack_asn1_tagged_sequence(value)
 
@@ -170,7 +169,7 @@ def unpack_hostname(value: ASN1Value) -> "HostAddress":
     return HostAddress(name_type, name)
 
 
-def unpack_principal_name(value: ASN1Value) -> "PrincipalName":
+def unpack_principal_name(value: typing.Union[bytes, ASN1Value]) -> "PrincipalName":
     """ Unpacks an ASN.1 value to a PrincipalName. """
     s = unpack_asn1_tagged_sequence(value)
 
@@ -724,18 +723,26 @@ class ParseType(enum.IntEnum):
 
 
 class _KerberosMsgType(type):
-    __registry = {}
+    __registry: typing.Dict[int, typing.Dict[int, "_KerberosMsgType"]] = {}
 
-    def __init__(cls, name, bases, attributes):
+    def __init__(
+        cls,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> None:
         pvno = getattr(cls, 'PVNO', 0)
 
         if pvno not in cls.__registry:
             cls.__registry[pvno] = {}
 
-        if hasattr(cls, 'MESSAGE_TYPE'):
-            cls.__registry[pvno][cls.MESSAGE_TYPE] = cls
+        msg_type = getattr(cls, 'MESSAGE_TYPE', None)
+        if msg_type is not None:
+            cls.__registry[pvno][msg_type] = cls
 
-    def __call__(cls, sequence):
+    def __call__(  # type: ignore[override]
+        cls,
+        sequence: typing.Dict[int, ASN1Value],
+    ) -> "_KerberosMsgType":
         # The KrbAsReq msg starts at 1 not 0, so do a check for that.
         pvno_idx = 0
         if 0 not in sequence:
@@ -800,7 +807,7 @@ class KrbAsReq(KerberosV5Msg):
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
-        def unpack_padata(value):
+        def unpack_padata(value: typing.Union[ASN1Value, bytes]) -> typing.List:
             return [PAData.unpack(p) for p in unpack_asn1_sequence(value)]
 
         self.padata = get_sequence_value(sequence, 3, 'KDC-REQ', 'pa-data', unpack_padata)
@@ -854,7 +861,7 @@ class KrbAsRep(KerberosV5Msg):
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
-        def unpack_padata(value):
+        def unpack_padata(value: typing.Union[ASN1Value, bytes]) -> typing.List:
             return [PAData.unpack(p) for p in unpack_asn1_sequence(value)]
 
         self.padata = get_sequence_value(sequence, 2, 'KDC-REP', 'pa-data', unpack_padata)
@@ -1066,28 +1073,29 @@ class PAData:
             # Special edge case for this PA type due to how the messages require the data in unpack
             return KrbTgsReq.unpack(unpack_asn1(unpack_asn1(self.b_value)[0].b_data)[0])
 
-        unpack_func = {
-            KerberosPADataType.enc_timestamp: (EncryptedData.unpack, False),
-            KerberosPADataType.etype_info2: (PAETypeInfo2.unpack, True),
-        }.get(self.data_type, None)
+        data_type_map = {
+            int(KerberosPADataType.enc_timestamp): (EncryptedData.unpack, False),
+            int(KerberosPADataType.etype_info2): (PAETypeInfo2.unpack, True),
+        }
 
-        if unpack_func:
+        if self.data_type in data_type_map:
+            unpack_func, is_sequence = data_type_map[int(self.data_type)]
             b_value = unpack_asn1(self.b_value)[0]
-            if unpack_func[1]:
+            if is_sequence:
                 # Is a SEQUENCE OF (list of entries).
-                return [unpack_func[0](v) for v in unpack_asn1_sequence(b_value)]
+                return [unpack_func(v) for v in unpack_asn1_sequence(b_value)]
 
             else:
-                return unpack_func[0](b_value.b_data)
+                return unpack_func(b_value.b_data)
 
         else:
             return self.b_value
 
     @staticmethod
-    def unpack(value: ASN1Value) -> "PAData":
+    def unpack(value: typing.Union[ASN1Value, bytes]) -> "PAData":
         sequence = unpack_asn1_tagged_sequence(value)
 
-        def unpack_data_type(value):
+        def unpack_data_type(value: typing.Union[ASN1Value, bytes]) -> typing.Union[KerberosPADataType, int]:
             int_val = unpack_asn1_integer(value)
 
             try:
@@ -1096,9 +1104,9 @@ class PAData:
                 return int_val
 
         data_type = get_sequence_value(sequence, 1, 'PA-DATA', 'padata-type', unpack_data_type)
-        value = get_sequence_value(sequence, 2, 'PA-DATA', 'padata-value', unpack_asn1_octet_string)
+        pa_value = get_sequence_value(sequence, 2, 'PA-DATA', 'padata-value', unpack_asn1_octet_string)
 
-        return PAData(data_type, value)
+        return PAData(data_type, pa_value)
 
 
 class PAETypeInfo2:
@@ -1142,7 +1150,7 @@ class PAETypeInfo2:
         self.s2kparams = s2kparams
 
     @staticmethod
-    def unpack(value: ASN1Value) -> "PAETypeInfo2":
+    def unpack(value: typing.Union[ASN1Value, bytes]) -> "PAETypeInfo2":
         sequence = unpack_asn1_tagged_sequence(value)
 
         etype = KerberosEncryptionType(get_sequence_value(sequence, 0, 'PA-ETYPE-INFO2', 'etype', unpack_asn1_integer))
@@ -1189,7 +1197,7 @@ class EncryptedData:
         self.cipher = cipher
 
     @staticmethod
-    def unpack(value: ASN1Value) -> "EncryptedData":
+    def unpack(value: typing.Union[bytes, ASN1Value]) -> "EncryptedData":
         sequence = unpack_asn1_tagged_sequence(value)
 
         etype = KerberosEncryptionType(get_sequence_value(sequence, 0, 'EncryptedData', 'etype', unpack_asn1_integer))
@@ -1366,17 +1374,17 @@ class KdcReqBody:
     def unpack(value: typing.Union[ASN1Value, bytes]) -> "KdcReqBody":
         sequence = unpack_asn1_tagged_sequence(value)
 
-        def unpack_kdc_options(value):
+        def unpack_kdc_options(value: typing.Union[ASN1Value, bytes]) -> int:
             b_data = unpack_asn1_bit_string(value)
             return struct.unpack(">I", b_data)[0]
 
-        def unpack_etype(value):
+        def unpack_etype(value: typing.Union[ASN1Value, bytes]) -> typing.List[KerberosEncryptionType]:
             return [KerberosEncryptionType(unpack_asn1_integer(e)) for e in unpack_asn1_sequence(value)]
 
-        def unpack_addresses(value):
+        def unpack_addresses(value: typing.Union[ASN1Value, bytes]) -> typing.List[HostAddress]:
             return [unpack_hostname(h) for h in unpack_asn1_sequence(value)]
 
-        def unpack_ticket(value):
+        def unpack_ticket(value: typing.Union[ASN1Value, bytes]) -> typing.List[Ticket]:
             return [Ticket.unpack(t) for t in unpack_asn1_sequence(value)]
 
         kdc_options = get_sequence_value(sequence, 0, 'KDC-REQ-BODY', 'kdc-options', unpack_kdc_options)

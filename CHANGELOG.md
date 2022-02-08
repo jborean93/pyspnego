@@ -3,6 +3,13 @@
 ## 0.4.0 - TBD
 
 * Add `usage` argument for `tls.default_tls_context` to control whether the context is for a initiator or acceptor
+* Add type annotations and include `py.typed` in the package for downstream library use
+* Expose the `ContextProxy` class for type annotation use
+* Added `get_extra_info` to `ContextProxy` to expose a common way to retrieve context specific information, this is currently used by CredSSP to retrieve
+  * `client_credential`: The delegated client credential for acceptors once the context is complete
+  * `sslcontext`: The SSL context used to create the TLS object
+  * `ssl_object`: The TLS object used during the CredSSP exchange
+* The `client_credential` property on `CredSSP` has been removed in favour of `context.get_extra_info('client_credential')
 
 
 ## 0.3.1 - 2021-10-29

@@ -82,6 +82,7 @@ lib::sanity::run() {
 
     python -m isort . --check-only
     python -m pycodestyle . --verbose --show-source --statistics
+    python -m mypy .
 
     if [ x"${GITHUB_ACTIONS}" = "xtrue" ]; then
         echo "::endgroup::"

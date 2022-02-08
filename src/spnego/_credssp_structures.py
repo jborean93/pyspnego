@@ -152,7 +152,7 @@ class TSRequest:
             nego_tokens = [token.pack() for token in self.nego_tokens]
             elements.append(pack_asn1(TagClass.context_specific, True, 1, pack_asn1_sequence(nego_tokens)))
 
-        value_map = [
+        value_map: typing.List[typing.Tuple[int, typing.Any, typing.Callable]] = [
             (2, self.auth_info, pack_asn1_octet_string),
             (3, self.pub_key_auth, pack_asn1_octet_string),
             (4, self.error_code, pack_asn1_integer),
@@ -245,7 +245,9 @@ class TSCredentials:
         cred_type = get_sequence_value(credential, 0, 'TSCredentials', 'credType', unpack_asn1_integer)
         credentials_raw = get_sequence_value(credential, 1, 'TSCredentials', 'credentials', unpack_asn1_octet_string)
 
-        cred_class = {
+        cred_class: typing.Optional[typing.Union[
+            typing.Type[TSPasswordCreds], typing.Type[TSSmartCardCreds], typing.Type[TSRemoteGuardCreds]
+        ]] = {
             1: TSPasswordCreds,
             2: TSSmartCardCreds,
             6: TSRemoteGuardCreds,
@@ -303,9 +305,9 @@ class TSPasswordCreds:
         """ Unpacks the TSPasswordCreds TLV value. """
         creds = unpack_sequence(b_data)
 
-        domain_name = unpack_text_field(creds, 0, 'TSPasswordCreds', 'domainName')
-        username = unpack_text_field(creds, 1, 'TSPasswordCreds', 'userName')
-        password = unpack_text_field(creds, 2, 'TSPasswordCreds', 'password')
+        domain_name = unpack_text_field(creds, 0, 'TSPasswordCreds', 'domainName') or ""
+        username = unpack_text_field(creds, 1, 'TSPasswordCreds', 'userName') or ""
+        password = unpack_text_field(creds, 2, 'TSPasswordCreds', 'password') or ""
 
         return TSPasswordCreds(domain_name, username, password)
 
@@ -370,7 +372,7 @@ class TSSmartCardCreds:
         """ Unpacks the TSSmartCardCreds TLV value. """
         creds = unpack_sequence(b_data)
 
-        pin = unpack_text_field(creds, 0, 'TSSmartCardCreds', 'pin')
+        pin = unpack_text_field(creds, 0, 'TSSmartCardCreds', 'pin') or ""
         csp_data = get_sequence_value(creds, 1, 'TSSmartCardCreds', 'cspData', TSCspDataDetail.unpack)
         user_hint = unpack_text_field(creds, 2, 'TSSmartCardCreds', 'userHint', default=None)
         domain_hint = unpack_text_field(creds, 3, 'TSSmartCardCreds', 'domainHint', default=None)
@@ -566,7 +568,7 @@ class TSRemoteGuardPackageCred:
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSRemoteGuardPackageCred":
         """ Unpacks the TSRemoteGuardPackageCred TLV value. """
         package_cred = unpack_sequence(b_data)
-        package_name = unpack_text_field(package_cred, 0, 'TSRemoteGuardPackageCred', 'packageName')
+        package_name = unpack_text_field(package_cred, 0, 'TSRemoteGuardPackageCred', 'packageName') or ""
         cred_buffer = get_sequence_value(package_cred, 1, 'TSRemoteGuardPackageCred', 'credBuffer',
                                          unpack_asn1_octet_string)
 

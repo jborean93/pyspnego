@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from spnego._text import to_text
+from spnego.exceptions import WinError
 
 SKIP = False
 try:
@@ -127,37 +128,37 @@ def test_win_nt_auth_identity_set_password():
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_accept_security_context_fail():
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.accept_security_context(sspi.Credential(), sspi.SecurityContext(), sspi.SecBufferDesc([]))
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_acquire_credentials_handle_fail():
-    with pytest.raises(WindowsError, match="The requested security package does not exist"):
+    with pytest.raises(WinError, match="The requested security package does not exist"):
         sspi.acquire_credentials_handle(None, "fake package")
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_decrypt_message_fail():
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.decrypt_message(sspi.SecurityContext(), sspi.SecBufferDesc([]))
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_encrypt_message_fail():
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.encrypt_message(sspi.SecurityContext(), sspi.SecBufferDesc([]))
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_initialize_security_context_fail():
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.initialize_security_context(sspi.Credential(), sspi.SecurityContext(), "target_name")
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_make_signature_fail():
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.make_signature(sspi.SecurityContext(), 0, sspi.SecBufferDesc([]))
 
 
@@ -174,11 +175,11 @@ def test_query_context_attributes_unknown():
     10,  # package_info
 ])
 def test_query_context_attributes_invalid_handle(attribute):
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.query_context_attributes(sspi.SecurityContext(), attribute)
 
 
 @pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
 def test_verify_signature_fail():
-    with pytest.raises(WindowsError, match="The handle specified is invalid"):
+    with pytest.raises(WinError, match="The handle specified is invalid"):
         sspi.verify_signature(sspi.SecurityContext(), sspi.SecBufferDesc([]))

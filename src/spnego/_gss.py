@@ -7,6 +7,7 @@ import sys
 import typing
 
 from spnego._context import (
+    IOV,
     ContextProxy,
     ContextReq,
     GSSMech,
@@ -21,7 +22,7 @@ from spnego._text import to_bytes, to_text
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import GSSError as NativeError
 from spnego.exceptions import NegotiateOptions, SpnegoError
-from spnego.iov import BufferType, IOVBuffer
+from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ except ImportError as e:
 HAS_IOV = True
 GSSAPI_IOV_IMP_ERR = None
 try:
-    from gssapi.raw import IOV, IOVBufferType, unwrap_iov, wrap_iov
+    from gssapi.raw import IOV as GSSIOV
+    from gssapi.raw import IOVBuffer as GSSIOVBuffer
+    from gssapi.raw import IOVBufferType, unwrap_iov, wrap_iov
 except ImportError as err:
     GSSAPI_IOV_IMP_ERR = sys.exc_info()
     HAS_IOV = False
@@ -79,11 +82,11 @@ def _available_protocols(options: typing.Optional[NegotiateOptions] = None) -> t
     return protocols
 
 
-def _create_iov_result(iov: "IOV") -> typing.Tuple[IOVBuffer, ...]:
+def _create_iov_result(iov: "GSSIOV") -> typing.Tuple[IOVResBuffer, ...]:
     """ Converts GSSAPI IOV buffer to generic IOVBuffer result. """
     buffers = []
     for i in iov:
-        buffer_entry = IOVBuffer(type=BufferType(i.type), data=i.value)
+        buffer_entry = IOVResBuffer(type=BufferType(i.type), data=i.value)
         buffers.append(buffer_entry)
 
     return tuple(buffers)
@@ -143,12 +146,14 @@ def _get_gssapi_credential(
             forwardable = bool(
                 context_req and (context_req & ContextReq.delegate or context_req & ContextReq.delegate_policy)
             )
-            cred = _kinit(to_bytes(username), to_bytes(password), forwardable=forwardable)
+            raw_cred = _kinit(to_bytes(username), to_bytes(password), forwardable=forwardable)
         else:
             # MIT krb5 < 1.14 would store the kerb cred in the global cache but later versions used a private cache in
             # memory. There's not much we can do about this but document this behaviour and hope people upgrade to a
             # newer version.
-            cred = acquire_cred_with_password(principal, to_bytes(password), usage=usage, mechs=[mech]).creds
+            raw_cred = acquire_cred_with_password(principal, to_bytes(password), usage=usage, mechs=[mech]).creds
+
+        cred = gssapi.Credentials(base=raw_cred)
 
     elif principal or usage == 'accept':
         cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
@@ -324,7 +329,7 @@ def _kinit(
     if hasattr(gssapi.raw, "acquire_cred_from"):
         kerberos = gssapi.OID.from_int_seq(GSSMech.kerberos.value)
         gssapi_creds = gssapi.raw.acquire_cred_from(
-            {b"ccache": b"MEMORY:" + mem_ccache.name},
+            {b"ccache": b"MEMORY:" + (mem_ccache.name or b"")},
             mechs=[kerberos],
             usage="initiate",
         ).creds
@@ -378,7 +383,7 @@ class GSSAPIProxy(ContextProxy):
         except GSSError as gss_err:
             raise SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential") from gss_err
 
-        context_kwargs = {}
+        context_kwargs: typing.Dict[str, typing.Any] = {}
 
         if self.channel_bindings:
             context_kwargs['channel_bindings'] = ChannelBindings(
@@ -465,11 +470,12 @@ class GSSAPIProxy(ContextProxy):
     @wrap_system_error(NativeError, "Wrapping IOV buffer")
     def wrap_iov(
         self,
-        iov: typing.List[IOVBuffer],
+        iov: typing.Iterable[IOV],
         encrypt: bool = True,
         qop: typing.Optional[int] = None,
     ) -> IOVWrapResult:
-        iov_buffer = IOV(*self._build_iov_list(iov), std_layout=False)
+        buffers = self._build_iov_list(iov, self._convert_iov_buffer)
+        iov_buffer = GSSIOV(*buffers, std_layout=False)
         encrypted = wrap_iov(self._context, iov_buffer, confidential=encrypt, qop=qop)
 
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted)
@@ -484,8 +490,8 @@ class GSSAPIProxy(ContextProxy):
 
         else:
             iov = self.wrap_iov([BufferType.header, data, BufferType.padding]).buffers
-            header = iov[0].data
-            enc_data = iov[1].data
+            header = iov[0].data or b""
+            enc_data = iov[1].data or b""
             padding = iov[2].data or b""
 
         return WinRMWrapResult(header=header, data=enc_data + padding, padding_length=len(padding))
@@ -500,8 +506,12 @@ class GSSAPIProxy(ContextProxy):
         return UnwrapResult(data=res.message, encrypted=encrypted, qop=res.qop)
 
     @wrap_system_error(NativeError, "Unwrapping IOV buffer")
-    def unwrap_iov(self, iov: typing.List[IOVBuffer]) -> IOVUnwrapResult:
-        iov_buffer = IOV(*self._build_iov_list(iov), std_layout=False)
+    def unwrap_iov(
+        self,
+        iov: typing.Iterable[IOV],
+    ) -> IOVUnwrapResult:
+        buffers = self._build_iov_list(iov, self._convert_iov_buffer)
+        iov_buffer = GSSIOV(*buffers, std_layout=False)
         res = unwrap_iov(self._context, iov_buffer)
 
         return IOVUnwrapResult(buffers=_create_iov_result(iov_buffer), encrypted=res.encrypted, qop=res.qop)
@@ -525,7 +535,7 @@ class GSSAPIProxy(ContextProxy):
                 data,
                 IOVBufferType.data
             ]).buffers
-            return iov[1].data
+            return iov[1].data or b""
 
         else:
             return self.unwrap(header + data).data
@@ -572,7 +582,7 @@ class GSSAPIProxy(ContextProxy):
         else:
             return b"\x01" in res
 
-    def _convert_iov_buffer(self, buffer: IOVBuffer) -> typing.Any:
+    def _convert_iov_buffer(self, buffer: IOVBuffer) -> "GSSIOVBuffer":
         buffer_data = None
         buffer_alloc = False
 
@@ -584,11 +594,12 @@ class GSSAPIProxy(ContextProxy):
         else:
             auto_alloc = [BufferType.header, BufferType.padding, BufferType.trailer]
 
-            buffer_alloc = buffer.data
-            if buffer_alloc is None:
+            if buffer.data is None:
                 buffer_alloc = buffer.type in auto_alloc
+            else:
+                buffer_alloc = buffer.data
 
-        return buffer.type, buffer_alloc, buffer_data
+        return GSSIOVBuffer(IOVBufferType(buffer.type), buffer_alloc, buffer_data)
 
     @wrap_system_error(NativeError, "NTLM reset crypto state")
     def _reset_ntlm_crypto_state(self, outgoing: bool = True) -> None:

@@ -212,10 +212,18 @@ def _unpack_payload(
 class _NTLMMessageMeta(type):
     __registry: typing.Dict[int, typing.Type] = {}
 
-    def __init__(cls, name, bases, attributes):
-        cls.__registry[cls.MESSAGE_TYPE] = cls
+    def __init__(
+        cls,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> None:
+        cls.__registry[getattr(cls, 'MESSAGE_TYPE', 0)] = cls
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(
+        cls,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> "_NTLMMessageMeta":
         if '_b_data' in kwargs:
             message_type = struct.unpack("<I", kwargs['_b_data'][8:12])[0]
             new_cls = cls.__registry[message_type]
@@ -356,6 +364,14 @@ class Negotiate(NTLMMessage):
         """ Gets the offset of the first payload value. """
         return _get_payload_offset(self._data, [16, 24])
 
+    @staticmethod
+    def unpack(b_data: bytes, encoding: typing.Optional[str] = None) -> "Negotiate":
+        msg = NTLMMessage.unpack(b_data, encoding=encoding)
+        if not isinstance(msg, Negotiate):
+            raise ValueError("Input message was not a NTLM Negotiate message")
+
+        return msg
+
 
 class Challenge(NTLMMessage):
     """NTLM Challenge Message
@@ -478,6 +494,14 @@ class Challenge(NTLMMessage):
     def _payload_offset(self) -> int:
         """ Gets the offset of the first payload value. """
         return _get_payload_offset(self._data, [12, 40])
+
+    @staticmethod
+    def unpack(b_data: bytes, encoding: typing.Optional[str] = None) -> "Challenge":
+        msg = NTLMMessage.unpack(b_data, encoding=encoding)
+        if not isinstance(msg, Challenge):
+            raise ValueError("Input message was not a NTLM Challenge message")
+
+        return msg
 
 
 class Authenticate(NTLMMessage):
@@ -663,6 +687,14 @@ class Authenticate(NTLMMessage):
         # Not enough room for a MIC between the minimum size and the payload offset.
         else:
             return 0
+
+    @staticmethod
+    def unpack(b_data: bytes, encoding: typing.Optional[str] = None) -> "Authenticate":
+        msg = NTLMMessage.unpack(b_data, encoding=encoding)
+        if not isinstance(msg, Authenticate):
+            raise ValueError("Input message was not a NTLM Authenticate message")
+
+        return msg
 
 
 class FileTime(datetime.datetime):
@@ -1094,7 +1126,7 @@ class Version:
 
         return self.pack() == other
 
-    def __len__(self):
+    def __len__(self) -> int:
         return 8
 
     @property

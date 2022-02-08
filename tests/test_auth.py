@@ -5,6 +5,7 @@
 import os
 import socket
 import ssl
+import typing
 
 import pytest
 
@@ -22,12 +23,13 @@ from spnego._context import (
     WinRMWrapResult,
     WrapResult,
 )
+from spnego._credssp_structures import TSPasswordCreds
 from spnego._ntlm_raw.crypto import lmowfv1, ntowfv1
 from spnego._spnego import NegTokenResp, unpack_token
 from spnego.exceptions import SpnegoError
 
 
-def _message_test(client, server):
+def _message_test(client: spnego.ContextProxy, server: spnego.ContextProxy) -> None:
     # Client wrap
     plaintext = os.urandom(32)
 
@@ -63,7 +65,7 @@ def _message_test(client, server):
     assert c_unwrap_result.qop == 0
 
     # CredSSP doesnt' have signature methods
-    if hasattr(client, 'client_credential'):
+    if isinstance(client, spnego._credssp.CredSSPProxy):
         return
 
     # Client sign, server verify
@@ -83,59 +85,59 @@ def _message_test(client, server):
         return
 
     plaintext = os.urandom(16)
-    c_winrm_result = client.wrap_winrm(plaintext)
-    assert isinstance(c_winrm_result, WinRMWrapResult)
-    assert isinstance(c_winrm_result.header, bytes)
-    assert isinstance(c_winrm_result.data, bytes)
-    assert isinstance(c_winrm_result.padding_length, int)
+    c_winrm_wrap_result = client.wrap_winrm(plaintext)
+    assert isinstance(c_winrm_wrap_result, WinRMWrapResult)
+    assert isinstance(c_winrm_wrap_result.header, bytes)
+    assert isinstance(c_winrm_wrap_result.data, bytes)
+    assert isinstance(c_winrm_wrap_result.padding_length, int)
 
-    s_winrm_result = server.unwrap_winrm(c_winrm_result.header, c_winrm_result.data)
-    assert s_winrm_result == plaintext
+    s_winrm_unwrap_result = server.unwrap_winrm(c_winrm_wrap_result.header, c_winrm_wrap_result.data)
+    assert s_winrm_unwrap_result == plaintext
 
     plaintext = os.urandom(16)
-    s_winrm_result = server.wrap_winrm(plaintext)
-    assert isinstance(s_winrm_result, WinRMWrapResult)
-    assert isinstance(s_winrm_result.header, bytes)
-    assert isinstance(s_winrm_result.data, bytes)
-    assert isinstance(s_winrm_result.padding_length, int)
+    s_winrm_wrap_result = server.wrap_winrm(plaintext)
+    assert isinstance(s_winrm_wrap_result, WinRMWrapResult)
+    assert isinstance(s_winrm_wrap_result.header, bytes)
+    assert isinstance(s_winrm_wrap_result.data, bytes)
+    assert isinstance(s_winrm_wrap_result.padding_length, int)
 
-    c_winrm_result = client.unwrap_winrm(s_winrm_result.header, s_winrm_result.data)
-    assert c_winrm_result == plaintext
+    c_winrm_unwrap_result = client.unwrap_winrm(s_winrm_wrap_result.header, s_winrm_wrap_result.data)
+    assert c_winrm_unwrap_result == plaintext
 
     # Can only continue if using Kerberos auth and IOV is available
     if client.negotiated_protocol == 'ntlm' or not client.iov_available():
         return
 
     plaintext = os.urandom(16)
-    c_iov_res = client.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
-    assert isinstance(c_iov_res, IOVWrapResult)
-    assert c_iov_res.encrypted
-    assert len(c_iov_res.buffers) == 3
-    assert c_iov_res.buffers[1].data != plaintext
+    c_iov_wrap_res = client.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert isinstance(c_iov_wrap_res, IOVWrapResult)
+    assert c_iov_wrap_res.encrypted
+    assert len(c_iov_wrap_res.buffers) == 3
+    assert c_iov_wrap_res.buffers[1].data != plaintext
 
-    s_iov_res = server.unwrap_iov(c_iov_res.buffers)
-    assert isinstance(s_iov_res, IOVUnwrapResult)
-    assert s_iov_res.encrypted
-    assert s_iov_res.qop == 0
-    assert len(s_iov_res.buffers) == 3
-    assert s_iov_res.buffers[1].data == plaintext
+    s_iov_unwrap_res = server.unwrap_iov(c_iov_wrap_res.buffers)
+    assert isinstance(s_iov_unwrap_res, IOVUnwrapResult)
+    assert s_iov_unwrap_res.encrypted
+    assert s_iov_unwrap_res.qop == 0
+    assert len(s_iov_unwrap_res.buffers) == 3
+    assert s_iov_unwrap_res.buffers[1].data == plaintext
 
     plaintext = os.urandom(16)
-    s_iov_res = server.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
-    assert isinstance(s_iov_res, IOVWrapResult)
-    assert s_iov_res.encrypted
-    assert len(s_iov_res.buffers) == 3
-    assert s_iov_res.buffers[1].data != plaintext
+    s_iov_wrap_res = server.wrap_iov([spnego.iov.BufferType.header, plaintext, spnego.iov.BufferType.padding])
+    assert isinstance(s_iov_wrap_res, IOVWrapResult)
+    assert s_iov_wrap_res.encrypted
+    assert len(s_iov_wrap_res.buffers) == 3
+    assert s_iov_wrap_res.buffers[1].data != plaintext
 
-    c_iov_res = client.unwrap_iov(s_iov_res.buffers)
-    assert isinstance(c_iov_res, IOVUnwrapResult)
-    assert c_iov_res.encrypted
-    assert c_iov_res.qop == 0
-    assert len(c_iov_res.buffers) == 3
-    assert c_iov_res.buffers[1].data == plaintext
+    c_iov_unwrap_res = client.unwrap_iov(s_iov_wrap_res.buffers)
+    assert isinstance(c_iov_unwrap_res, IOVUnwrapResult)
+    assert c_iov_unwrap_res.encrypted
+    assert c_iov_unwrap_res.qop == 0
+    assert len(c_iov_unwrap_res.buffers) == 3
+    assert c_iov_unwrap_res.buffers[1].data == plaintext
 
 
-def _ntlm_test(client, server, test_session_key=True):
+def _ntlm_test(client: spnego.ContextProxy, server: spnego.ContextProxy, test_session_key: bool = True) -> None:
     assert not client.complete
     assert not server.complete
 
@@ -305,16 +307,19 @@ def test_negotiate_with_raw_ntlm(ntlm_cred):
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
     negotiate = c.step()
+    assert negotiate is not None
     assert negotiate.startswith(b"NTLMSSP\x00\x01")
     assert not c.complete
     assert not s.complete
 
     challenge = s.step(negotiate)
+    assert challenge is not None
     assert challenge.startswith(b"NTLMSSP\x00\x02")
     assert not c.complete
     assert not s.complete
 
     authenticate = c.step(challenge)
+    assert authenticate is not None
     assert authenticate.startswith(b"NTLMSSP\x00\x03")
     assert c.complete
     assert not s.complete
@@ -337,6 +342,7 @@ def test_negotiate_with_ntlm_and_duplicate_response_token(ntlm_cred):
     assert not s.complete
 
     challenge = s.step(negotiate)
+    assert challenge is not None
 
     # Set the mechListMIC to the same value as responseToken in the challenge to replicate the bug this is testing
     neg_token_resp = unpack_token(challenge)
@@ -400,8 +406,8 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
 
     # Build the initial context and assert the defaults.
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm',
-                      context_req=0)
-    s = spnego.server(options=server_opt, protocol='ntlm', context_req=0)
+                      context_req=spnego.ContextReq.none)
+    s = spnego.server(options=server_opt, protocol='ntlm', context_req=spnego.ContextReq.none)
 
     _ntlm_test(c, s)
 
@@ -433,7 +439,7 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
 ])
 def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     # Build the initial context and assert the defaults.
-    kwargs = {
+    kwargs: typing.Dict[str, typing.Any] = {
         'protocol': 'ntlm',
     }
     if cbt:
@@ -483,7 +489,7 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 ])
 def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     # Build the initial context and assert the defaults.
-    kwargs = {
+    kwargs: typing.Dict[str, typing.Any] = {
         'protocol': 'ntlm',
     }
     if cbt:
@@ -519,7 +525,7 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
     ntlm_hashes = f"{lmowfv1(ntlm_cred[1]).hex()}:{ntowfv1(ntlm_cred[1]).hex()}"
     c = spnego.client(ntlm_cred[0], ntlm_hashes,
-                      hostname=socket.gethostname(), options=0, protocol='ntlm')
+                      hostname=socket.gethostname(), options=spnego.NegotiateOptions.none, protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
     _ntlm_test(c, s)
@@ -645,7 +651,7 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     (spnego.NegotiateOptions.use_ntlm, True, None),
 ])
 def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkeypatch, tmp_path):
-    context_kwargs = {}
+    context_kwargs: typing.Dict[str, typing.Any] = {}
     if restrict_tlsv12:
         credssp_context = spnego.tls.default_tls_context(usage="accept")
 
@@ -670,13 +676,13 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     s = spnego.server(protocol='credssp', options=options, **context_kwargs)
 
     assert c.client_principal is None
-    assert c.client_credential is None
+    assert c.get_extra_info('client_credential') is None
     assert c.negotiated_protocol is None
 
     # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
     # For NTLM the auth context will be present after the first exchange of NTLM tokens.
     server_tls_token = None
-    while c._auth_context is None:
+    while c._auth_context is None:  # type: ignore[attr-defined]
         client_tls_token = c.step(server_tls_token)
         assert not c.complete
         assert not s.complete
@@ -706,9 +712,12 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert s.negotiated_protocol == 'ntlm'
 
     domain, username = ntlm_cred[0].split('\\')
-    assert s.client_credential.username == username
-    assert s.client_credential.domain_name == domain
-    assert s.client_credential.password == ntlm_cred[1]
+
+    client_credential = s.get_extra_info('client_credential')
+    assert isinstance(client_credential, TSPasswordCreds)
+    assert client_credential.username == username
+    assert client_credential.domain_name == domain
+    assert client_credential.password == ntlm_cred[1]
 
     _message_test(c, s)
 
@@ -741,7 +750,7 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol='kerberos')
     s_kerb_context = spnego.server(protocol="kerberos")
 
-    client_kwargs = {}
+    client_kwargs: typing.Dict[str, typing.Any] = {}
     if restrict_tlsv12:
         tls_context = spnego.tls.default_tls_context()
 
@@ -783,8 +792,10 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     assert s_kerb_context.negotiated_protocol == 'kerberos'
 
     assert s.client_principal == kerb_cred.user_princ
-    assert s.client_credential.username == kerb_cred.user_princ
-    assert s.client_credential.password == kerb_cred.password('user')
+    client_credential = s.get_extra_info('client_credential')
+    assert isinstance(client_credential, TSPasswordCreds)
+    assert client_credential.username == kerb_cred.user_princ
+    assert client_credential.password == kerb_cred.password('user')
 
     _message_test(c, s)
 
