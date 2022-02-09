@@ -25,7 +25,7 @@ except ImportError:
 
 
 def get_data(name: str) -> bytes:
-    with open(os.path.join(os.path.dirname(__file__), 'data', name), mode='rb') as fd:
+    with open(os.path.join(os.path.dirname(__file__), "data", name), mode="rb") as fd:
         return fd.read()
 
 
@@ -34,8 +34,8 @@ def ntlm_cred(tmpdir, monkeypatch):
     cleanup = None
     try:
         # Use unicode credentials to test out edge cases when dealing with non-ascii chars.
-        username = 'ÜseӜ'
-        password = 'Pӓ$sw0r̈d'
+        username = "ÜseӜ"
+        password = "Pӓ$sw0r̈d"
 
         if HAS_SSPI:
             domain = to_text(socket.gethostname())
@@ -47,11 +47,11 @@ def ntlm_cred(tmpdir, monkeypatch):
             password += clef
 
             buff = {
-                'name': username,
-                'password': password,
-                'priv': win32netcon.USER_PRIV_USER,
-                'comment': 'Test account for pypsnego tests',
-                'flags': win32netcon.UF_NORMAL_ACCOUNT,
+                "name": username,
+                "password": password,
+                "priv": win32netcon.USER_PRIV_USER,
+                "comment": "Test account for pypsnego tests",
+                "flags": win32netcon.UF_NORMAL_ACCOUNT,
             }
             try:
                 win32net.NetUserAdd(None, 1, buff)
@@ -61,8 +61,9 @@ def ntlm_cred(tmpdir, monkeypatch):
 
             def cleanup() -> None:
                 win32net.NetUserDel(None, username)
+
         else:
-            domain = 'Dȫm̈Ąiᴞ'
+            domain = "Dȫm̈Ąiᴞ"
 
             # gss-ntlmssp does a string comparison of the user/domain part using the current process locale settings.
             # To ensure it matches the credentials we specify with the non-ascii chars we need to ensure the locale is
@@ -76,13 +77,13 @@ def ntlm_cred(tmpdir, monkeypatch):
             def cleanup() -> None:
                 locale.setlocale(locale.LC_CTYPE, original_locale)
 
-            locale.setlocale(locale.LC_CTYPE, 'en_US.UTF-8')
+            locale.setlocale(locale.LC_CTYPE, "en_US.UTF-8")
 
-        tmp_creds = os.path.join(to_text(tmpdir), 'pÿspᴞӛgӫ TÈ$''.creds')
-        with open(tmp_creds, mode='wb') as fd:
-            fd.write(to_bytes('%s:%s:%s' % (domain, username, password)))
+        tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
+        with open(tmp_creds, mode="wb") as fd:
+            fd.write(to_bytes("%s:%s:%s" % (domain, username, password)))
 
-        monkeypatch.setenv('NTLM_USER_FILE', to_text(tmp_creds))
+        monkeypatch.setenv("NTLM_USER_FILE", to_text(tmp_creds))
 
         yield "%s\\%s" % (domain, username), password
 

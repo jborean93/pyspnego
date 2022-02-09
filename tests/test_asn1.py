@@ -13,20 +13,21 @@ import spnego._asn1 as asn1
 ASN1_TAG_TESTS = [
     # Simple universal
     (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00", b"\x04\x01\x00"),
-
     # Constructed value
     (asn1.TagClass.universal, True, asn1.TypeTagNumber.octet_string, b"\x00\x00", b"\x24\x02\x00\x00"),
-
     # Large tag number
     (asn1.TagClass.application, True, 1024, b"\x00\x00", b"\x7F\x88\x00\x02\x00\x00"),
     (asn1.TagClass.application, True, 1048576, b"\x00\x00", b"\x7F\xC0\x80\x00\x02\x00\x00"),
-
     # Long length
     (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 127, b"\x04\x7F" + (b"\x00" * 127)),
-    (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 128,
-     b"\x04\x81\x80" + (b"\x00" * 128)),
-    (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 1024,
-     b"\x04\x82\x04\x00" + (b"\x00" * 1024)),
+    (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 128, b"\x04\x81\x80" + (b"\x00" * 128)),
+    (
+        asn1.TagClass.universal,
+        False,
+        asn1.TypeTagNumber.octet_string,
+        b"\x00" * 1024,
+        b"\x04\x82\x04\x00" + (b"\x00" * 1024),
+    ),
 ]
 
 # openssl asn1parse -genstr 'INTEGER:<val>' -out test && hexdump -C test && rm test
@@ -63,9 +64,9 @@ INTEGER_TESTS = [  # INTEGER has weird rules that I don't fully understand, use 
 ]
 
 OID_TESTS = [
-    ('1.2', b'\x06\x01\x2A'),
-    ('1.2.3', b'\x06\x02\x2A\x03'),
-    ('1.2.3.1024.2', b'\x06\x05\x2A\x03\x88\x00\x02'),
+    ("1.2", b"\x06\x01\x2A"),
+    ("1.2.3", b"\x06\x02\x2A\x03"),
+    ("1.2.3.1024.2", b"\x06\x05\x2A\x03\x88\x00\x02"),
 ]
 
 
@@ -73,99 +74,122 @@ def test_tag_class_native_labels():
     actual = asn1.TagClass.native_labels()
 
     assert isinstance(actual, dict)
-    assert actual[asn1.TagClass.universal] == 'Universal'
+    assert actual[asn1.TagClass.universal] == "Universal"
 
 
 def test_type_tag_number_native_labels():
     actual = asn1.TypeTagNumber.native_labels()
 
     assert isinstance(actual, dict)
-    assert actual[asn1.TypeTagNumber.end_of_content] == 'End-of-Content (EOC)'
+    assert actual[asn1.TypeTagNumber.end_of_content] == "End-of-Content (EOC)"
 
 
-@pytest.mark.parametrize('value, tag_class, tag_number, expected', [
-    (asn1.unpack_asn1(asn1.pack_asn1_octet_string(b"\x00\x01"))[0], asn1.TagClass.universal,
-     asn1.TypeTagNumber.octet_string, b"\x00\x01"),
-    (b"\x00\x01", asn1.TagClass.universal, asn1.TypeTagNumber.octet_string, b"\x00\x01"),
-    (asn1.ASN1Value(asn1.TagClass.application, True, 1023, b"\x00"), asn1.TagClass.application, 1023, b"\x00"),
-])
+@pytest.mark.parametrize(
+    "value, tag_class, tag_number, expected",
+    [
+        (
+            asn1.unpack_asn1(asn1.pack_asn1_octet_string(b"\x00\x01"))[0],
+            asn1.TagClass.universal,
+            asn1.TypeTagNumber.octet_string,
+            b"\x00\x01",
+        ),
+        (b"\x00\x01", asn1.TagClass.universal, asn1.TypeTagNumber.octet_string, b"\x00\x01"),
+        (asn1.ASN1Value(asn1.TagClass.application, True, 1023, b"\x00"), asn1.TagClass.application, 1023, b"\x00"),
+    ],
+)
 def test_extract_asn1_tlv(value, tag_class, tag_number, expected):
     actual = asn1.extract_asn1_tlv(value, tag_class, tag_number)
     assert actual == expected
 
 
 def test_extract_asn1_tlv_invalid_universal_class():
-    expected = "Invalid ASN.1 OCTET STRING tags, actual tag class TagClass.universal and tag number " \
-               "TypeTagNumber.integer"
+    expected = (
+        "Invalid ASN.1 OCTET STRING tags, actual tag class TagClass.universal and tag number " "TypeTagNumber.integer"
+    )
     with pytest.raises(ValueError, match=re.escape(expected)):
-        asn1.extract_asn1_tlv(asn1.ASN1Value(asn1.TagClass.universal, False, asn1.TypeTagNumber.integer, b"\x01"),
-                              asn1.TagClass.universal, asn1.TypeTagNumber.octet_string)
+        asn1.extract_asn1_tlv(
+            asn1.ASN1Value(asn1.TagClass.universal, False, asn1.TypeTagNumber.integer, b"\x01"),
+            asn1.TagClass.universal,
+            asn1.TypeTagNumber.octet_string,
+        )
 
 
 def test_extract_asn1_invalid_other_class():
-    expected = "Invalid ASN.1 tags, actual tag TagClass.application and number 1024, expecting class " \
-               "TagClass.application and number 512"
+    expected = (
+        "Invalid ASN.1 tags, actual tag TagClass.application and number 1024, expecting class "
+        "TagClass.application and number 512"
+    )
     with pytest.raises(ValueError, match=re.escape(expected)):
-        asn1.extract_asn1_tlv(asn1.ASN1Value(asn1.TagClass.application, True, 1024, b"\x01"),
-                              asn1.TagClass.application, 512)
+        asn1.extract_asn1_tlv(
+            asn1.ASN1Value(asn1.TagClass.application, True, 1024, b"\x01"), asn1.TagClass.application, 512
+        )
 
 
 def test_get_sequence_value():
-    input_sequence = asn1.pack_asn1_sequence([asn1.pack_asn1(asn1.TagClass.context_specific, True, 1,
-                                                             asn1.pack_asn1_integer(1))])
+    input_sequence = asn1.pack_asn1_sequence(
+        [asn1.pack_asn1(asn1.TagClass.context_specific, True, 1, asn1.pack_asn1_integer(1))]
+    )
     output_sequence = asn1.unpack_asn1_tagged_sequence(asn1.unpack_asn1(input_sequence)[0])
 
-    actual = asn1.get_sequence_value(output_sequence, 1, 'Structure', 'field-name', asn1.unpack_asn1_integer)
+    actual = asn1.get_sequence_value(output_sequence, 1, "Structure", "field-name", asn1.unpack_asn1_integer)
     assert actual == 1
 
 
 def test_get_sequence_value_raw():
-    input_sequence = asn1.pack_asn1_sequence([asn1.pack_asn1(asn1.TagClass.context_specific, True, 1,
-                                                             asn1.pack_asn1_integer(1))])
+    input_sequence = asn1.pack_asn1_sequence(
+        [asn1.pack_asn1(asn1.TagClass.context_specific, True, 1, asn1.pack_asn1_integer(1))]
+    )
     output_sequence = asn1.unpack_asn1_tagged_sequence(asn1.unpack_asn1(input_sequence)[0])
 
-    actual = asn1.get_sequence_value(output_sequence, 1, 'Structure')
-    assert actual == asn1.ASN1Value(asn1.TagClass.universal, False, asn1.TypeTagNumber.integer, b'\x01')
+    actual = asn1.get_sequence_value(output_sequence, 1, "Structure")
+    assert actual == asn1.ASN1Value(asn1.TagClass.universal, False, asn1.TypeTagNumber.integer, b"\x01")
 
 
 def test_get_sequence_value_no_tag():
-    input_sequence = asn1.pack_asn1_sequence([asn1.pack_asn1(asn1.TagClass.context_specific, True, 1,
-                                                             asn1.pack_asn1_integer(1))])
+    input_sequence = asn1.pack_asn1_sequence(
+        [asn1.pack_asn1(asn1.TagClass.context_specific, True, 1, asn1.pack_asn1_integer(1))]
+    )
     output_sequence = asn1.unpack_asn1_tagged_sequence(asn1.unpack_asn1(input_sequence)[0])
 
-    actual = asn1.get_sequence_value(output_sequence, 2, 'Structure')
+    actual = asn1.get_sequence_value(output_sequence, 2, "Structure")
     assert actual is None
 
 
 def test_get_sequence_value_failure_with_field_name():
-    input_sequence = asn1.pack_asn1_sequence([asn1.pack_asn1(asn1.TagClass.context_specific, True, 1,
-                                                             asn1.pack_asn1_integer(1))])
+    input_sequence = asn1.pack_asn1_sequence(
+        [asn1.pack_asn1(asn1.TagClass.context_specific, True, 1, asn1.pack_asn1_integer(1))]
+    )
     output_sequence = asn1.unpack_asn1_tagged_sequence(asn1.unpack_asn1(input_sequence)[0])
 
-    expected = "Failed unpacking field-name in Structure: Invalid ASN.1 OCTET STRING tags, actual tag class " \
-               "TagClass.universal and tag number TypeTagNumber.integer"
+    expected = (
+        "Failed unpacking field-name in Structure: Invalid ASN.1 OCTET STRING tags, actual tag class "
+        "TagClass.universal and tag number TypeTagNumber.integer"
+    )
     with pytest.raises(ValueError, match=re.escape(expected)):
-        asn1.get_sequence_value(output_sequence, 1, 'Structure', 'field-name', asn1.unpack_asn1_octet_string)
+        asn1.get_sequence_value(output_sequence, 1, "Structure", "field-name", asn1.unpack_asn1_octet_string)
 
 
 def test_get_sequence_value_failure_without_field_name():
-    input_sequence = asn1.pack_asn1_sequence([asn1.pack_asn1(asn1.TagClass.context_specific, True, 1,
-                                                             asn1.pack_asn1_integer(1))])
+    input_sequence = asn1.pack_asn1_sequence(
+        [asn1.pack_asn1(asn1.TagClass.context_specific, True, 1, asn1.pack_asn1_integer(1))]
+    )
     output_sequence = asn1.unpack_asn1_tagged_sequence(asn1.unpack_asn1(input_sequence)[0])
 
-    expected = "Failed unpacking Structure: Invalid ASN.1 OCTET STRING tags, actual tag class " \
-               "TagClass.universal and tag number TypeTagNumber.integer"
+    expected = (
+        "Failed unpacking Structure: Invalid ASN.1 OCTET STRING tags, actual tag class "
+        "TagClass.universal and tag number TypeTagNumber.integer"
+    )
     with pytest.raises(ValueError, match=re.escape(expected)):
-        asn1.get_sequence_value(output_sequence, 1, 'Structure', unpack_func=asn1.unpack_asn1_octet_string)
+        asn1.get_sequence_value(output_sequence, 1, "Structure", unpack_func=asn1.unpack_asn1_octet_string)
 
 
-@pytest.mark.parametrize('tag_class, constructed, tag_number, data, expected', ASN1_TAG_TESTS)
+@pytest.mark.parametrize("tag_class, constructed, tag_number, data, expected", ASN1_TAG_TESTS)
 def test_pack_asn1_tlv(tag_class, constructed, tag_number, data, expected):
     actual = asn1.pack_asn1(tag_class, constructed, tag_number, data)
     assert actual == expected
 
 
-@pytest.mark.parametrize('tag_class, constructed, tag_number, data, value', ASN1_TAG_TESTS)
+@pytest.mark.parametrize("tag_class, constructed, tag_number, data, value", ASN1_TAG_TESTS)
 def test_unpack_asn1_tlv(tag_class, constructed, tag_number, data, value):
     actual = asn1.unpack_asn1(value)
 
@@ -173,7 +197,7 @@ def test_unpack_asn1_tlv(tag_class, constructed, tag_number, data, value):
     assert actual[0].constructed == constructed
     assert actual[0].tag_number == tag_number
     assert actual[0].b_data == data
-    assert actual[1] == b''
+    assert actual[1] == b""
 
 
 def test_unpack_asn1_tlv_remaining_data():
@@ -197,10 +221,13 @@ def test_pack_asn1_bit_string():
     assert actual == b"\x03\x03\x00\x01\x01"
 
 
-@pytest.mark.parametrize('value, expected', [
-    (b"\x03\x03\x00\x01\x01", b"\x01\x01"),
-    (b"\x03\x03\x01\x01\x01", b"\x01\x00"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (b"\x03\x03\x00\x01\x01", b"\x01\x01"),
+        (b"\x03\x03\x01\x01\x01", b"\x01\x00"),
+    ],
+)
 def test_unpack_asn1_bit_string(value, expected):
     actual = asn1.unpack_asn1_bit_string(value[2:])
     assert actual == expected
@@ -210,7 +237,7 @@ def test_unpack_asn1_bit_string(value, expected):
 
 
 def test_pack_asn1_general_string():
-    actual = asn1.pack_asn1_general_string('cafe')
+    actual = asn1.pack_asn1_general_string("cafe")
     assert actual == b"\x1B\x04\x63\x61\x66\x65"
 
 
@@ -231,7 +258,7 @@ def test_unpack_asn1_enumerated():
 
 
 def test_pack_asn1_general_string_encoding():
-    actual = asn1.pack_asn1_general_string('café', encoding='utf-8')
+    actual = asn1.pack_asn1_general_string("café", encoding="utf-8")
     assert actual == b"\x1B\x05\x63\x61\x66\xC3\xA9"
 
 
@@ -246,7 +273,7 @@ def test_unpack_asn1_general_string():
     assert actual == expected
 
 
-@pytest.mark.parametrize('value, expected', INTEGER_TESTS)
+@pytest.mark.parametrize("value, expected", INTEGER_TESTS)
 def test_pack_asn1_integer(value, expected):
     actual = asn1.pack_asn1_integer(value)
     assert actual == expected
@@ -255,7 +282,7 @@ def test_pack_asn1_integer(value, expected):
     assert actual_untagged == expected[2:]
 
 
-@pytest.mark.parametrize('expected, value', INTEGER_TESTS)
+@pytest.mark.parametrize("expected, value", INTEGER_TESTS)
 def test_unpack_asn1_integer(expected, value):
     asn1_value = asn1.unpack_asn1(value)[0]
     actual = asn1.unpack_asn1_integer(asn1_value)
@@ -265,7 +292,7 @@ def test_unpack_asn1_integer(expected, value):
     assert actual == expected
 
 
-@pytest.mark.parametrize('value, expected', OID_TESTS)
+@pytest.mark.parametrize("value, expected", OID_TESTS)
 def test_pack_object_identifier(value, expected):
     actual = asn1.pack_asn1_object_identifier(value)
     assert actual == expected
@@ -274,10 +301,10 @@ def test_pack_object_identifier(value, expected):
 def test_pack_object_identifier_invalid_value():
     expected = "An OID must have 2 or more elements split by '.'"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        asn1.pack_asn1_object_identifier('1')
+        asn1.pack_asn1_object_identifier("1")
 
 
-@pytest.mark.parametrize('expected, value', OID_TESTS)
+@pytest.mark.parametrize("expected, value", OID_TESTS)
 def test_unpack_object_identifier(expected, value):
     asn1_value = asn1.unpack_asn1(value)[0]
     actual = asn1.unpack_asn1_object_identifier(asn1_value)
@@ -332,11 +359,14 @@ def test_unpack_asn1_octet_string():
     assert actual == expected
 
 
-@pytest.mark.parametrize('value, expected', [
-    (b"\x00", False),
-    (b"\x01", True),
-    (b"\x02", True),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (b"\x00", False),
+        (b"\x01", True),
+        (b"\x02", True),
+    ],
+)
 def test_unpack_asn1_boolean(value, expected):
     actual = asn1.unpack_asn1_boolean(value)
     assert actual == expected
@@ -345,10 +375,13 @@ def test_unpack_asn1_boolean(value, expected):
     assert actual == expected
 
 
-@pytest.mark.parametrize('value', [
-    b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x5A",
-    b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x2E\x30\x30\x30\x30\x30\x30\x5A",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x5A",
+        b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x2E\x30\x30\x30\x30\x30\x30\x5A",
+    ],
+)
 def test_unpack_asn1_generalized_time(value):
     expected = datetime.datetime.fromtimestamp(0, tz=datetime.timezone.utc)
 

@@ -53,6 +53,7 @@ class CredSSPTLSContext:
             acceptor this is the public key bytes for the generated cert in the
             TLS context.
     """
+
     context: ssl.SSLContext
     public_key: typing.Optional[bytes] = None
 
@@ -101,10 +102,9 @@ def default_tls_context(
         setattr(ctx, "minimum_version", tls_version.TLSv1_2)
 
     else:
-        ctx.options |= ssl.Options.OP_NO_SSLv2 | \
-            ssl.Options.OP_NO_SSLv3 | \
-            ssl.Options.OP_NO_TLSv1 | \
-            ssl.Options.OP_NO_TLSv1_1
+        ctx.options |= (
+            ssl.Options.OP_NO_SSLv2 | ssl.Options.OP_NO_SSLv3 | ssl.Options.OP_NO_TLSv1 | ssl.Options.OP_NO_TLSv1_1
+        )
 
     return CredSSPTLSContext(context=ctx)
 
@@ -123,25 +123,26 @@ def generate_tls_certificate() -> typing.Tuple[bytes, bytes, bytes]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
 
     # socket.getfqdn() can block for a few seconds if DNS is not set up properly.
-    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, 'CREDSSP-%s' % platform.node())])
+    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "CREDSSP-%s" % platform.node())])
 
     now = datetime.datetime.utcnow()
     cert = (
         x509.CertificateBuilder()
-            .subject_name(name)
-            .issuer_name(name)
-            .public_key(key.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(now)
-            .not_valid_after(now + datetime.timedelta(days=365))
-            .sign(key, hashes.SHA256(), default_backend())
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .sign(key, hashes.SHA256(), default_backend())
     )
     cert_pem = cert.public_bytes(encoding=serialization.Encoding.PEM)
-    key_pem = key.private_bytes(encoding=serialization.Encoding.PEM,
-                                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                                encryption_algorithm=serialization.NoEncryption())
-    public_key = cert.public_key().public_bytes(serialization.Encoding.DER,
-                                                serialization.PublicFormat.PKCS1)
+    key_pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_key = cert.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.PKCS1)
 
     return cert_pem, key_pem, public_key
 

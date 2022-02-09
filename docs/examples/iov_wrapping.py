@@ -12,7 +12,7 @@ def exchange_data(data: bytes) -> bytes:
 
 
 def main() -> None:
-    client = spnego.client('username', 'password', hostname='server')
+    client = spnego.client("username", "password", hostname="server")
 
     in_token = None
     while client.complete:
@@ -24,11 +24,13 @@ def main() -> None:
 
     print("Negotiated protocol: %s" % client.negotiated_protocol)
 
-    enc_result = client.wrap_iov([
-        spnego.iov.BufferType.header,
-        b"my secret",
-        spnego.iov.BufferType.padding,
-    ])
+    enc_result = client.wrap_iov(
+        [
+            spnego.iov.BufferType.header,
+            b"my secret",
+            spnego.iov.BufferType.padding,
+        ]
+    )
 
     header = enc_result.buffers[0].data or b""
     enc_data = enc_result.buffers[1].data or b""
@@ -37,17 +39,19 @@ def main() -> None:
 
     resp = exchange_data(enc_payload)
     header_len = struct.unpack("<I", resp[:4])[0]
-    header = resp[4:4 + header_len]
-    enc_data = resp[4 + header_len:]
+    header = resp[4 : 4 + header_len]
+    enc_data = resp[4 + header_len :]
 
-    dec_result = client.unwrap_iov([
-        spnego.iov.IOVBuffer(spnego.iov.BufferType.header, header),
-        enc_data,
-    ])
+    dec_result = client.unwrap_iov(
+        [
+            spnego.iov.IOVBuffer(spnego.iov.BufferType.header, header),
+            enc_data,
+        ]
+    )
     dec_data = dec_result.buffers[1].data or b""
 
-    print("Server response: %s" % dec_data.decode('utf-8'))
+    print("Server response: %s" % dec_data.decode("utf-8"))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

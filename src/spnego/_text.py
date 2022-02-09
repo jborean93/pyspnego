@@ -23,46 +23,46 @@ def _obj_str(
 
 def to_bytes(
     obj: typing.Any,
-    encoding: str = 'utf-8',
-    errors: str = 'strict',
-    nonstring: str = 'str',
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    nonstring: str = "str",
 ) -> typing.Any:
     if isinstance(obj, bytes):
         return obj
     elif isinstance(obj, str):
         return obj.encode(encoding, errors)
 
-    if nonstring == 'str':
+    if nonstring == "str":
         return to_bytes(_obj_str(obj, ""), encoding=encoding, errors=errors)
-    elif nonstring == 'passthru':
+    elif nonstring == "passthru":
         return obj
-    elif nonstring == 'empty':
-        return b''
+    elif nonstring == "empty":
+        return b""
     else:
         raise ValueError("Invalid nonstring value '%s', expecting str, passthru, or empty" % nonstring)
 
 
 def to_text(
     obj: typing.Any,
-    encoding: str = 'utf-8',
-    errors: str = 'strict',
-    nonstring: str = 'str',
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    nonstring: str = "str",
 ) -> typing.Any:
     if isinstance(obj, str):
         return obj
     elif isinstance(obj, bytes):
         return obj.decode(encoding, errors)
 
-    if nonstring == 'str':
+    if nonstring == "str":
         try:
             obj = obj.__unicode__()
         except (AttributeError, UnicodeError):
             obj = _obj_str(obj, "")
 
         return to_text(obj, errors=errors, encoding=encoding)
-    elif nonstring == 'passthru':
+    elif nonstring == "passthru":
         return obj
-    elif nonstring == 'empty':
-        return ''
+    elif nonstring == "empty":
+        return ""
     else:
         raise ValueError("Invalid nonstring value '%s', expecting repr, passthru, or empty" % nonstring)

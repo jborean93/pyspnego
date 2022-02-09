@@ -18,11 +18,11 @@ except NameError:
 
 
 class NativeError(Exception):
-    """ Stub for a native error that can be used to generate a SpnegoError from a known platform native code. """
+    """Stub for a native error that can be used to generate a SpnegoError from a known platform native code."""
 
     def __init__(self, msg: str, **kwargs: typing.Any) -> None:
         self.msg = msg
-        for key in ['maj_code', 'winerror']:
+        for key in ["maj_code", "winerror"]:
             if key in kwargs:
                 setattr(self, key, kwargs[key])
 
@@ -81,6 +81,7 @@ class NegotiateOptions(enum.IntFlag):
     .. _gss-ntlmssp:
         https://github.com/gssapi/gss-ntlmssp
     """
+
     none = 0x00000000
 
     # Force a specific provider
@@ -96,7 +97,6 @@ class NegotiateOptions(enum.IntFlag):
 
 
 class FeatureMissingError(Exception):
-
     @property
     def feature_id(self) -> NegotiateOptions:
         return self.args[0]
@@ -104,18 +104,14 @@ class FeatureMissingError(Exception):
     @property
     def message(self) -> str:
         msg = {
-            NegotiateOptions.negotiate_kerberos: 'The Python gssapi library is not installed so Kerberos cannot be '
-                                                 'negotiated.',
-
-            NegotiateOptions.wrapping_iov: 'The system is missing the GSSAPI IOV extension headers or NTLM or CredSSP '
-                                           'is being requested, cannot utilize wrap_iov and unwrap_iov',
-
-            NegotiateOptions.wrapping_winrm: 'The system is missing the GSSAPI IOV extension headers required for '
-                                             'WinRM encryption with Kerberos.',
-
-            NegotiateOptions.session_key: 'The protocol selected does not support getting the session key.',
-
-        }.get(self.feature_id, 'Unknown option flag: %d' % self.feature_id)
+            NegotiateOptions.negotiate_kerberos: "The Python gssapi library is not installed so Kerberos cannot be "
+            "negotiated.",
+            NegotiateOptions.wrapping_iov: "The system is missing the GSSAPI IOV extension headers or NTLM or CredSSP "
+            "is being requested, cannot utilize wrap_iov and unwrap_iov",
+            NegotiateOptions.wrapping_winrm: "The system is missing the GSSAPI IOV extension headers required for "
+            "WinRM encryption with Kerberos.",
+            NegotiateOptions.session_key: "The protocol selected does not support getting the session key.",
+        }.get(self.feature_id, "Unknown option flag: %d" % self.feature_id)
 
         return msg
 
@@ -132,6 +128,7 @@ class ErrorCode(enum.IntEnum):
     .. _GSS major error codes:
         https://docs.oracle.com/cd/E19683-01/816-1331/reference-4/index.html
     """
+
     bad_mech = 1  # BadMechanismError
     bad_name = 2  # BadNameError
     # bad_nametype = 3  # No equivalent in SSPI, shouldn't happen in our code as well.
@@ -165,13 +162,13 @@ class _SpnegoErrorRegistry(type):
         **kwargs: typing.Any,
     ) -> None:
         # Load up the registry with the instantiated class so we can look it up when creating a SpnegoError.
-        error_code = getattr(cls, 'ERROR_CODE', None)
+        error_code = getattr(cls, "ERROR_CODE", None)
 
         if error_code is not None and error_code not in cls.__registry:
             cls.__registry[error_code] = cls
 
         # Map the system error codes to the common spnego error code.
-        for system_attr, mapping in [('_GSSAPI_CODE', cls.__gssapi_map), ('_SSPI_CODE', cls.__sspi_map)]:
+        for system_attr, mapping in [("_GSSAPI_CODE", cls.__gssapi_map), ("_SSPI_CODE", cls.__sspi_map)]:
             codes = getattr(cls, system_attr, None)
 
             if codes is None:
@@ -190,16 +187,16 @@ class _SpnegoErrorRegistry(type):
         *args: typing.Any,
         **kwargs: typing.Any,
     ) -> "_SpnegoErrorRegistry":
-        error_code = error_code if error_code is not None else getattr(cls, 'ERROR_CODE', None)
+        error_code = error_code if error_code is not None else getattr(cls, "ERROR_CODE", None)
 
         if error_code is None:
             if not base_error:
                 raise ValueError("%s requires either an error_code or base_error" % cls.__name__)
 
             # GSSError
-            maj_code = getattr(base_error, 'maj_code', None)
+            maj_code = getattr(base_error, "maj_code", None)
             # WindowsError
-            winerror = getattr(base_error, 'winerror', None)
+            winerror = getattr(base_error, "winerror", None)
 
             if maj_code is not None:
                 error_code = cls.__gssapi_map.get(maj_code, None)
@@ -208,15 +205,18 @@ class _SpnegoErrorRegistry(type):
                 error_code = cls.__sspi_map.get(winerror, None)
 
             else:
-                raise ValueError("base_error of type '%s' is not supported, must be a gssapi.exceptions.GSSError or "
-                                 "WindowsError" % type(base_error).__name__)
+                raise ValueError(
+                    "base_error of type '%s' is not supported, must be a gssapi.exceptions.GSSError or "
+                    "WindowsError" % type(base_error).__name__
+                )
 
         new_cls = cls.__registry.get(error_code or 0, cls)
         return super(_SpnegoErrorRegistry, new_cls).__call__(
             error_code,  # type: ignore[arg-type] # I cannot understand this, seems to be bug?
             base_error,
             *args,
-            **kwargs)
+            **kwargs,
+        )
 
 
 class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
@@ -260,8 +260,8 @@ class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
 
     @property
     def nt_status(self) -> int:
-        """ The Windows NT Status code that represents this error. """
-        codes = getattr(self, '_SSPI_CODE', self._error_code) or 0xFFFFFFFF
+        """The Windows NT Status code that represents this error."""
+        codes = getattr(self, "_SSPI_CODE", self._error_code) or 0xFFFFFFFF
         return codes[0] if isinstance(codes, (list, tuple)) else codes
 
     @property
@@ -272,7 +272,7 @@ class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
             base_message = str(self.base_error)
 
         else:
-            base_message = getattr(self, '_BASE_MESSAGE', 'Unknown error code')
+            base_message = getattr(self, "_BASE_MESSAGE", "Unknown error code")
 
         msg = "SpnegoError (%d): %s" % (error_code, base_message)
         if self._context_message:

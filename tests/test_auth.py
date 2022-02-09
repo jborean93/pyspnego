@@ -81,7 +81,7 @@ def _message_test(client: spnego.ContextProxy, server: spnego.ContextProxy) -> N
     client.verify(plaintext, s_sig)
 
     # Can only continue if we are not testing Kerberos, or we are testing Kerberos and GSSAPI is available.
-    if client.negotiated_protocol == 'kerberos' and not client.iov_available():
+    if client.negotiated_protocol == "kerberos" and not client.iov_available():
         return
 
     plaintext = os.urandom(16)
@@ -105,7 +105,7 @@ def _message_test(client: spnego.ContextProxy, server: spnego.ContextProxy) -> N
     assert c_winrm_unwrap_result == plaintext
 
     # Can only continue if using Kerberos auth and IOV is available
-    if client.negotiated_protocol == 'ntlm' or not client.iov_available():
+    if client.negotiated_protocol == "ntlm" or not client.iov_available():
         return
 
     plaintext = os.urandom(16)
@@ -176,37 +176,39 @@ def _ntlm_test(client: spnego.ContextProxy, server: spnego.ContextProxy, test_se
     assert client.complete
     assert server.complete
 
-    assert client.negotiated_protocol == 'ntlm'
-    assert server.negotiated_protocol == 'ntlm'
+    assert client.negotiated_protocol == "ntlm"
+    assert server.negotiated_protocol == "ntlm"
 
 
 def test_invalid_protocol():
     expected = "Invalid protocol specified 'fake', must be kerberos, negotiate, or ntlm"
 
     with pytest.raises(ValueError, match=expected):
-        spnego.client(None, None, protocol='fake')
+        spnego.client(None, None, protocol="fake")
 
     with pytest.raises(ValueError, match=expected):
-        spnego.server(protocol='fake')
+        spnego.server(protocol="fake")
 
 
 def test_protocol_not_supported():
     with pytest.raises(ValueError, match="Protocol kerberos is not available"):
-        spnego.client(None, None, protocol='kerberos', options=spnego.NegotiateOptions.use_ntlm)
+        spnego.client(None, None, protocol="kerberos", options=spnego.NegotiateOptions.use_ntlm)
 
 
 # Negotiate scenarios
+
 
 def test_negotiate_with_kerberos(kerb_cred):
     if kerb_cred.provider == "heimdal":
         pytest.skip("Environment problem with Heimdal - skip")
 
-    c = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(),
-                      options=spnego.NegotiateOptions.use_negotiate)
+    c = spnego.client(
+        kerb_cred.user_princ, None, hostname=socket.getfqdn(), options=spnego.NegotiateOptions.use_negotiate
+    )
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     token1 = c.step()
     assert isinstance(token1, bytes)
@@ -218,8 +220,8 @@ def test_negotiate_with_kerberos(kerb_cred):
     assert token3 is None
 
     # Make sure it reports the right protocol
-    assert c.negotiated_protocol == 'kerberos'
-    assert s.negotiated_protocol == 'kerberos'
+    assert c.negotiated_protocol == "kerberos"
+    assert s.negotiated_protocol == "kerberos"
 
     assert isinstance(c.session_key, bytes)
     assert isinstance(s.session_key, bytes)
@@ -234,38 +236,46 @@ def test_negotiate_with_kerberos(kerb_cred):
     _message_test(c, s)
 
 
-@pytest.mark.parametrize('client_opt, server_opt', [
-    (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_negotiate),
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_negotiate),
-    (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_gssapi),
-    # Cannot seem to force SSPI to wrap NTLM solely in SPNEGO, skip this test for now.
-    # (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_negotiate),
-    (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_sspi),
-])
+@pytest.mark.parametrize(
+    "client_opt, server_opt",
+    [
+        (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_negotiate),
+        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_negotiate),
+        (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_gssapi),
+        # Cannot seem to force SSPI to wrap NTLM solely in SPNEGO, skip this test for now.
+        # (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_negotiate),
+        (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_sspi),
+    ],
+)
 def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkeypatch):
     if client_opt & spnego.NegotiateOptions.use_negotiate and server_opt & spnego.NegotiateOptions.use_negotiate:
         # Make sure we pretend that the system libraries aren't available
         def available_protocols(*args, **kwargs):
             return []
 
-        monkeypatch.setattr(spnego._gss, '_available_protocols', available_protocols)
-        monkeypatch.setattr(spnego._sspi, '_available_protocols', available_protocols)
+        monkeypatch.setattr(spnego._gss, "_available_protocols", available_protocols)
+        monkeypatch.setattr(spnego._sspi, "_available_protocols", available_protocols)
 
     elif client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
-            pytest.skip('Test requires NTLM to be available through GSSAPI')
+        if "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols():
+            pytest.skip("Test requires NTLM to be available through GSSAPI")
 
     elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
-            pytest.skip('Test requires NTLM to be available through SSPI')
+        if "ntlm" not in spnego._sspi.SSPIProxy.available_protocols():
+            pytest.skip("Test requires NTLM to be available through SSPI")
 
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='negotiate', options=client_opt,
-                      context_req=spnego.ContextReq.delegate | spnego.ContextReq.default)
-    s = spnego.server(protocol='negotiate', options=server_opt)
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        protocol="negotiate",
+        options=client_opt,
+        context_req=spnego.ContextReq.delegate | spnego.ContextReq.default,
+    )
+    s = spnego.server(protocol="negotiate", options=server_opt)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     assert not c.complete
     assert not s.complete
@@ -302,18 +312,18 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
     assert mech_list_resp is None
     assert c.complete
     assert s.complete
-    assert c.negotiated_protocol == 'ntlm'
-    assert s.negotiated_protocol == 'ntlm'
+    assert c.negotiated_protocol == "ntlm"
+    assert s.negotiated_protocol == "ntlm"
 
     _message_test(c, s)
 
 
 def test_negotiate_with_raw_ntlm(ntlm_cred):
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm')
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="ntlm")
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     negotiate = c.step()
     assert negotiate is not None
@@ -342,12 +352,13 @@ def test_negotiate_with_raw_ntlm(ntlm_cred):
 
 
 def test_negotiate_with_ntlm_and_duplicate_response_token(ntlm_cred):
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
-                      options=spnego.NegotiateOptions.use_negotiate)
+    c = spnego.client(
+        ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=spnego.NegotiateOptions.use_negotiate
+    )
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     negotiate = c.step()
     assert not c.complete
@@ -383,17 +394,18 @@ def test_negotiate_with_ntlm_and_duplicate_response_token(ntlm_cred):
 
 # NTLM scenarios
 
-@pytest.mark.parametrize('lm_compat_level', [None, 0, 1, 2])
+
+@pytest.mark.parametrize("lm_compat_level", [None, 0, 1, 2])
 def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
     if lm_compat_level is not None:
-        monkeypatch.setenv('LM_COMPAT_LEVEL', str(lm_compat_level))
+        monkeypatch.setenv("LM_COMPAT_LEVEL", str(lm_compat_level))
 
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
-    s = spnego.server(protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol="ntlm", options=spnego.NegotiateOptions.use_ntlm)
+    s = spnego.server(protocol="ntlm", options=spnego.NegotiateOptions.use_ntlm)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     _ntlm_test(c, s)
 
@@ -403,29 +415,38 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
     _message_test(c, s)
 
 
-@pytest.mark.parametrize('client_opt, server_opt', [
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi),
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_ntlm),
-    # Cannot test with gssapi as the existing version has a bug with this scenario.
-])
+@pytest.mark.parametrize(
+    "client_opt, server_opt",
+    [
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_ntlm),
+        # Cannot test with gssapi as the existing version has a bug with this scenario.
+    ],
+)
 def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     if client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
-        if 'ntlm' not in spnego._gss.GSSAPIProxy.available_protocols():
-            pytest.skip('Test requires NTLM to be available through GSSAPI')
+        if "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols():
+            pytest.skip("Test requires NTLM to be available through GSSAPI")
 
     elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
-        if 'ntlm' not in spnego._sspi.SSPIProxy.available_protocols():
-            pytest.skip('Test requires NTLM to be available through SSPI')
+        if "ntlm" not in spnego._sspi.SSPIProxy.available_protocols():
+            pytest.skip("Test requires NTLM to be available through SSPI")
 
     # Build the initial context and assert the defaults.
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm',
-                      context_req=spnego.ContextReq.none)
-    s = spnego.server(options=server_opt, protocol='ntlm', context_req=spnego.ContextReq.none)
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        hostname=socket.gethostname(),
+        options=client_opt,
+        protocol="ntlm",
+        context_req=spnego.ContextReq.none,
+    )
+    s = spnego.server(options=server_opt, protocol="ntlm", context_req=spnego.ContextReq.none)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     _ntlm_test(c, s)
 
@@ -445,32 +466,37 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     c.verify(plaintext, s_sig)
 
 
-@pytest.mark.skipif('ntlm' not in spnego._gss.GSSAPIProxy.available_protocols(),
-                    reason='Test requires NTLM to be available through GSSAPI')
-@pytest.mark.parametrize('client_opt, server_opt, cbt', [
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, False),
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, True),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, False),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, True),
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, False),
-    (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, True),
-])
+@pytest.mark.skipif(
+    "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols(),
+    reason="Test requires NTLM to be available through GSSAPI",
+)
+@pytest.mark.parametrize(
+    "client_opt, server_opt, cbt",
+    [
+        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, False),
+        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, True),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, False),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, True),
+        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, False),
+        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, True),
+    ],
+)
 def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     # Build the initial context and assert the defaults.
     kwargs: typing.Dict[str, typing.Any] = {
-        'protocol': 'ntlm',
+        "protocol": "ntlm",
     }
     if cbt:
-        kwargs['channel_bindings'] = spnego.channel_bindings.GssChannelBindings(application_data=b'test_data:\x00\x01')
+        kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=client_opt, **kwargs)
     s = spnego.server(options=server_opt, **kwargs)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = 'ntlm' in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
 
     assert c.client_principal is None
@@ -479,20 +505,27 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego._gss.GSSAPIProxy.available_protocols(),
-                    reason='Test requires NTLM to be available through GSSAPI')
-@pytest.mark.parametrize('lm_compat_level', [0, 1, 2, 3])
+@pytest.mark.skipif(
+    "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols(),
+    reason="Test requires NTLM to be available through GSSAPI",
+)
+@pytest.mark.parametrize("lm_compat_level", [0, 1, 2, 3])
 def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
-    monkeypatch.setenv('LM_COMPAT_LEVEL', str(lm_compat_level))
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
-                      options=spnego.NegotiateOptions.use_ntlm)
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='ntlm')
+    monkeypatch.setenv("LM_COMPAT_LEVEL", str(lm_compat_level))
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        hostname=socket.gethostname(),
+        protocol="ntlm",
+        options=spnego.NegotiateOptions.use_ntlm,
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="ntlm")
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = 'ntlm' in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
 
     assert c.client_principal is None
@@ -501,28 +534,32 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(),
-                    reason='Test requires NTLM to be available through SSPI')
-@pytest.mark.parametrize('client_opt, server_opt, cbt', [
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, False),
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, True),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, False),
-    (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, True),
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, False),
-    (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True),
-])
+@pytest.mark.skipif(
+    "ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Test requires NTLM to be available through SSPI"
+)
+@pytest.mark.parametrize(
+    "client_opt, server_opt, cbt",
+    [
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, True),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, False),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, True),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True),
+    ],
+)
 def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     # Build the initial context and assert the defaults.
     kwargs: typing.Dict[str, typing.Any] = {
-        'protocol': 'ntlm',
+        "protocol": "ntlm",
     }
     if cbt:
-        kwargs['channel_bindings'] = spnego.channel_bindings.GssChannelBindings(application_data=b'test_data:\x00\x01')
+        kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, **kwargs)
     s = spnego.server(options=server_opt, **kwargs)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     _ntlm_test(c, s)
 
@@ -532,17 +569,23 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     _message_test(c, s)
 
 
-@pytest.mark.skipif('ntlm' not in spnego._sspi.SSPIProxy.available_protocols(),
-                    reason='Test requires NTLM to be available through SSPI')
-@pytest.mark.parametrize('lm_compat_level', [1, 2, 3])
+@pytest.mark.skipif(
+    "ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Test requires NTLM to be available through SSPI"
+)
+@pytest.mark.parametrize("lm_compat_level", [1, 2, 3])
 def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
-    monkeypatch.setenv('LM_COMPAT_LEVEL', str(lm_compat_level))
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
-                      options=spnego.NegotiateOptions.use_ntlm)
-    s = spnego.server(options=spnego.NegotiateOptions.use_sspi, protocol='ntlm')
+    monkeypatch.setenv("LM_COMPAT_LEVEL", str(lm_compat_level))
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        hostname=socket.gethostname(),
+        protocol="ntlm",
+        options=spnego.NegotiateOptions.use_ntlm,
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_sspi, protocol="ntlm")
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     _ntlm_test(c, s)
 
@@ -554,12 +597,13 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 
 def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
     ntlm_hashes = f"{lmowfv1(ntlm_cred[1]).hex()}:{ntowfv1(ntlm_cred[1]).hex()}"
-    c = spnego.client(ntlm_cred[0], ntlm_hashes,
-                      hostname=socket.gethostname(), options=spnego.NegotiateOptions.none, protocol='ntlm')
-    s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+    c = spnego.client(
+        ntlm_cred[0], ntlm_hashes, hostname=socket.gethostname(), options=spnego.NegotiateOptions.none, protocol="ntlm"
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol="ntlm")
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     _ntlm_test(c, s)
 
@@ -571,7 +615,8 @@ def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
 
 # Kerberos scenarios
 
-@pytest.mark.parametrize('explicit_user', [False, True])
+
+@pytest.mark.parametrize("explicit_user", [False, True])
 def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     if kerb_cred.provider == "heimdal":
         pytest.skip("Environment problem with Heimdal - skip")
@@ -580,12 +625,13 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     if explicit_user:
         username = kerb_cred.user_princ
 
-    c = spnego.client(username, None, hostname=socket.getfqdn(), protocol='kerberos',
-                      options=spnego.NegotiateOptions.use_gssapi)
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+    c = spnego.client(
+        username, None, hostname=socket.getfqdn(), protocol="kerberos", options=spnego.NegotiateOptions.use_gssapi
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="kerberos")
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     assert not c.complete
     assert not s.complete
@@ -607,7 +653,7 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     assert isinstance(token2, bytes)
     assert not c.complete
     assert s.complete
-    assert s.negotiated_protocol == 'kerberos'
+    assert s.negotiated_protocol == "kerberos"
 
     token3 = c.step(token2)
     assert token3 is None
@@ -623,7 +669,7 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     _message_test(c, s)
 
 
-@pytest.mark.parametrize('acquire_cred_from', [False, True])
+@pytest.mark.parametrize("acquire_cred_from", [False, True])
 def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkeypatch):
     if kerb_cred.provider == "heimdal":
         pytest.skip("Environment problem with Heimdal - skip")
@@ -632,12 +678,18 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
         monkeypatch.delattr("gssapi.raw.acquire_cred_from")
 
     context_req = spnego.ContextReq.default | spnego.ContextReq.delegate
-    c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), hostname=socket.getfqdn(), protocol='kerberos',
-                      options=spnego.NegotiateOptions.use_gssapi, context_req=context_req)
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+    c = spnego.client(
+        kerb_cred.user_princ,
+        kerb_cred.password("user"),
+        hostname=socket.getfqdn(),
+        protocol="kerberos",
+        options=spnego.NegotiateOptions.use_gssapi,
+        context_req=context_req,
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="kerberos")
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
 
     assert not c.complete
     assert not s.complete
@@ -659,7 +711,7 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     assert isinstance(token2, bytes)
     assert not c.complete
     assert s.complete
-    assert s.negotiated_protocol == 'kerberos'
+    assert s.negotiated_protocol == "kerberos"
 
     token3 = c.step(token2)
     assert token3 is None
@@ -680,15 +732,19 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
 
 # CredSSP scenarios
 
-@pytest.mark.parametrize('options, restrict_tlsv12, version', [
-    (spnego.NegotiateOptions.use_negotiate, False, None),
-    (spnego.NegotiateOptions.use_negotiate, False, 2),
-    (spnego.NegotiateOptions.use_negotiate, True, None),
-    # Using NTLM directly results in a slightly separate behaviour for the pub key.
-    (spnego.NegotiateOptions.use_ntlm, False, None),
-    (spnego.NegotiateOptions.use_ntlm, False, 5),
-    (spnego.NegotiateOptions.use_ntlm, True, None),
-])
+
+@pytest.mark.parametrize(
+    "options, restrict_tlsv12, version",
+    [
+        (spnego.NegotiateOptions.use_negotiate, False, None),
+        (spnego.NegotiateOptions.use_negotiate, False, 2),
+        (spnego.NegotiateOptions.use_negotiate, True, None),
+        # Using NTLM directly results in a slightly separate behaviour for the pub key.
+        (spnego.NegotiateOptions.use_ntlm, False, None),
+        (spnego.NegotiateOptions.use_ntlm, False, 5),
+        (spnego.NegotiateOptions.use_ntlm, True, None),
+    ],
+)
 def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkeypatch, tmp_path):
     context_kwargs: typing.Dict[str, typing.Any] = {}
     if restrict_tlsv12:
@@ -711,23 +767,23 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
         context_kwargs["credssp_tls_context"] = credssp_context
 
     if version:
-        monkeypatch.setattr(spnego._credssp, '_CREDSSP_VERSION', version)
+        monkeypatch.setattr(spnego._credssp, "_CREDSSP_VERSION", version)
 
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='credssp', options=options)
-    s = spnego.server(protocol='credssp', options=options, **context_kwargs)
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp", options=options)
+    s = spnego.server(protocol="credssp", options=options, **context_kwargs)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
-    assert c.get_extra_info('client_credentia') is None
-    assert isinstance(c.get_extra_info('sslcontext'), ssl.SSLContext)
-    assert isinstance(c.get_extra_info('ssl_object'), ssl.SSLObject)
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
+    assert c.get_extra_info("client_credentia") is None
+    assert isinstance(c.get_extra_info("sslcontext"), ssl.SSLContext)
+    assert isinstance(c.get_extra_info("ssl_object"), ssl.SSLObject)
 
-    assert s.get_extra_info('client_credentia') is None
-    assert isinstance(s.get_extra_info('sslcontext'), ssl.SSLContext)
-    assert isinstance(s.get_extra_info('ssl_object'), ssl.SSLObject)
+    assert s.get_extra_info("client_credentia") is None
+    assert isinstance(s.get_extra_info("sslcontext"), ssl.SSLContext)
+    assert isinstance(s.get_extra_info("ssl_object"), ssl.SSLObject)
 
     assert c.client_principal is None
-    assert c.get_extra_info('client_credential') is None
+    assert c.get_extra_info("client_credential") is None
     assert c.negotiated_protocol is None
 
     # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
@@ -759,13 +815,13 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert c.complete
     assert s.complete
 
-    assert c.negotiated_protocol == 'ntlm'
-    assert s.negotiated_protocol == 'ntlm'
+    assert c.negotiated_protocol == "ntlm"
+    assert s.negotiated_protocol == "ntlm"
 
-    domain, username = ntlm_cred[0].split('\\')
+    domain, username = ntlm_cred[0].split("\\")
 
-    assert c.get_extra_info('client_credentia') is None
-    client_credential = s.get_extra_info('client_credential')
+    assert c.get_extra_info("client_credentia") is None
+    client_credential = s.get_extra_info("client_credential")
     assert isinstance(client_credential, TSPasswordCreds)
     assert client_credential.username == username
     assert client_credential.domain_name == domain
@@ -794,12 +850,12 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert c_winrm_result == plaintext
 
 
-@pytest.mark.parametrize('restrict_tlsv12', [False, True])
+@pytest.mark.parametrize("restrict_tlsv12", [False, True])
 def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     if kerb_cred.provider == "heimdal":
         pytest.skip("Environment problem with Heimdal - skip")
 
-    c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol='kerberos')
+    c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol="kerberos")
     s_kerb_context = spnego.server(protocol="kerberos")
 
     client_kwargs: typing.Dict[str, typing.Any] = {}
@@ -815,19 +871,24 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
 
         client_kwargs["credssp_tls_context"] = tls_context
 
-    c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), protocol='credssp',
-                      credssp_negotiate_context=c_kerb_context, **client_kwargs)
-    s = spnego.server(protocol='credssp', credssp_negotiate_context=s_kerb_context)
+    c = spnego.client(
+        kerb_cred.user_princ,
+        kerb_cred.password("user"),
+        protocol="credssp",
+        credssp_negotiate_context=c_kerb_context,
+        **client_kwargs,
+    )
+    s = spnego.server(protocol="credssp", credssp_negotiate_context=s_kerb_context)
 
-    assert c.get_extra_info('invalid') is None
-    assert c.get_extra_info('invalid', 'default') == 'default'
-    assert c.get_extra_info('client_credentia') is None
-    assert isinstance(c.get_extra_info('sslcontext'), ssl.SSLContext)
-    assert isinstance(c.get_extra_info('ssl_object'), ssl.SSLObject)
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
+    assert c.get_extra_info("client_credentia") is None
+    assert isinstance(c.get_extra_info("sslcontext"), ssl.SSLContext)
+    assert isinstance(c.get_extra_info("ssl_object"), ssl.SSLObject)
 
-    assert s.get_extra_info('client_credentia') is None
-    assert isinstance(s.get_extra_info('sslcontext'), ssl.SSLContext)
-    assert isinstance(s.get_extra_info('ssl_object'), ssl.SSLObject)
+    assert s.get_extra_info("client_credentia") is None
+    assert isinstance(s.get_extra_info("sslcontext"), ssl.SSLContext)
+    assert isinstance(s.get_extra_info("ssl_object"), ssl.SSLObject)
 
     server_token = None
     while not c_kerb_context.complete:
@@ -850,17 +911,17 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     assert c.complete
     assert s.complete
 
-    assert c.negotiated_protocol == 'kerberos'
-    assert s.negotiated_protocol == 'kerberos'
-    assert c_kerb_context.negotiated_protocol == 'kerberos'
-    assert s_kerb_context.negotiated_protocol == 'kerberos'
+    assert c.negotiated_protocol == "kerberos"
+    assert s.negotiated_protocol == "kerberos"
+    assert c_kerb_context.negotiated_protocol == "kerberos"
+    assert s_kerb_context.negotiated_protocol == "kerberos"
 
     assert s.client_principal == kerb_cred.user_princ
-    assert c.get_extra_info('client_credentia') is None
-    client_credential = s.get_extra_info('client_credential')
+    assert c.get_extra_info("client_credentia") is None
+    client_credential = s.get_extra_info("client_credential")
     assert isinstance(client_credential, TSPasswordCreds)
     assert client_credential.username == kerb_cred.user_princ
-    assert client_credential.password == kerb_cred.password('user')
+    assert client_credential.password == kerb_cred.password("user")
 
     _message_test(c, s)
 

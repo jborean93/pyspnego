@@ -71,11 +71,11 @@ def _get_credential_file() -> typing.Optional[str]:
     Returns:
         Optional[bytes]: The path to the NTLM credential file or None if not set or found.
     """
-    user_file_path = os.environ.get('NTLM_USER_FILE', None)
+    user_file_path = os.environ.get("NTLM_USER_FILE", None)
     if not user_file_path:
         return None
 
-    file_path = to_text(user_file_path, encoding='utf-8')
+    file_path = to_text(user_file_path, encoding="utf-8")
     if os.path.isfile(file_path):
         return file_path
 
@@ -135,7 +135,7 @@ def _get_credential(
         text: str,
     ) -> typing.Iterator[typing.Tuple[str, str, typing.Optional[str], typing.Optional[bytes], typing.Optional[bytes]]]:
         for line in text.splitlines():
-            line_split = line.split(':')
+            line_split = line.split(":")
 
             if len(line_split) == 3:
                 yield line_split[0], line_split[1], line_split[2], None, None
@@ -147,7 +147,7 @@ def _get_credential(
 
                 yield domain_entry or "", user_entry or "", None, lm_entry, nt_entry
 
-    with open(store, mode='rb') as fd:
+    with open(store, mode="rb") as fd:
         cred_text = fd.read().decode()
 
         for line_domain, line_user, line_password, lm_hash, nt_hash in store_lines(cred_text):
@@ -168,8 +168,10 @@ def _get_credential(
                 return domain, username, lm_hash, nt_hash
 
         else:
-            raise SpnegoError(ErrorCode.failure, context_msg="Failed to find any matching credential in "
-                                                             "NTLM_USER_FILE credential store.")
+            raise SpnegoError(
+                ErrorCode.failure,
+                context_msg="Failed to find any matching credential in " "NTLM_USER_FILE credential store.",
+            )
 
 
 def _get_workstation() -> typing.Optional[str]:
@@ -181,8 +183,8 @@ def _get_workstation() -> typing.Optional[str]:
     Returns:
         Optional[str]: The workstation to supply in the NTLM authentication message or None.
     """
-    if 'NETBIOS_COMPUTER_NAME' in os.environ:
-        workstation = os.environ['NETBIOS_COMPUTER_NAME']
+    if "NETBIOS_COMPUTER_NAME" in os.environ:
+        workstation = os.environ["NETBIOS_COMPUTER_NAME"]
 
     else:
         workstation = socket.gethostname().upper()
@@ -192,7 +194,6 @@ def _get_workstation() -> typing.Optional[str]:
 
 
 class _NTLMCredential:
-
     def __init__(
         self,
         domain: typing.Optional[str] = None,
@@ -205,7 +206,7 @@ class _NTLMCredential:
             self.username = username
             self.lm_hash = lmowfv1(password)
             self.nt_hash = ntowfv1(password)
-            self._store = 'explicit'
+            self._store = "explicit"
 
         else:
             self._store = _get_credential_file()
@@ -226,45 +227,49 @@ class NTLMProxy(ContextProxy):
         service: typing.Optional[str] = None,
         channel_bindings: typing.Optional[GssChannelBindings] = None,
         context_req: ContextReq = ContextReq.default,
-        usage: str = 'initiate',
-        protocol: str = 'ntlm',
+        usage: str = "initiate",
+        protocol: str = "ntlm",
         options: NegotiateOptions = NegotiateOptions.none,
         _is_wrapped: bool = False,
         **kwargs: typing.Any,
     ) -> None:
-        super(NTLMProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                        protocol, options, _is_wrapped)
+        super(NTLMProxy, self).__init__(
+            username, password, hostname, service, channel_bindings, context_req, usage, protocol, options, _is_wrapped
+        )
 
         self._complete = False
         self._credential: typing.Optional[_NTLMCredential] = None
 
         # Set the default flags, these might change depending on the LM_COMPAT_LEVEL set.
-        self._context_req = self._context_req | \
-            NegotiateFlags.key_128 | \
-            NegotiateFlags.key_56 | \
-            NegotiateFlags.key_exch | \
-            NegotiateFlags.extended_session_security | \
-            NegotiateFlags.always_sign | \
-            NegotiateFlags.ntlm | \
-            NegotiateFlags.lm_key | \
-            NegotiateFlags.request_target | \
-            NegotiateFlags.oem | \
-            NegotiateFlags.unicode
+        self._context_req = (
+            self._context_req
+            | NegotiateFlags.key_128
+            | NegotiateFlags.key_56
+            | NegotiateFlags.key_exch
+            | NegotiateFlags.extended_session_security
+            | NegotiateFlags.always_sign
+            | NegotiateFlags.ntlm
+            | NegotiateFlags.lm_key
+            | NegotiateFlags.request_target
+            | NegotiateFlags.oem
+            | NegotiateFlags.unicode
+        )
 
         # gss-ntlmssp uses the env var 'LM_COMPAT_LEVEL' to control the NTLM compatibility level. To try and make our
         # NTLM implementation similar in functionality we will also use that behaviour.
         # https://github.com/gssapi/gss-ntlmssp/blob/e498737a96e8832a2cb9141ab1fe51e129185a48/src/gss_ntlmssp.c#L159-L170
         # See the below policy link for more details on what these mean, for now 3 is the sane behaviour.
         # https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-security-lan-manager-authentication-level
-        lm_compat_level = int(os.environ.get('LM_COMPAT_LEVEL', 3))
+        lm_compat_level = int(os.environ.get("LM_COMPAT_LEVEL", 3))
         if lm_compat_level < 0 or lm_compat_level > 5:
-            raise SpnegoError(ErrorCode.failure, context_msg="Invalid LM_COMPAT_LEVEL %d, must be between 0 and 5"
-                                                             % lm_compat_level)
+            raise SpnegoError(
+                ErrorCode.failure, context_msg="Invalid LM_COMPAT_LEVEL %d, must be between 0 and 5" % lm_compat_level
+            )
 
         if lm_compat_level == 0:
             self._context_req &= ~NegotiateFlags.extended_session_security
 
-        if self.usage == 'initiate':
+        if self.usage == "initiate":
             domain, user = split_username(self.username)
             self._credential = _NTLMCredential(domain=domain, username=user, password=self.password)
 
@@ -282,8 +287,9 @@ class NTLMProxy(ContextProxy):
 
             # Make sure that the credential file is set and exists
             if not _get_credential_file():
-                raise OperationNotAvailableError(context_msg="Retrieving NTLM store without NTLM_USER_FILE set to a "
-                                                             "filepath")
+                raise OperationNotAvailableError(
+                    context_msg="Retrieving NTLM store without NTLM_USER_FILE set to a " "filepath"
+                )
 
         self._temp_negotiate: typing.Optional[Negotiate] = None
         self._temp_challenge: typing.Optional[Challenge] = None
@@ -300,7 +306,7 @@ class NTLMProxy(ContextProxy):
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
-        return ['ntlm']
+        return ["ntlm"]
 
     @classmethod
     def iov_available(cls) -> bool:
@@ -308,9 +314,9 @@ class NTLMProxy(ContextProxy):
 
     @property
     def client_principal(self) -> typing.Optional[str]:
-        if self.usage == 'accept' and self.complete and self._credential:
-            domain_part = self._credential.domain + '\\' if self._credential.domain else ''
-            return '%s%s' % (domain_part, self._credential.username)
+        if self.usage == "accept" and self.complete and self._credential:
+            domain_part = self._credential.domain + "\\" if self._credential.domain else ""
+            return "%s%s" % (domain_part, self._credential.username)
 
         return None
 
@@ -320,7 +326,7 @@ class NTLMProxy(ContextProxy):
 
     @property
     def negotiated_protocol(self) -> typing.Optional[str]:
-        return 'ntlm'
+        return "ntlm"
 
     @property
     def session_key(self) -> bytes:
@@ -330,7 +336,7 @@ class NTLMProxy(ContextProxy):
         if not self._is_wrapped:
             log.debug("NTLM step input: %s", base64.b64encode(in_token or b"").decode())
 
-        out_token = getattr(self, '_step_%s' % self.usage)(in_token=in_token)
+        out_token = getattr(self, "_step_%s" % self.usage)(in_token=in_token)
 
         if not self._is_wrapped:
             log.debug("NTLM step output: %s", base64.b64encode(out_token or b"").decode())
@@ -340,7 +346,7 @@ class NTLMProxy(ContextProxy):
             self._temp_negotiate = None
             self._temp_challenge = None
 
-            in_usage = 'accept' if self.usage == 'initiate' else 'initiate'
+            in_usage = "accept" if self.usage == "initiate" else "initiate"
             session_key = self._session_key or b""
             self._sign_key_out = signkey(self._context_attr, session_key, self.usage)
             self._sign_key_in = signkey(self._context_attr, session_key, in_usage)
@@ -368,13 +374,13 @@ class NTLMProxy(ContextProxy):
         # Lots of mypy failures with self._credential, cast it to non Optional as it will always be set here.
         credential = typing.cast(_NTLMCredential, self._credential)
         auth_kwargs: typing.Dict[str, typing.Any] = {
-            'domain_name': credential.domain,
-            'username': credential.username,
+            "domain_name": credential.domain,
+            "username": credential.username,
         }
 
         if challenge.flags & NegotiateFlags.version:
-            auth_kwargs['version'] = Version.get_current()
-            auth_kwargs['workstation'] = _get_workstation()
+            auth_kwargs["version"] = Version.get_current()
+            auth_kwargs["workstation"] = _get_workstation()
 
         nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, credential)
 
@@ -384,11 +390,11 @@ class NTLMProxy(ContextProxy):
 
             if challenge.flags & NegotiateFlags.sign or challenge.flags & NegotiateFlags.seal:
                 self._session_key = os.urandom(16)
-                auth_kwargs['encrypted_session_key'] = rc4k(key_exchange_key, self._session_key)
+                auth_kwargs["encrypted_session_key"] = rc4k(key_exchange_key, self._session_key)
 
             else:
                 self._session_key = key_exchange_key
-                auth_kwargs['encrypted_session_key'] = b"\x00"  # Must be set to some value but this can be anything.
+                auth_kwargs["encrypted_session_key"] = b"\x00"  # Must be set to some value but this can be anything.
 
         else:
             self._session_key = key_exchange_key
@@ -396,8 +402,9 @@ class NTLMProxy(ContextProxy):
         authenticate = Authenticate(challenge.flags, lm_challenge, nt_challenge, **auth_kwargs)
 
         if self._mic_required:
-            authenticate.mic = self._calculate_mic(self._session_key, self._temp_negotiate.pack(), in_token,
-                                                   authenticate.pack())
+            authenticate.mic = self._calculate_mic(
+                self._session_key, self._temp_negotiate.pack(), in_token, authenticate.pack()
+            )
 
         self._context_attr = authenticate.flags
         self._complete = True
@@ -413,18 +420,27 @@ class NTLMProxy(ContextProxy):
             return None
 
     def _step_accept_negotiate(self, token: bytes) -> bytes:
-        """ Process the Negotiate message from the initiator. """
+        """Process the Negotiate message from the initiator."""
         negotiate = Negotiate.unpack(token)
 
-        flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
-            NegotiateFlags.always_sign | NegotiateFlags.target_info | NegotiateFlags.target_type_server
+        flags = (
+            negotiate.flags
+            | NegotiateFlags.request_target
+            | NegotiateFlags.ntlm
+            | NegotiateFlags.always_sign
+            | NegotiateFlags.target_info
+            | NegotiateFlags.target_type_server
+        )
 
         # Make sure either UNICODE or OEM is set, not both.
         if flags & NegotiateFlags.unicode:
             flags &= ~NegotiateFlags.oem
         elif flags & NegotiateFlags.oem == 0:
-            raise SpnegoError(ErrorCode.failure, context_msg="Neither NEGOTIATE_OEM or NEGOTIATE_UNICODE flags were "
-                                                             "set, cannot derive encoding for text fields")
+            raise SpnegoError(
+                ErrorCode.failure,
+                context_msg="Neither NEGOTIATE_OEM or NEGOTIATE_UNICODE flags were "
+                "set, cannot derive encoding for text fields",
+            )
 
         if flags & NegotiateFlags.extended_session_security:
             flags &= ~NegotiateFlags.lm_key
@@ -446,15 +462,16 @@ class NTLMProxy(ContextProxy):
         return challenge.pack()
 
     def _step_accept_authenticate(self, token: bytes) -> None:
-        """ Process the Authenticate message from the initiator. """
+        """Process the Authenticate message from the initiator."""
         negotiate = typing.cast(Negotiate, self._temp_negotiate)
         challenge = typing.cast(Challenge, self._temp_challenge)
         server_challenge = challenge.server_challenge
         auth = Authenticate.unpack(token)
 
         # TODO: Add anonymous user support.
-        if not auth.user_name or (not auth.nt_challenge_response and (not auth.lm_challenge_response or
-                                                                      auth.lm_challenge_response == b"\x00")):
+        if not auth.user_name or (
+            not auth.nt_challenge_response and (not auth.lm_challenge_response or auth.lm_challenge_response == b"\x00")
+        ):
             raise OperationNotAvailableError(context_msg="Anonymous user authentication not implemented")
 
         self._credential = _NTLMCredential(domain=auth.domain_name, username=auth.user_name)
@@ -469,12 +486,14 @@ class NTLMProxy(ContextProxy):
             target_info = nt_challenge.av_pairs
 
             expected_nt, expected_lm, key_exchange_key = compute_response_v2(
-                nt_hash, server_challenge, client_challenge, time, target_info)
+                nt_hash, server_challenge, client_challenge, time, target_info
+            )
 
             if self.channel_bindings:
                 if AvId.channel_bindings not in target_info:
-                    raise BadBindingsError(context_msg="Acceptor bindings specified but not present in initiator "
-                                                       "response")
+                    raise BadBindingsError(
+                        context_msg="Acceptor bindings specified but not present in initiator " "response"
+                    )
 
                 expected_bindings = target_info[AvId.channel_bindings]
                 actual_bindings = md5(self.channel_bindings.pack())
@@ -496,8 +515,13 @@ class NTLMProxy(ContextProxy):
                 client_challenge = (auth.lm_challenge_response or b"\x00" * 8)[:8]
 
             expected_nt, expected_lm, key_exchange_key = compute_response_v1(
-                auth.flags, self._credential.nt_hash, self._credential.lm_hash, server_challenge, client_challenge,
-                no_lm_response=not self._lm)
+                auth.flags,
+                self._credential.nt_hash,
+                self._credential.lm_hash,
+                server_challenge,
+                client_challenge,
+                no_lm_response=not self._lm,
+            )
 
         auth_success = False
 
@@ -510,8 +534,9 @@ class NTLMProxy(ContextProxy):
         if not auth_success:
             raise InvalidTokenError(context_msg="Invalid NTLM response from initiator")
 
-        if auth.flags & NegotiateFlags.key_exch and \
-                (auth.flags & NegotiateFlags.sign or auth.flags & NegotiateFlags.seal):
+        if auth.flags & NegotiateFlags.key_exch and (
+            auth.flags & NegotiateFlags.sign or auth.flags & NegotiateFlags.seal
+        ):
             self._session_key = rc4k(key_exchange_key, auth.encrypted_random_session_key or b"")
 
         else:
@@ -534,8 +559,9 @@ class NTLMProxy(ContextProxy):
         if self.context_attr & ContextReq.integrity == 0 and self.context_attr & ContextReq.confidentiality == 0:
             raise OperationNotAvailableError(context_msg="NTLM wrap without integrity or confidentiality")
 
-        msg, signature = seal(self._context_attr, self._handle_out, self._sign_key_out,  # type: ignore[arg-type]
-                              self._seq_num_out, data)
+        msg, signature = seal(
+            self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out, data  # type: ignore[arg-type]
+        )
 
         return WrapResult(data=signature + msg, encrypted=True)
 
@@ -580,12 +606,14 @@ class NTLMProxy(ContextProxy):
         if qop:
             raise UnsupportedQop(context_msg="Unsupported QoP value %s specified for NTLM" % qop)
 
-        return sign(self._context_attr, self._handle_out, self._sign_key_out,  # type: ignore[arg-type]
-                    self._seq_num_out, data)
+        return sign(
+            self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out, data  # type: ignore[arg-type]
+        )
 
     def verify(self, data: bytes, mic: bytes) -> int:
-        expected_sig = sign(self._context_attr, self._handle_in, self._sign_key_in,  # type: ignore[arg-type]
-                            self._seq_num_in, data)
+        expected_sig = sign(
+            self._context_attr, self._handle_in, self._sign_key_in, self._seq_num_in, data  # type: ignore[arg-type]
+        )
 
         if expected_sig != mic:
             raise BadMICError(context_msg="Invalid Message integrity Check (MIC) detected")
@@ -637,7 +665,7 @@ class NTLMProxy(ContextProxy):
         challenge: bytes,
         authenticate: bytes,
     ) -> bytes:
-        """ Calculates the MIC value for the negotiated context. """
+        """Calculates the MIC value for the negotiated context."""
         return hmac_md5(session_key, negotiate + challenge + authenticate)
 
     def _compute_response(
@@ -645,7 +673,7 @@ class NTLMProxy(ContextProxy):
         challenge: Challenge,
         credential: _NTLMCredential,
     ) -> typing.Tuple[bytes, bytes, bytes]:
-        """ Compute the NT and LM responses and the key exchange key. """
+        """Compute the NT and LM responses and the key exchange key."""
         client_challenge = os.urandom(8)
 
         if self._nt_v2:
@@ -669,7 +697,8 @@ class NTLMProxy(ContextProxy):
 
             ntv2_hash = ntowfv2(credential.username or "", credential.nt_hash, credential.domain)
             nt_challenge, lm_challenge, key_exchange_key = compute_response_v2(
-                ntv2_hash, challenge.server_challenge, client_challenge, time, target_info)
+                ntv2_hash, challenge.server_challenge, client_challenge, time, target_info
+            )
 
             if self._mic_required:
                 lm_challenge = b"\x00" * 24
@@ -677,8 +706,14 @@ class NTLMProxy(ContextProxy):
             return nt_challenge, lm_challenge, key_exchange_key
 
         else:
-            return compute_response_v1(challenge.flags, credential.nt_hash, credential.lm_hash,
-                                       challenge.server_challenge, client_challenge, no_lm_response=not self._lm)
+            return compute_response_v1(
+                challenge.flags,
+                credential.nt_hash,
+                credential.lm_hash,
+                challenge.server_challenge,
+                client_challenge,
+                no_lm_response=not self._lm,
+            )
 
     def _reset_ntlm_crypto_state(self, outgoing: bool = True) -> None:
         direction = "out" if outgoing else "in"

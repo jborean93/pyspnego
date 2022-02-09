@@ -9,13 +9,7 @@ from spnego._ntlm_raw.messages import NegotiateFlags
 from spnego.exceptions import OperationNotAvailableError
 
 
-def seal(
-    flags: int,
-    handle: RC4Handle,
-    signing_key: bytes,
-    seq_num: int,
-    b_data: bytes
-) -> typing.Tuple[bytes, bytes]:
+def seal(flags: int, handle: RC4Handle, signing_key: bytes, seq_num: int, b_data: bytes) -> typing.Tuple[bytes, bytes]:
     """Create a sealed NTLM message.
 
     Creates a sealed NTLM message as documented at `NTLM Message Confidentiality`_.
@@ -132,13 +126,7 @@ def _mac_without_ess(
     return b"\x01\x00\x00\x00" + b"\x00\x00\x00\x00" + checksum + b_seq_num
 
 
-def _mac_with_ess(
-    flags: int,
-    handle: RC4Handle,
-    signing_key: bytes,
-    seq_num: int,
-    b_data: bytes
-) -> bytes:
+def _mac_with_ess(flags: int, handle: RC4Handle, signing_key: bytes, seq_num: int, b_data: bytes) -> bytes:
     """NTLM MAC with Extended Session Security
 
     Generates the NTLM signature when Extended Session Security has been negotiated. The structure of the signature is

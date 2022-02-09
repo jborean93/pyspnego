@@ -9,7 +9,7 @@ import typing
 
 from spnego._text import to_bytes, to_text
 
-ASN1Value = collections.namedtuple('ASN1Value', ['tag_class', 'constructed', 'tag_number', 'b_data'])
+ASN1Value = collections.namedtuple("ASN1Value", ["tag_class", "constructed", "tag_number", "b_data"])
 """A representation of an ASN.1 TLV as a Python object.
 
 Defines the ASN.1 Type Length Value (TLV) values as separate objects for easier parsing. This is returned by
@@ -33,10 +33,10 @@ class TagClass(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["TagClass", str]:
         return {
-            TagClass.universal: 'Universal',
-            TagClass.application: 'Application',
-            TagClass.context_specific: 'Context-specific',
-            TagClass.private: 'Private',
+            TagClass.universal: "Universal",
+            TagClass.application: "Application",
+            TagClass.context_specific: "Context-specific",
+            TagClass.private: "Private",
         }
 
 
@@ -84,43 +84,43 @@ class TypeTagNumber(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict[int, str]:
         return {
-            TypeTagNumber.end_of_content: 'End-of-Content (EOC)',
-            TypeTagNumber.boolean: 'BOOLEAN',
-            TypeTagNumber.integer: 'INTEGER',
-            TypeTagNumber.bit_string: 'BIT STRING',
-            TypeTagNumber.octet_string: 'OCTET STRING',
-            TypeTagNumber.null: 'NULL',
-            TypeTagNumber.object_identifier: 'OBJECT IDENTIFIER',
-            TypeTagNumber.object_descriptor: 'Object Descriptor',
-            TypeTagNumber.external: 'EXTERNAL',
-            TypeTagNumber.real: 'REAL (float)',
-            TypeTagNumber.enumerated: 'ENUMERATED',
-            TypeTagNumber.embedded_pdv: 'EMBEDDED PDV',
-            TypeTagNumber.utf8_string: 'UTF8String',
-            TypeTagNumber.relative_oid: 'RELATIVE-OID',
-            TypeTagNumber.time: 'TIME',
-            TypeTagNumber.reserved: 'RESERVED',
-            TypeTagNumber.sequence: 'SEQUENCE or SEQUENCE OF',
-            TypeTagNumber.set: 'SET or SET OF',
-            TypeTagNumber.numeric_string: 'NumericString',
-            TypeTagNumber.printable_string: 'PrintableString',
-            TypeTagNumber.t61_string: 'T61String',
-            TypeTagNumber.videotex_string: 'VideotexString',
-            TypeTagNumber.ia5_string: 'IA5String',
-            TypeTagNumber.utc_time: 'UTCTime',
-            TypeTagNumber.generalized_time: 'GeneralizedTime',
-            TypeTagNumber.graphic_string: 'GraphicString',
-            TypeTagNumber.visible_string: 'VisibleString',
-            TypeTagNumber.general_string: 'GeneralString',
-            TypeTagNumber.universal_string: 'UniversalString',
-            TypeTagNumber.character_string: 'CHARACTER',
-            TypeTagNumber.bmp_string: 'BMPString',
-            TypeTagNumber.date: 'DATE',
-            TypeTagNumber.time_of_day: 'TIME-OF-DAY',
-            TypeTagNumber.date_time: 'DATE-TIME',
-            TypeTagNumber.duration: 'DURATION',
-            TypeTagNumber.oid_iri: 'OID-IRI',
-            TypeTagNumber.relative_oid_iri: 'RELATIVE-OID-IRI',
+            TypeTagNumber.end_of_content: "End-of-Content (EOC)",
+            TypeTagNumber.boolean: "BOOLEAN",
+            TypeTagNumber.integer: "INTEGER",
+            TypeTagNumber.bit_string: "BIT STRING",
+            TypeTagNumber.octet_string: "OCTET STRING",
+            TypeTagNumber.null: "NULL",
+            TypeTagNumber.object_identifier: "OBJECT IDENTIFIER",
+            TypeTagNumber.object_descriptor: "Object Descriptor",
+            TypeTagNumber.external: "EXTERNAL",
+            TypeTagNumber.real: "REAL (float)",
+            TypeTagNumber.enumerated: "ENUMERATED",
+            TypeTagNumber.embedded_pdv: "EMBEDDED PDV",
+            TypeTagNumber.utf8_string: "UTF8String",
+            TypeTagNumber.relative_oid: "RELATIVE-OID",
+            TypeTagNumber.time: "TIME",
+            TypeTagNumber.reserved: "RESERVED",
+            TypeTagNumber.sequence: "SEQUENCE or SEQUENCE OF",
+            TypeTagNumber.set: "SET or SET OF",
+            TypeTagNumber.numeric_string: "NumericString",
+            TypeTagNumber.printable_string: "PrintableString",
+            TypeTagNumber.t61_string: "T61String",
+            TypeTagNumber.videotex_string: "VideotexString",
+            TypeTagNumber.ia5_string: "IA5String",
+            TypeTagNumber.utc_time: "UTCTime",
+            TypeTagNumber.generalized_time: "GeneralizedTime",
+            TypeTagNumber.graphic_string: "GraphicString",
+            TypeTagNumber.visible_string: "VisibleString",
+            TypeTagNumber.general_string: "GeneralString",
+            TypeTagNumber.universal_string: "UniversalString",
+            TypeTagNumber.character_string: "CHARACTER",
+            TypeTagNumber.bmp_string: "BMPString",
+            TypeTagNumber.date: "DATE",
+            TypeTagNumber.time_of_day: "TIME-OF-DAY",
+            TypeTagNumber.date_time: "DATE-TIME",
+            TypeTagNumber.duration: "DURATION",
+            TypeTagNumber.oid_iri: "OID-IRI",
+            TypeTagNumber.relative_oid_iri: "RELATIVE-OID-IRI",
         }
 
 
@@ -129,16 +129,23 @@ def extract_asn1_tlv(
     tag_class: TagClass,
     tag_number: typing.Union[int, TypeTagNumber],
 ) -> bytes:
-    """ Extract the bytes and validates the existing tag of an ASN.1 value. """
+    """Extract the bytes and validates the existing tag of an ASN.1 value."""
     if isinstance(tlv, ASN1Value):
         if tag_class == TagClass.universal:
-            label_name = TypeTagNumber.native_labels().get(tag_number, 'Unknown tag type')
-            msg = "Invalid ASN.1 %s tags, actual tag class %s and tag number %s" \
-                  % (label_name, tlv.tag_class, tlv.tag_number)
+            label_name = TypeTagNumber.native_labels().get(tag_number, "Unknown tag type")
+            msg = "Invalid ASN.1 %s tags, actual tag class %s and tag number %s" % (
+                label_name,
+                tlv.tag_class,
+                tlv.tag_number,
+            )
 
         else:
-            msg = "Invalid ASN.1 tags, actual tag %s and number %s, expecting class %s and number %s" \
-                  % (tlv.tag_class, tlv.tag_number, tag_class, tag_number)
+            msg = "Invalid ASN.1 tags, actual tag %s and number %s, expecting class %s and number %s" % (
+                tlv.tag_class,
+                tlv.tag_number,
+                tag_class,
+                tag_number,
+            )
 
         if tlv.tag_class != tag_class or tlv.tag_number != tag_number:
             raise ValueError(msg)
@@ -155,7 +162,7 @@ def get_sequence_value(
     field_name: typing.Optional[str] = None,
     unpack_func: typing.Optional[typing.Callable[[typing.Union[bytes, ASN1Value]], typing.Any]] = None,
 ) -> typing.Any:
-    """ Gets an optional tag entry in a tagged sequence will a further unpacking of the value. """
+    """Gets an optional tag entry in a tagged sequence will a further unpacking of the value."""
     if tag not in sequence:
         return
 
@@ -165,7 +172,7 @@ def get_sequence_value(
     try:
         return unpack_func(sequence[tag])
     except ValueError as e:
-        where = '%s in %s' % (field_name, structure_name) if field_name else structure_name
+        where = "%s in %s" % (field_name, structure_name) if field_name else structure_name
         raise ValueError("Failed unpacking %s: %s" % (where, str(e))) from e
 
 
@@ -204,7 +211,7 @@ def pack_asn1(
         raise ValueError("tag_class must be between 0 and 3")
 
     identifier_octets = tag_class << 6
-    identifier_octets |= ((1 if constructed else 0) << 5)
+    identifier_octets |= (1 if constructed else 0) << 5
 
     if tag_number < 31:
         identifier_octets |= tag_number
@@ -258,7 +265,7 @@ def pack_asn1_enumerated(
     value: int,
     tag: bool = True,
 ) -> bytes:
-    """ Packs an int into an ASN.1 ENUMERATED byte value with optional universal tagging. """
+    """Packs an int into an ASN.1 ENUMERATED byte value with optional universal tagging."""
     b_data = pack_asn1_integer(value, tag=False)
     if tag:
         b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.enumerated, b_data)
@@ -269,9 +276,9 @@ def pack_asn1_enumerated(
 def pack_asn1_general_string(
     value: typing.Union[str, bytes],
     tag: bool = True,
-    encoding: str = 'ascii',
+    encoding: str = "ascii",
 ) -> bytes:
-    """ Packs an string value into an ASN.1 GeneralString byte value with optional universal tagging. """
+    """Packs an string value into an ASN.1 GeneralString byte value with optional universal tagging."""
     b_data = to_bytes(value, encoding=encoding)
     if tag:
         b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.general_string, b_data)
@@ -283,10 +290,10 @@ def pack_asn1_integer(
     value: int,
     tag: bool = True,
 ) -> bytes:
-    """ Packs an int value into an ASN.1 INTEGER byte value with optional universal tagging. """
+    """Packs an int value into an ASN.1 INTEGER byte value with optional universal tagging."""
     # Thanks to https://github.com/andrivet/python-asn1 for help with the negative value logic.
     is_negative = False
-    limit = 0x7f
+    limit = 0x7F
     if value < 0:
         value = -value
         is_negative = True
@@ -328,9 +335,9 @@ def pack_asn1_object_identifier(
     oid: str,
     tag: bool = True,
 ) -> bytes:
-    """ Packs an str value into an ASN.1 OBJECT IDENTIFIER byte value with optional universal tagging. """
+    """Packs an str value into an ASN.1 OBJECT IDENTIFIER byte value with optional universal tagging."""
     b_oid = bytearray()
-    oid_split = [int(i) for i in oid.split('.')]
+    oid_split = [int(i) for i in oid.split(".")]
 
     if len(oid_split) < 2:
         raise ValueError("An OID must have 2 or more elements split by '.'")
@@ -352,7 +359,7 @@ def pack_asn1_octet_string(
     b_data: bytes,
     tag: bool = True,
 ) -> bytes:
-    """ Packs an bytes value into an ASN.1 OCTET STRING byte value with optional universal tagging. """
+    """Packs an bytes value into an ASN.1 OCTET STRING byte value with optional universal tagging."""
     if tag:
         b_data = pack_asn1(TagClass.universal, False, TypeTagNumber.octet_string, b_data)
 
@@ -363,7 +370,7 @@ def pack_asn1_sequence(
     sequence: typing.List[bytes],
     tag: bool = True,
 ) -> bytes:
-    """ Packs a list of encoded bytes into an ASN.1 SEQUENCE byte value with optional universal tagging. """
+    """Packs a list of encoded bytes into an ASN.1 SEQUENCE byte value with optional universal tagging."""
     b_data = b"".join(sequence)
     if tag:
         b_data = pack_asn1(TagClass.universal, True, TypeTagNumber.sequence, b_data)
@@ -372,7 +379,7 @@ def pack_asn1_sequence(
 
 
 def _pack_asn1_octet_number(num: int) -> bytes:
-    """ Packs an int number into an ASN.1 integer value that spans multiple octets. """
+    """Packs an int number into an ASN.1 integer value that spans multiple octets."""
     num_octets = bytearray()
 
     while num:
@@ -431,17 +438,21 @@ def unpack_asn1(b_data: bytes) -> typing.Tuple[ASN1Value, bytes]:
         length = 0
 
         for idx in range(1, length_octets):
-            octet_val = struct.unpack("B", b_data[idx:idx + 1])[0]
+            octet_val = struct.unpack("B", b_data[idx : idx + 1])[0]
             length += octet_val << (8 * (length_octets - 1 - idx))
 
-    value = ASN1Value(tag_class=tag_class, constructed=constructed, tag_number=tag_number,
-                      b_data=b_data[length_octets:length_octets + length])
+    value = ASN1Value(
+        tag_class=tag_class,
+        constructed=constructed,
+        tag_number=tag_number,
+        b_data=b_data[length_octets : length_octets + length],
+    )
 
-    return value, b_data[length_octets + length:]
+    return value, b_data[length_octets + length :]
 
 
 def unpack_asn1_bit_string(value: typing.Union[ASN1Value, bytes]) -> bytes:
-    """ Unpacks an ASN.1 BIT STRING value. """
+    """Unpacks an ASN.1 BIT STRING value."""
     b_data = extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.bit_string)
 
     # First octet is the number of unused bits in the last octet from the LSB.
@@ -453,36 +464,36 @@ def unpack_asn1_bit_string(value: typing.Union[ASN1Value, bytes]) -> bytes:
 
 
 def unpack_asn1_boolean(value: typing.Union[ASN1Value, bytes]) -> bool:
-    """ Unpacks an ASN.1 BOOLEAN value. """
+    """Unpacks an ASN.1 BOOLEAN value."""
     b_data = extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.boolean)
 
     return b_data != b"\x00"
 
 
 def unpack_asn1_enumerated(value: typing.Union[ASN1Value, bytes]) -> int:
-    """ Unpacks an ASN.1 ENUMERATED value. """
+    """Unpacks an ASN.1 ENUMERATED value."""
     b_data = extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.enumerated)
 
     return unpack_asn1_integer(b_data)
 
 
 def unpack_asn1_general_string(value: typing.Union[ASN1Value, bytes]) -> bytes:
-    """ Unpacks an ASN.1 GeneralString value. """
+    """Unpacks an ASN.1 GeneralString value."""
     return extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.general_string)
 
 
 def unpack_asn1_generalized_time(value: typing.Union[ASN1Value, bytes]) -> datetime.datetime:
-    """ Unpacks an ASN.1 GeneralizedTime value. """
+    """Unpacks an ASN.1 GeneralizedTime value."""
     data = to_text(extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.generalized_time))
 
     # While ASN.1 can have a timezone encoded, KerberosTime is the only thing we use and it is always in UTC with the
     # Z prefix. We strip out the Z because Python 2 doesn't support the %z identifier and add the UTC tz to the object.
     # https://www.rfc-editor.org/rfc/rfc4120#section-5.2.3
-    if data.endswith('Z'):
+    if data.endswith("Z"):
         data = data[:-1]
 
     err = None
-    for datetime_format in ['%Y%m%d%H%M%S.%f', '%Y%m%d%H%M%S']:
+    for datetime_format in ["%Y%m%d%H%M%S.%f", "%Y%m%d%H%M%S"]:
         try:
             dt = datetime.datetime.strptime(data, datetime_format)
             return dt.replace(tzinfo=datetime.timezone.utc)
@@ -494,7 +505,7 @@ def unpack_asn1_generalized_time(value: typing.Union[ASN1Value, bytes]) -> datet
 
 
 def unpack_asn1_integer(value: typing.Union[ASN1Value, bytes]) -> int:
-    """ Unpacks an ASN.1 INTEGER value. """
+    """Unpacks an ASN.1 INTEGER value."""
     b_int = bytearray(extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.integer))
 
     is_negative = b_int[0] & 0b10000000
@@ -524,7 +535,7 @@ def unpack_asn1_integer(value: typing.Union[ASN1Value, bytes]) -> int:
 
 
 def unpack_asn1_object_identifier(value: typing.Union[ASN1Value, bytes]) -> str:
-    """ Unpacks an ASN.1 OBJECT IDENTIFIER value. """
+    """Unpacks an ASN.1 OBJECT IDENTIFIER value."""
     b_data = extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.object_identifier)
 
     first_element = struct.unpack("B", b_data[:1])[0]
@@ -541,12 +552,12 @@ def unpack_asn1_object_identifier(value: typing.Union[ASN1Value, bytes]) -> str:
 
 
 def unpack_asn1_octet_string(value: typing.Union[ASN1Value, bytes]) -> bytes:
-    """ Unpacks an ASN.1 OCTET STRING value. """
+    """Unpacks an ASN.1 OCTET STRING value."""
     return extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.octet_string)
 
 
 def unpack_asn1_sequence(value: typing.Union[ASN1Value, bytes]) -> typing.List[ASN1Value]:
-    """ Unpacks an ASN.1 SEQUENCE value. """
+    """Unpacks an ASN.1 SEQUENCE value."""
     b_data = extract_asn1_tlv(value, TagClass.universal, TypeTagNumber.sequence)
 
     values = []
@@ -558,16 +569,16 @@ def unpack_asn1_sequence(value: typing.Union[ASN1Value, bytes]) -> typing.List[A
 
 
 def unpack_asn1_tagged_sequence(value: typing.Union[ASN1Value, bytes]) -> typing.Dict[int, ASN1Value]:
-    """ Unpacks an ASN.1 SEQUENCE value as a dictionary. """
+    """Unpacks an ASN.1 SEQUENCE value as a dictionary."""
     return dict([(e.tag_number, unpack_asn1(e.b_data)[0]) for e in unpack_asn1_sequence(value)])
 
 
 def _unpack_asn1_octet_number(b_data: bytes) -> typing.Tuple[int, int]:
-    """ Unpacks an ASN.1 INTEGER value that can span across multiple octets. """
+    """Unpacks an ASN.1 INTEGER value that can span across multiple octets."""
     i = 0
     idx = 0
     while True:
-        element = struct.unpack("B", b_data[idx:idx + 1])[0]
+        element = struct.unpack("B", b_data[idx : idx + 1])[0]
         idx += 1
 
         i = (i << 7) + (element & 0b01111111)

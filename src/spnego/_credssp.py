@@ -57,7 +57,7 @@ log = logging.getLogger(__name__)
 _CREDSSP_VERSION = 6
 _X509_CERTIFICATE: typing.Optional[typing.Tuple[bytes, bytes, bytes]] = None
 
-F = typing.TypeVar('F', bound=typing.Callable[..., typing.Any])
+F = typing.TypeVar("F", bound=typing.Callable[..., typing.Any])
 
 
 def _create_tls_context(
@@ -78,8 +78,8 @@ def _create_tls_context(
         # on Windows as the tempfile requires DELETE share access for that to work.
         temp_dir = tempfile.mkdtemp()
         try:
-            cert_path = os.path.join(temp_dir, 'ca.pem')
-            with open(cert_path, mode='wb') as fd:
+            cert_path = os.path.join(temp_dir, "ca.pem")
+            with open(cert_path, mode="wb") as fd:
                 fd.write(cert_pem)
                 fd.write(key_pem)
 
@@ -109,11 +109,11 @@ def _get_pub_key_auth(
         bytes: The public key authentication value.
     """
     if nonce:
-        direction = b'Client-To-Server' if usage == 'initiate' else b'Server-To-Client'
-        hash_input = (b'CredSSP %s Binding Hash\x00' % direction) + nonce + pub_key
+        direction = b"Client-To-Server" if usage == "initiate" else b"Server-To-Client"
+        hash_input = (b"CredSSP %s Binding Hash\x00" % direction) + nonce + pub_key
         key_auth = hashlib.sha256(hash_input).digest()
 
-    elif usage == 'accept':
+    elif usage == "accept":
         first_byte = struct.unpack("B", pub_key[0:1])[0]
         key_auth = struct.pack("B", first_byte + 1) + pub_key[1:]
 
@@ -152,27 +152,22 @@ def _tls_trailer_length(
     .. _SecPkgContext_StreamSizes:
         https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes
     """
-    if protocol == 'TLSv1.3':
+    if protocol == "TLSv1.3":
         # The 2 cipher suites that MS supports for TLS 1.3 (TLS_AES_*_GCM_SHA*) have a fixed length of 17. This may
         # change in the future but it works for now.
         trailer_length = 17
 
-    elif re.match(r'^.*[-_]GCM[-_][\w\d]*$', cipher_suite):
+    elif re.match(r"^.*[-_]GCM[-_][\w\d]*$", cipher_suite):
         # GCM has a fixed length of 16 bytes
         trailer_length = 16
 
     else:
         # For other cipher suites, trailer size == len(hmac) + len(padding) the padding is the length required by the
         # chosen block cipher.
-        hash_algorithm = cipher_suite.split('-')[-1]
+        hash_algorithm = cipher_suite.split("-")[-1]
 
         # While there are other algorithms, SChannel doesn't support them as of yet so we just keep to this list.
-        hash_length = {
-            'MD5': 16,
-            'SHA': 20,
-            'SHA256': 32,
-            'SHA384': 48
-        }.get(hash_algorithm, 0)
+        hash_length = {"MD5": 16, "SHA": 20, "SHA256": 32, "SHA384": 48}.get(hash_algorithm, 0)
 
         pre_pad_length = data_length + hash_length
         if "RC4" in cipher_suite:
@@ -202,6 +197,7 @@ def _wrap_ssl_error(context: str) -> typing.Callable[[F], F]:
                 raise SpnegoError(error_code=ErrorCode.failure, context_msg="%s: %s" % (context, e)) from e
 
         return typing.cast(F, wrapped)
+
     return decorator
 
 
@@ -228,6 +224,7 @@ class CredSSPProxy(ContextProxy):
             CredSSP exchange. See `spnego.tls` for helper methods to generate
             a custom TLS context.
     """
+
     def __init__(
         self,
         username: typing.Optional[str],
@@ -236,13 +233,14 @@ class CredSSPProxy(ContextProxy):
         service: typing.Optional[str] = None,
         channel_bindings: typing.Optional[GssChannelBindings] = None,
         context_req: ContextReq = ContextReq.default,
-        usage: str = 'initiate',
-        protocol: str = 'credssp',
+        usage: str = "initiate",
+        protocol: str = "credssp",
         options: NegotiateOptions = NegotiateOptions.none,
         **kwargs: typing.Any,
     ) -> None:
-        super(CredSSPProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                           protocol, options, False)
+        super(CredSSPProxy, self).__init__(
+            username, password, hostname, service, channel_bindings, context_req, usage, protocol, options, False
+        )
 
         if options & NegotiateOptions.session_key:
             raise FeatureMissingError(NegotiateOptions.session_key)
@@ -269,12 +267,13 @@ class CredSSPProxy(ContextProxy):
 
         self._in_buff = ssl.MemoryBIO()
         self._out_buff = ssl.MemoryBIO()
-        self._tls_object = self._tls_context.context.wrap_bio(self._in_buff, self._out_buff,
-                                                              server_side=(usage == "accept"))
+        self._tls_object = self._tls_context.context.wrap_bio(
+            self._in_buff, self._out_buff, server_side=(usage == "accept")
+        )
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
-        return ['credssp']
+        return ["credssp"]
 
     @classmethod
     def iov_available(cls) -> bool:
@@ -294,13 +293,13 @@ class CredSSPProxy(ContextProxy):
 
     @property
     def session_key(self) -> bytes:
-        raise OperationNotAvailableError(context_msg='CredSSP does not have a session key to share')
+        raise OperationNotAvailableError(context_msg="CredSSP does not have a session key to share")
 
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
         log.debug("CredSSP step input: %s", to_text(base64.b64encode(in_token or b"")))
 
         if self._step_gen is None:
-            self._step_gen = getattr(self, '_step_%s' % self.usage)(in_token)
+            self._step_gen = getattr(self, "_step_%s" % self.usage)(in_token)
             in_token = None
 
         out_token = None
@@ -316,7 +315,7 @@ class CredSSPProxy(ContextProxy):
         self,
         in_token: typing.Optional[bytes],
     ) -> typing.Generator[bytes, bytes, None]:
-        """ The initiator authentication steps of CredSSP. """
+        """The initiator authentication steps of CredSSP."""
         yield from self._step_tls(in_token)
 
         server_certificate = typing.cast(bytes, self._tls_object.getpeercert(True))
@@ -326,11 +325,12 @@ class CredSSPProxy(ContextProxy):
         if not self._auth_context:
             auth_kwargs: typing.Dict[str, typing.Any] = {}
             if self._hostname:
-                auth_kwargs['hostname'] = self._hostname
+                auth_kwargs["hostname"] = self._hostname
             if self._service:
-                auth_kwargs['service'] = self._service
-            self._auth_context = spnego.client(self.username, self.password, protocol='negotiate',
-                                               options=self._options, **auth_kwargs)
+                auth_kwargs["service"] = self._service
+            self._auth_context = spnego.client(
+                self.username, self.password, protocol="negotiate", options=self._options, **auth_kwargs
+            )
 
         round = 0
         out_token = self._auth_context.step()
@@ -352,9 +352,13 @@ class CredSSPProxy(ContextProxy):
 
         pub_key_nego_token = NegoData(out_token) if out_token else None
         nonce = os.urandom(32) if version > 4 else None
-        pub_value = _get_pub_key_auth(public_key, 'initiate', nonce=nonce)
-        pub_key_request = TSRequest(version=_CREDSSP_VERSION, nego_tokens=pub_key_nego_token, client_nonce=nonce,
-                                    pub_key_auth=self._auth_context.wrap(pub_value).data)
+        pub_value = _get_pub_key_auth(public_key, "initiate", nonce=nonce)
+        pub_key_request = TSRequest(
+            version=_CREDSSP_VERSION,
+            nego_tokens=pub_key_nego_token,
+            client_nonce=nonce,
+            pub_key_auth=self._auth_context.wrap(pub_value).data,
+        )
 
         pub_key_response = yield from self._yield_ts_request(pub_key_request, "Public key exchange")
         if not pub_key_response.pub_key_auth:
@@ -365,12 +369,12 @@ class CredSSPProxy(ContextProxy):
             self._auth_context.step(pub_key_response.nego_tokens[0].nego_token)
 
         response_key = self._auth_context.unwrap(pub_key_response.pub_key_auth).data
-        expected_key = _get_pub_key_auth(public_key, 'accept', nonce=nonce)
+        expected_key = _get_pub_key_auth(public_key, "accept", nonce=nonce)
         if expected_key != response_key:
             raise BadBindingsError(context_msg="Public key verification failed, potential man in the middle attack")
 
         domain, username = split_username(self.username)
-        ts_password = TSPasswordCreds(domain or '', username or '', self.password)
+        ts_password = TSPasswordCreds(domain or "", username or "", self.password)
         enc_credentials = self._auth_context.wrap(TSCredentials(ts_password).pack()).data
 
         credential_request = TSRequest(_CREDSSP_VERSION, auth_info=enc_credentials)
@@ -382,7 +386,7 @@ class CredSSPProxy(ContextProxy):
         self,
         in_token: typing.Optional[bytes],
     ) -> typing.Generator[bytes, bytes, None]:
-        """ The acceptor authentication steps of CredSSP. """
+        """The acceptor authentication steps of CredSSP."""
         in_token = yield from self._step_tls(in_token)
 
         # The version to use as the acceptor should be the smaller of the client and _CREDSSP_VERSION.
@@ -396,10 +400,10 @@ class CredSSPProxy(ContextProxy):
             if not self._auth_context:
                 auth_kwargs: typing.Dict[str, typing.Any] = {}
                 if self._hostname:
-                    auth_kwargs['hostname'] = self._hostname
+                    auth_kwargs["hostname"] = self._hostname
                 if self._service:
-                    auth_kwargs['service'] = self._service
-                self._auth_context = spnego.server(protocol='negotiate', options=self._options, **auth_kwargs)
+                    auth_kwargs["service"] = self._service
+                self._auth_context = spnego.server(protocol="negotiate", options=self._options, **auth_kwargs)
 
             round = 0
             while True:
@@ -426,13 +430,14 @@ class CredSSPProxy(ContextProxy):
 
         actual_key = self._auth_context.unwrap(auth_request.pub_key_auth).data
         public_key = self._tls_context.public_key or b""
-        expected_key = _get_pub_key_auth(public_key, 'initiate', nonce=auth_request.client_nonce)
+        expected_key = _get_pub_key_auth(public_key, "initiate", nonce=auth_request.client_nonce)
         if actual_key != expected_key:
             raise BadBindingsError(context_msg="Public key verification failed, potential man in the middle attack")
 
         nego_token = NegoData(nego_out_token) if nego_out_token else None
-        server_key = self._auth_context.wrap(_get_pub_key_auth(public_key, 'accept',
-                                                               nonce=auth_request.client_nonce)).data
+        server_key = self._auth_context.wrap(
+            _get_pub_key_auth(public_key, "accept", nonce=auth_request.client_nonce)
+        ).data
         pub_key_response = TSRequest(_CREDSSP_VERSION, nego_tokens=nego_token, pub_key_auth=server_key)
         auth_request = yield from self._yield_ts_request(pub_key_response, "Public key exchange")
 
@@ -444,7 +449,7 @@ class CredSSPProxy(ContextProxy):
         self._complete = True
 
     def _step_tls(self, in_token: typing.Optional[bytes]) -> typing.Generator[bytes, bytes, bytes]:
-        """ The TLS handshake phase of CredSSP. """
+        """The TLS handshake phase of CredSSP."""
         try:
             while True:
                 # For an acceptor we start with a token (Client Hello), write this to the memory BIO before processing.
@@ -466,7 +471,7 @@ class CredSSPProxy(ContextProxy):
 
                 # TLSv1.3 acceptor has no more work to be done after SSLWantReadError was not raised and it received
                 # the last token from the user (first authentication token).
-                if not want_read and self.usage == 'accept':
+                if not want_read and self.usage == "accept":
                     out_token = self.unwrap(in_token).data
                     break
 
@@ -482,7 +487,7 @@ class CredSSPProxy(ContextProxy):
         ts_request: TSRequest,
         context_msg: str,
     ) -> typing.Generator[bytes, bytes, TSRequest]:
-        """ Exchanges a TSRequest between the initiator and acceptor. """
+        """Exchanges a TSRequest between the initiator and acceptor."""
         out_request = ts_request.pack()
         log.debug("CredSSP TSRequest output: %s" % to_text(base64.b64encode(out_request)))
         wrapped_response = yield self.wrap(out_request).data
@@ -493,7 +498,7 @@ class CredSSPProxy(ContextProxy):
 
         if response.error_code:
             # The error code is an NtStatus value, try to see if it maps to a known error in our exception map.
-            base_error = NativeError('Received NTStatus in TSRequest from acceptor', winerror=response.error_code)
+            base_error = NativeError("Received NTStatus in TSRequest from acceptor", winerror=response.error_code)
             raise SpnegoError(base_error=base_error, context_msg=context_msg)
 
         return response
@@ -503,13 +508,13 @@ class CredSSPProxy(ContextProxy):
         name: str,
         default: typing.Any = None,
     ) -> typing.Any:
-        if name == 'client_credential' and self._client_credential:
+        if name == "client_credential" and self._client_credential:
             return self._client_credential
 
-        elif name == 'sslcontext':
+        elif name == "sslcontext":
             return self._tls_context.context
 
-        elif name == 'ssl_object':
+        elif name == "ssl_object":
             return self._tls_object
 
         else:

@@ -20,78 +20,92 @@ from spnego.exceptions import (
 from spnego.tls import default_tls_context
 
 
-@pytest.mark.parametrize('expected, usage, nonce', [
-    (b"\x00\x01", 'initiate', None),
-    (b"\x45\x90\xC2\x6C\x83\x7D\xAC\xDF\x3D\xA8\xFA\xE5\x78\x26\x4D\x9E"
-     b"\x45\x48\x6A\xFC\x39\x51\xF2\x1E\xF3\x57\x06\x4C\xD5\x5F\xBB\xB5", 'initiate', b"\x00\x00"),
-    (b"\x01\x01", 'accept', None),
-    (b"\xCD\xF4\xFF\xEE\x6C\xB6\x39\x5E\x5B\x69\x2C\x2D\xA3\x97\x38\x6F"
-     b"\x6A\x1E\xAB\x2D\x3A\x62\x71\x81\x6A\x04\xC7\xA2\x91\x4D\x33\x3F", 'accept', b"\x00\x00"),
-])
+@pytest.mark.parametrize(
+    "expected, usage, nonce",
+    [
+        (b"\x00\x01", "initiate", None),
+        (
+            b"\x45\x90\xC2\x6C\x83\x7D\xAC\xDF\x3D\xA8\xFA\xE5\x78\x26\x4D\x9E"
+            b"\x45\x48\x6A\xFC\x39\x51\xF2\x1E\xF3\x57\x06\x4C\xD5\x5F\xBB\xB5",
+            "initiate",
+            b"\x00\x00",
+        ),
+        (b"\x01\x01", "accept", None),
+        (
+            b"\xCD\xF4\xFF\xEE\x6C\xB6\x39\x5E\x5B\x69\x2C\x2D\xA3\x97\x38\x6F"
+            b"\x6A\x1E\xAB\x2D\x3A\x62\x71\x81\x6A\x04\xC7\xA2\x91\x4D\x33\x3F",
+            "accept",
+            b"\x00\x00",
+        ),
+    ],
+)
 def test_pub_key_auth(expected, usage, nonce):
     actual = credssp._get_pub_key_auth(b"\x00\x01", usage, nonce=nonce)
 
     assert actual == expected
 
 
-@pytest.mark.parametrize('protocol, cipher, expected', [
-    ['TLSv1.3', 'TLS_AES_128_GCM_SHA256', 17],
-    ['TLSv1.3', 'TLS_AES_256_GCM_SHA384', 17],
-    ['TLSv1.2', 'ECDHE-RSA-AES128-GCM-SHA256', 16],
-    ['TLSv1.2', 'RC4-MD5', 16],
-    ['TLSv1.2', 'ECDH-ECDSA-3DES-SHA256', 34],
-    ['TLSv1.2', 'ECDH-RSA-AES-SHA384', 50],
-    ['TLSv1.2', 'ECDH-RSA-AES', 2],
-])
+@pytest.mark.parametrize(
+    "protocol, cipher, expected",
+    [
+        ["TLSv1.3", "TLS_AES_128_GCM_SHA256", 17],
+        ["TLSv1.3", "TLS_AES_256_GCM_SHA384", 17],
+        ["TLSv1.2", "ECDHE-RSA-AES128-GCM-SHA256", 16],
+        ["TLSv1.2", "RC4-MD5", 16],
+        ["TLSv1.2", "ECDH-ECDSA-3DES-SHA256", 34],
+        ["TLSv1.2", "ECDH-RSA-AES-SHA384", 50],
+        ["TLSv1.2", "ECDH-RSA-AES", 2],
+    ],
+)
 def test_get_credssp_trailer_length(protocol, cipher, expected):
     actual = credssp._tls_trailer_length(30, protocol, cipher)
     assert actual == expected
 
 
 def test_credssp_no_iov():
-    assert not credssp.CredSSPProxy('username', 'password').iov_available()
+    assert not credssp.CredSSPProxy("username", "password").iov_available()
 
 
 def test_credssp_no_session_key():
-    with pytest.raises(FeatureMissingError, match='The protocol selected does not support getting the session key'):
-        credssp.CredSSPProxy('user', 'password', options=NegotiateOptions.session_key)
+    with pytest.raises(FeatureMissingError, match="The protocol selected does not support getting the session key"):
+        credssp.CredSSPProxy("user", "password", options=NegotiateOptions.session_key)
 
 
 def test_credssp_fail_getting_session_key():
-    context = credssp.CredSSPProxy('username', 'password')
+    context = credssp.CredSSPProxy("username", "password")
 
-    with pytest.raises(OperationNotAvailableError, match='CredSSP does not have a session key to share'):
+    with pytest.raises(OperationNotAvailableError, match="CredSSP does not have a session key to share"):
         _ = context.session_key
 
 
 def test_credssp_wrap_iov_fail():
-    with pytest.raises(OperationNotAvailableError, match='CredSSP does not offer IOV wrapping'):
-        credssp.CredSSPProxy('username', 'password').wrap_iov([])
+    with pytest.raises(OperationNotAvailableError, match="CredSSP does not offer IOV wrapping"):
+        credssp.CredSSPProxy("username", "password").wrap_iov([])
 
 
 def test_credssp_unwrap_iov_fail():
-    with pytest.raises(OperationNotAvailableError, match='CredSSP does not offer IOV wrapping'):
-        credssp.CredSSPProxy('username', 'password').unwrap_iov([])
+    with pytest.raises(OperationNotAvailableError, match="CredSSP does not offer IOV wrapping"):
+        credssp.CredSSPProxy("username", "password").unwrap_iov([])
 
 
 def test_credssp_sign_fail():
-    with pytest.raises(OperationNotAvailableError, match='CredSSP does not offer signing'):
-        credssp.CredSSPProxy('username', 'password').sign(b'')
+    with pytest.raises(OperationNotAvailableError, match="CredSSP does not offer signing"):
+        credssp.CredSSPProxy("username", "password").sign(b"")
 
 
 def test_credssp_verify_fail():
-    with pytest.raises(OperationNotAvailableError, match='CredSSP does not offer verification'):
-        credssp.CredSSPProxy('username', 'password').verify(b'', b'')
+    with pytest.raises(OperationNotAvailableError, match="CredSSP does not offer verification"):
+        credssp.CredSSPProxy("username", "password").verify(b"", b"")
 
 
 def test_credssp_wrap_no_context():
-    with pytest.raises(SpnegoError, match='Invalid TLS state when wrapping data'):
-        credssp.CredSSPProxy('username', 'password').wrap(b"data")
+    with pytest.raises(SpnegoError, match="Invalid TLS state when wrapping data"):
+        credssp.CredSSPProxy("username", "password").wrap(b"data")
 
 
 def test_credssp_invalid_handshake(ntlm_cred):
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], protocol='credssp')
-    s = credssp.CredSSPProxy(None, None, protocol='credssp', usage='accept')
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, protocol="credssp", usage="accept")
 
     server_hello = s.step(c.step())
     assert server_hello is not None
@@ -106,12 +120,12 @@ def test_credssp_server_without_pub_key():
         credssp.CredSSPProxy("username", "password", usage="accept", credssp_tls_context=context)
 
 
-@pytest.mark.parametrize('version', [2, 5])
+@pytest.mark.parametrize("version", [2, 5])
 def test_credssp_invalid_client_authentication_v2(version, ntlm_cred, monkeypatch):
-    monkeypatch.setattr(credssp, '_CREDSSP_VERSION', version)
+    monkeypatch.setattr(credssp, "_CREDSSP_VERSION", version)
 
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol='credssp')
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol='credssp', usage='accept')
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept")
 
     # Set up the state so the server can send the error code
     server_tls_token = None
@@ -131,12 +145,12 @@ def test_credssp_invalid_client_authentication_v2(version, ntlm_cred, monkeypatc
     assert actual is None
 
 
-@pytest.mark.parametrize('version', [3, 4, 6])
+@pytest.mark.parametrize("version", [3, 4, 6])
 def test_credssp_invalid_client_authentication(version, ntlm_cred, monkeypatch):
-    monkeypatch.setattr(credssp, '_CREDSSP_VERSION', version)
+    monkeypatch.setattr(credssp, "_CREDSSP_VERSION", version)
 
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol='credssp')
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol='credssp', usage='accept')
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept")
 
     # Set up the state so the server can send the error code
     server_tls_token = None
@@ -160,8 +174,8 @@ def test_credssp_invalid_client_authentication(version, ntlm_cred, monkeypatch):
 
 
 def test_credssp_no_pub_key_after_auth(ntlm_cred):
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol='credssp')
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol='credssp', usage='accept')
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept")
 
     server_tls_token = None
     while c._auth_context is None:
@@ -186,10 +200,8 @@ def test_credssp_no_pub_key_after_auth(ntlm_cred):
 
 def test_credssp_pub_key_mismatch_initiator(ntlm_cred):
     options = NegotiateOptions.use_ntlm
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol='credssp',
-                             options=options)
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol='credssp', usage='accept',
-                             options=options)
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp", options=options)
+    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept", options=options)
 
     server_tls_token = None
     while c._auth_context is None:
@@ -219,10 +231,8 @@ def test_credssp_pub_key_mismatch_initiator(ntlm_cred):
 
 def test_credssp_pub_key_mismatch_acceptor(ntlm_cred):
     options = NegotiateOptions.use_ntlm
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol='credssp',
-                             options=options)
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol='credssp', usage='accept',
-                             options=options)
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp", options=options)
+    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept", options=options)
 
     server_tls_token = None
     while c._auth_context is None:
@@ -241,8 +251,9 @@ def test_credssp_pub_key_mismatch_acceptor(ntlm_cred):
     ntlm3 = c._auth_context.step(ntlm2_request.nego_tokens[0].nego_token)
     assert ntlm3 is not None
 
-    request = TSRequest(credssp._CREDSSP_VERSION, nego_tokens=NegoData(ntlm3),
-                        pub_key_auth=c._auth_context.wrap(b"bad").data)
+    request = TSRequest(
+        credssp._CREDSSP_VERSION, nego_tokens=NegoData(ntlm3), pub_key_auth=c._auth_context.wrap(b"bad").data
+    )
 
     with pytest.raises(BadBindingsError, match="Public key verification failed, potential man in the middle attack"):
         s.step(c.wrap(request.pack()).data)
@@ -250,10 +261,8 @@ def test_credssp_pub_key_mismatch_acceptor(ntlm_cred):
 
 def test_credssp_no_credential(ntlm_cred):
     options = NegotiateOptions.use_ntlm
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol='credssp',
-                             options=options)
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol='credssp', usage='accept',
-                             options=options)
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp", options=options)
+    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept", options=options)
 
     server_tls_token = None
     while c._auth_context is None:

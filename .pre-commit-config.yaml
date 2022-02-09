@@ -1,4 +1,9 @@
 repos:
+- repo: https://github.com/psf/black
+  rev: 22.1.0
+  hooks:
+  - id: black
+
 - repo: https://github.com/PyCQA/isort
   rev: 5.10.1
   hooks:
@@ -10,4 +15,5 @@ repos:
   - id: mypy
     exclude: ^setup.py|build/
     additional_dependencies:
+    - ruamel.yaml
     - types-cryptography

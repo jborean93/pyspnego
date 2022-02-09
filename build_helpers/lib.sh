@@ -80,8 +80,8 @@ lib::sanity::run() {
         echo "::group::Running Sanity Checks"
     fi
 
+    python -m black . --check
     python -m isort . --check-only
-    python -m pycodestyle . --verbose --show-source --statistics
     python -m mypy .
 
     if [ x"${GITHUB_ACTIONS}" = "xtrue" ]; then

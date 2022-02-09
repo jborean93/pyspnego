@@ -11,6 +11,7 @@ class BufferType(enum.IntEnum):
     These are the IOVBuffer type flags that can be set for an IOVBuffer. The keys are a generified name for the
     respective SSPI and GSSAPI flags.
     """
+
     empty = 0  # SECBUFFER_EMPTY | GSS_IOV_BUFFER_TYPE_EMPTY
     data = 1  # SECBUFFER_DATA | GSS_IOV_BUFFER_TYPE_DATA
     header = 2  # SECBUFFER_TOKEN | GSS_IOV_BUFFER_TYPE_HEADER
@@ -35,6 +36,7 @@ class IOVBuffer(typing.NamedTuple):
     as an input to the `*_iov` functions the data can be the buffer bytes, the length of buffer to allocate or a bool
     to state whether the buffer is auto allocated or not.
     """
+
     type: BufferType  #: The type of IOV buffer
     data: typing.Optional[typing.Union[bytes, int, bool]]  #: The IOV buffer type.
 
@@ -46,5 +48,6 @@ class IOVResBuffer(typing.NamedTuple):
     optionally set bytes. It is used as the return value of an IOV operation to
     better match what the expected values would be.
     """
+
     type: BufferType
     data: typing.Optional[bytes]

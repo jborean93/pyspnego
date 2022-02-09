@@ -146,13 +146,13 @@ class ContextFlags(enum.IntFlag):
     @classmethod
     def native_labels(cls) -> typing.Dict["ContextFlags", str]:
         return {
-            ContextFlags.deleg: 'delegFlag',
-            ContextFlags.mutual: 'mutualFlag',
-            ContextFlags.replay: 'replayFlag',
-            ContextFlags.sequence: 'sequenceFlag',
-            ContextFlags.anon: 'anonFlag',
-            ContextFlags.conf: 'confFlag',
-            ContextFlags.integ: 'integFlag',
+            ContextFlags.deleg: "delegFlag",
+            ContextFlags.mutual: "mutualFlag",
+            ContextFlags.replay: "replayFlag",
+            ContextFlags.sequence: "sequenceFlag",
+            ContextFlags.anon: "anonFlag",
+            ContextFlags.conf: "confFlag",
+            ContextFlags.integ: "integFlag",
         }
 
 
@@ -166,10 +166,10 @@ class NegState(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["NegState", str]:
         return {
-            NegState.accept_complete: 'accept-complete',
-            NegState.accept_incomplete: 'accept-incomplete',
-            NegState.reject: 'reject',
-            NegState.request_mic: 'request-mic',
+            NegState.accept_complete: "accept-complete",
+            NegState.accept_incomplete: "accept-incomplete",
+            NegState.reject: "reject",
+            NegState.request_mic: "request-mic",
         }
 
 
@@ -226,13 +226,17 @@ class InitialContextToken:
         return unpack_token(self.inner_context_token, mech=mech)
 
     def pack(self) -> bytes:
-        """ Packs the InitialContextToken as a byte string. """
-        return pack_asn1(TagClass.application, True, 0,
-                         pack_asn1_object_identifier(self.this_mech, tag=True) + self.inner_context_token)
+        """Packs the InitialContextToken as a byte string."""
+        return pack_asn1(
+            TagClass.application,
+            True,
+            0,
+            pack_asn1_object_identifier(self.this_mech, tag=True) + self.inner_context_token,
+        )
 
     @staticmethod
     def unpack(b_data: bytes) -> "InitialContextToken":
-        """ Unpacks the InitialContextToken TLV value. """
+        """Unpacks the InitialContextToken TLV value."""
         this_mech, inner_context_token = unpack_asn1(b_data)
         mech = unpack_asn1_object_identifier(this_mech)
 
@@ -323,7 +327,7 @@ class NegTokenInit:
         self.mech_list_mic = mech_list_mic
 
     def pack(self) -> bytes:
-        """ Packs the NegTokenInit as a byte string. """
+        """Packs the NegTokenInit as a byte string."""
 
         def pack_elements(
             value_map: typing.Iterable[typing.Tuple[int, typing.Any, typing.Callable]],
@@ -344,10 +348,12 @@ class NegTokenInit:
 
         # The placement of the mechListMIC is dependent on whether we are packing a NegTokenInit with or without the
         # negHints field.
-        neg_hints = pack_elements([
-            (0, self.hint_name, pack_asn1_general_string),
-            (1, self.hint_address, pack_asn1_octet_string),
-        ])
+        neg_hints = pack_elements(
+            [
+                (0, self.hint_name, pack_asn1_general_string),
+                (1, self.hint_address, pack_asn1_octet_string),
+            ]
+        )
 
         if neg_hints:
             base_map.append((3, neg_hints, pack_asn1_sequence))
@@ -364,20 +370,22 @@ class NegTokenInit:
 
     @staticmethod
     def unpack(b_data: bytes) -> "NegTokenInit":
-        """ Unpacks the NegTokenInit TLV value. """
+        """Unpacks the NegTokenInit TLV value."""
         neg_seq = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
 
-        mech_types = [unpack_asn1_object_identifier(m) for m
-                      in get_sequence_value(neg_seq, 0, 'NegTokenInit', 'mechTypes', unpack_asn1_sequence) or []]
+        mech_types = [
+            unpack_asn1_object_identifier(m)
+            for m in get_sequence_value(neg_seq, 0, "NegTokenInit", "mechTypes", unpack_asn1_sequence) or []
+        ]
 
-        req_flags = get_sequence_value(neg_seq, 1, 'NegTokenInit', 'reqFlags', unpack_asn1_bit_string)
+        req_flags = get_sequence_value(neg_seq, 1, "NegTokenInit", "reqFlags", unpack_asn1_bit_string)
         if req_flags:
             # Can be up to 32 bits in length but RFC 4178 states "Implementations should not expect to receive exactly
             # 32 bits in an encoding of ContextFlags." The spec also documents req flags up to 6 so let's just get the
             # last byte. In reality we shouldn't ever receive this but it's left here for posterity.
             req_flags = ContextFlags(bytearray(req_flags)[-1])
 
-        mech_token = get_sequence_value(neg_seq, 2, 'NegTokenInit', 'mechToken', unpack_asn1_octet_string)
+        mech_token = get_sequence_value(neg_seq, 2, "NegTokenInit", "mechToken", unpack_asn1_octet_string)
 
         hint_name = hint_address = mech_list_mic = None
         if 3 in neg_seq:
@@ -393,15 +401,15 @@ class NegTokenInit:
                 # Windows 2000, 2003, and XP put the SPN encoded as the OEM code page, because there's no sane way
                 # to decode this without prior knowledge a GeneralString stays a byte string in Python.
                 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/211417c4-11ef-46c0-a8fb-f178a51c2088#Appendix_A_5
-                hint_name = get_sequence_value(neg_hints, 0, 'NegHints', 'hintName', unpack_asn1_general_string)
-                hint_address = get_sequence_value(neg_hints, 1, 'NegHints', 'hintAddress', unpack_asn1_octet_string)
+                hint_name = get_sequence_value(neg_hints, 0, "NegHints", "hintName", unpack_asn1_general_string)
+                hint_address = get_sequence_value(neg_hints, 1, "NegHints", "hintAddress", unpack_asn1_octet_string)
 
             else:
                 # Wasn't a sequence, should be mechListMIC.
-                mech_list_mic = get_sequence_value(neg_seq, 3, 'NegTokenInit', 'mechListMIC', unpack_asn1_octet_string)
+                mech_list_mic = get_sequence_value(neg_seq, 3, "NegTokenInit", "mechListMIC", unpack_asn1_octet_string)
 
         if not mech_list_mic:
-            mech_list_mic = get_sequence_value(neg_seq, 4, 'NegTokenInit2', 'mechListMIC', unpack_asn1_octet_string)
+            mech_list_mic = get_sequence_value(neg_seq, 4, "NegTokenInit2", "mechListMIC", unpack_asn1_octet_string)
 
         return NegTokenInit(mech_types, req_flags, mech_token, hint_name, hint_address, mech_list_mic)
 
@@ -458,7 +466,7 @@ class NegTokenResp:
         self.mech_list_mic = mech_list_mic
 
     def pack(self) -> bytes:
-        """ Packs the NegTokenResp as a byte string. """
+        """Packs the NegTokenResp as a byte string."""
         value_map: typing.List[typing.Tuple[int, typing.Any, typing.Callable[[typing.Any], bytes]]] = [
             (0, self.neg_state, pack_asn1_enumerated),
             (1, self.supported_mech, pack_asn1_object_identifier),
@@ -476,15 +484,15 @@ class NegTokenResp:
 
     @staticmethod
     def unpack(b_data: bytes) -> "NegTokenResp":
-        """ Unpacks the NegTokenResp TLV value. """
+        """Unpacks the NegTokenResp TLV value."""
         neg_seq = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
 
-        neg_state = get_sequence_value(neg_seq, 0, 'NegTokenResp', 'negState', unpack_asn1_enumerated)
+        neg_state = get_sequence_value(neg_seq, 0, "NegTokenResp", "negState", unpack_asn1_enumerated)
         if neg_state is not None:
             neg_state = NegState(neg_state)
 
-        supported_mech = get_sequence_value(neg_seq, 1, 'NegTokenResp', 'supportedMech', unpack_asn1_object_identifier)
-        response_token = get_sequence_value(neg_seq, 2, 'NegTokenResp', 'responseToken', unpack_asn1_octet_string)
-        mech_list_mic = get_sequence_value(neg_seq, 3, 'NegTokenResp', 'mechListMIC', unpack_asn1_octet_string)
+        supported_mech = get_sequence_value(neg_seq, 1, "NegTokenResp", "supportedMech", unpack_asn1_object_identifier)
+        response_token = get_sequence_value(neg_seq, 2, "NegTokenResp", "responseToken", unpack_asn1_octet_string)
+        mech_list_mic = get_sequence_value(neg_seq, 3, "NegTokenResp", "mechListMIC", unpack_asn1_octet_string)
 
         return NegTokenResp(neg_state, supported_mech, response_token, mech_list_mic)
