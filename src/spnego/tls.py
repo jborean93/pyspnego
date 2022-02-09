@@ -96,9 +96,11 @@ def default_tls_context(
 
     # The minimum_version field requires OpenSSL 1.1.0g or newer, fallback to the deprecated method of setting the
     # OP_NO_* options.
-    try:
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    except (ValueError, AttributeError):
+    tls_version = getattr(ssl, "TLSVersion", None)
+    if hasattr(ctx, "minimum_version") and tls_version:
+        setattr(ctx, "minimum_version", tls_version.TLSv1_2)
+
+    else:
         ctx.options |= ssl.Options.OP_NO_SSLv2 | \
             ssl.Options.OP_NO_SSLv3 | \
             ssl.Options.OP_NO_TLSv1 | \

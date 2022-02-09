@@ -12,3 +12,4 @@ pytest-mock
 pywin32 ; sys_platform == 'win32'
 ruamel.yaml
 types-cryptography
+types-dataclasses ; python_version < "3.7"

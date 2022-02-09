@@ -205,6 +205,9 @@ def test_negotiate_with_kerberos(kerb_cred):
                       options=spnego.NegotiateOptions.use_negotiate)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     token1 = c.step()
     assert isinstance(token1, bytes)
 
@@ -261,6 +264,9 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
                       context_req=spnego.ContextReq.delegate | spnego.ContextReq.default)
     s = spnego.server(protocol='negotiate', options=server_opt)
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     assert not c.complete
     assert not s.complete
 
@@ -306,6 +312,9 @@ def test_negotiate_with_raw_ntlm(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     negotiate = c.step()
     assert negotiate is not None
     assert negotiate.startswith(b"NTLMSSP\x00\x01")
@@ -336,6 +345,9 @@ def test_negotiate_with_ntlm_and_duplicate_response_token(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(),
                       options=spnego.NegotiateOptions.use_negotiate)
     s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
 
     negotiate = c.step()
     assert not c.complete
@@ -380,6 +392,9 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
     s = spnego.server(protocol='ntlm', options=spnego.NegotiateOptions.use_ntlm)
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     _ntlm_test(c, s)
 
     assert c.client_principal is None
@@ -408,6 +423,9 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, protocol='ntlm',
                       context_req=spnego.ContextReq.none)
     s = spnego.server(options=server_opt, protocol='ntlm', context_req=spnego.ContextReq.none)
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
 
     _ntlm_test(c, s)
 
@@ -448,6 +466,9 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=client_opt, **kwargs)
     s = spnego.server(options=server_opt, **kwargs)
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = 'ntlm' in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
     _ntlm_test(c, s, test_session_key=test_session_key)
@@ -466,6 +487,9 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='ntlm',
                       options=spnego.NegotiateOptions.use_ntlm)
     s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='ntlm')
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
 
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = 'ntlm' in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
@@ -497,6 +521,9 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, **kwargs)
     s = spnego.server(options=server_opt, **kwargs)
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     _ntlm_test(c, s)
 
     assert c.client_principal is None
@@ -514,6 +541,9 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
                       options=spnego.NegotiateOptions.use_ntlm)
     s = spnego.server(options=spnego.NegotiateOptions.use_sspi, protocol='ntlm')
 
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+
     _ntlm_test(c, s)
 
     assert c.client_principal is None
@@ -527,6 +557,9 @@ def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_hashes,
                       hostname=socket.gethostname(), options=spnego.NegotiateOptions.none, protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
 
     _ntlm_test(c, s)
 
@@ -550,6 +583,9 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     c = spnego.client(username, None, hostname=socket.getfqdn(), protocol='kerberos',
                       options=spnego.NegotiateOptions.use_gssapi)
     s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
 
     assert not c.complete
     assert not s.complete
@@ -599,6 +635,9 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), hostname=socket.getfqdn(), protocol='kerberos',
                       options=spnego.NegotiateOptions.use_gssapi, context_req=context_req)
     s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol='kerberos')
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
 
     assert not c.complete
     assert not s.complete
@@ -655,9 +694,11 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     if restrict_tlsv12:
         credssp_context = spnego.tls.default_tls_context(usage="accept")
 
-        try:
-            credssp_context.context.maximum_version = ssl.TLSVersion.TLSv1_2
-        except (ValueError, AttributeError):
+        tls_version = getattr(ssl, "TLSVersion", None)
+        if hasattr(credssp_context.context, "maximum_version") and tls_version:
+            setattr(credssp_context.context, "maximum_version", tls_version.TLSv1_2)
+
+        else:
             credssp_context.context.options |= ssl.Options.OP_NO_TLSv1_3
 
         cert_pem, key_pem, pub_key = spnego.tls.generate_tls_certificate()
@@ -674,6 +715,16 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol='credssp', options=options)
     s = spnego.server(protocol='credssp', options=options, **context_kwargs)
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info('client_credentia') is None
+    assert isinstance(c.get_extra_info('sslcontext'), ssl.SSLContext)
+    assert isinstance(c.get_extra_info('ssl_object'), ssl.SSLObject)
+
+    assert s.get_extra_info('client_credentia') is None
+    assert isinstance(s.get_extra_info('sslcontext'), ssl.SSLContext)
+    assert isinstance(s.get_extra_info('ssl_object'), ssl.SSLObject)
 
     assert c.client_principal is None
     assert c.get_extra_info('client_credential') is None
@@ -713,6 +764,7 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
 
     domain, username = ntlm_cred[0].split('\\')
 
+    assert c.get_extra_info('client_credentia') is None
     client_credential = s.get_extra_info('client_credential')
     assert isinstance(client_credential, TSPasswordCreds)
     assert client_credential.username == username
@@ -754,9 +806,11 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     if restrict_tlsv12:
         tls_context = spnego.tls.default_tls_context()
 
-        try:
-            tls_context.context.maximum_version = ssl.TLSVersion.TLSv1_2
-        except (ValueError, AttributeError):
+        tls_version = getattr(ssl, "TLSVersion", None)
+        if hasattr(tls_context.context, "maximum_version") and tls_version:
+            setattr(tls_context.context, "maximum_version", tls_version.TLSv1_2)
+
+        else:
             tls_context.context.options |= ssl.Options.OP_NO_TLSv1_3
 
         client_kwargs["credssp_tls_context"] = tls_context
@@ -764,6 +818,16 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     c = spnego.client(kerb_cred.user_princ, kerb_cred.password('user'), protocol='credssp',
                       credssp_negotiate_context=c_kerb_context, **client_kwargs)
     s = spnego.server(protocol='credssp', credssp_negotiate_context=s_kerb_context)
+
+    assert c.get_extra_info('invalid') is None
+    assert c.get_extra_info('invalid', 'default') == 'default'
+    assert c.get_extra_info('client_credentia') is None
+    assert isinstance(c.get_extra_info('sslcontext'), ssl.SSLContext)
+    assert isinstance(c.get_extra_info('ssl_object'), ssl.SSLObject)
+
+    assert s.get_extra_info('client_credentia') is None
+    assert isinstance(s.get_extra_info('sslcontext'), ssl.SSLContext)
+    assert isinstance(s.get_extra_info('ssl_object'), ssl.SSLObject)
 
     server_token = None
     while not c_kerb_context.complete:
@@ -792,6 +856,7 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     assert s_kerb_context.negotiated_protocol == 'kerberos'
 
     assert s.client_principal == kerb_cred.user_princ
+    assert c.get_extra_info('client_credentia') is None
     client_credential = s.get_extra_info('client_credential')
     assert isinstance(client_credential, TSPasswordCreds)
     assert client_credential.username == kerb_cred.user_princ
