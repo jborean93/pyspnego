@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
+import typing
 
 import pytest
 
@@ -9,36 +10,36 @@ import spnego._text as text
 
 class Obj:
 
-    def __init__(self, str=None, repr=None):
+    def __init__(self, str: typing.Optional[str] = None, repr: typing.Optional[str] = None) -> None:
         self.str = str
         self.repr = repr
 
-    def __eq__(self, other):
-        return self.str == other.str and self.repr == other.repr
+    def __eq__(self, other: typing.Any) -> bool:
+        return isinstance(other, Obj) and self.str == other.str and self.repr == other.repr
 
-    def __str__(self):
-        return self.str
+    def __str__(self) -> str:
+        return self.str  # type: ignore[return-value] # Testing this scenario
 
-    def __repr__(self):
-        return self.repr
+    def __repr__(self) -> str:
+        return self.repr  # type: ignore[return-value] # Testing this scenario
 
 
 class ObjRepr:
 
-    def __init__(self, repr=None):
+    def __init__(self, repr: typing.Optional[str] = None) -> None:
         self.repr = repr
 
-    def __repr__(self):
-        return self.repr
+    def __repr__(self) -> str:
+        return self.repr  # type: ignore[return-value] # Testing this scenario
 
 
 class ObjUnicodeError:
 
-    def __str__(self):
-        return "café".encode('ascii')
+    def __str__(self) -> str:
+        return "café".encode('ascii')  # type: ignore[return-value] # Testing this scenario
 
-    def __repr__(self):
-        return "café".encode('ascii')
+    def __repr__(self) -> str:
+        return "café".encode('ascii')  # type: ignore[return-value] # Testing this scenario
 
 
 def test_to_bytes_from_bytes():

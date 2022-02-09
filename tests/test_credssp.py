@@ -17,12 +17,7 @@ from spnego.exceptions import (
     OperationNotAvailableError,
     SpnegoError,
 )
-from spnego.tls import (
-    CredSSPTLSContext,
-    default_tls_context,
-    generate_tls_certificate,
-    get_certificate_public_key,
-)
+from spnego.tls import default_tls_context
 
 
 @pytest.mark.parametrize('expected, usage, nonce', [
@@ -99,6 +94,7 @@ def test_credssp_invalid_handshake(ntlm_cred):
     s = credssp.CredSSPProxy(None, None, protocol='credssp', usage='accept')
 
     server_hello = s.step(c.step())
+    assert server_hello is not None
 
     with pytest.raises(InvalidTokenError, match="TLS handshake for CredSSP"):
         c.step(b"\x00" + server_hello)
@@ -153,6 +149,7 @@ def test_credssp_invalid_client_authentication(version, ntlm_cred, monkeypatch):
         assert not c.complete
         assert not s.complete
 
+    assert server_tls_token is not None
     c.unwrap(server_tls_token)
     bad_request = TSRequest(credssp._CREDSSP_VERSION, nego_tokens=NegoData(b"\x00"))
     error_msg = s.step(c.wrap(bad_request.pack()).data)
@@ -179,6 +176,7 @@ def test_credssp_no_pub_key_after_auth(ntlm_cred):
     ntlm3_pub_key = c.step(server_tls_token)
 
     # Send back a TSRequest without the public key.
+    assert ntlm3_pub_key is not None
     s.unwrap(ntlm3_pub_key)
     ts_request = TSRequest(credssp._CREDSSP_VERSION)
 
@@ -205,10 +203,15 @@ def test_credssp_pub_key_mismatch_initiator(ntlm_cred):
 
     ntlm3_pub_key = c.step(server_tls_token)
 
+    s_auth_context = s._auth_context
+    assert s_auth_context is not None
+
     # Send back a TSRequest with a bad pub_key_auth value.
+    assert ntlm3_pub_key is not None
     request = TSRequest.unpack(s.unwrap(ntlm3_pub_key).data)
-    s._auth_context.step(request.nego_tokens[0].nego_token)
-    ts_request = TSRequest(credssp._CREDSSP_VERSION, pub_key_auth=s._auth_context.wrap(b"bad").data)
+    assert request.nego_tokens is not None
+    s_auth_context.step(request.nego_tokens[0].nego_token)
+    ts_request = TSRequest(credssp._CREDSSP_VERSION, pub_key_auth=s_auth_context.wrap(b"bad").data)
 
     with pytest.raises(BadBindingsError, match="Public key verification failed, potential man in the middle attack"):
         c.step(s.wrap(ts_request.pack()).data)
@@ -232,8 +235,11 @@ def test_credssp_pub_key_mismatch_acceptor(ntlm_cred):
         assert not s.complete
 
     # Craft the TSRequest with the NTLMv3 token and invalid pub_key_auth
+    assert server_tls_token is not None
     ntlm2_request = TSRequest.unpack(c.unwrap(server_tls_token).data)
+    assert ntlm2_request.nego_tokens is not None
     ntlm3 = c._auth_context.step(ntlm2_request.nego_tokens[0].nego_token)
+    assert ntlm3 is not None
 
     request = TSRequest(credssp._CREDSSP_VERSION, nego_tokens=NegoData(ntlm3),
                         pub_key_auth=c._auth_context.wrap(b"bad").data)
@@ -260,9 +266,14 @@ def test_credssp_no_credential(ntlm_cred):
         assert not s.complete
 
     ntlm3_pub_key = c.step(server_tls_token)
-    server_pub_key = TSRequest.unpack(c.unwrap(s.step(ntlm3_pub_key)).data)
+    assert ntlm3_pub_key is not None
+
+    pub_key_resp = s.step(ntlm3_pub_key)
+    assert pub_key_resp is not None
+    server_pub_key = TSRequest.unpack(c.unwrap(pub_key_resp).data)
 
     # Unpack the TSRequest properly and craft a TSRequest without a credential
+    assert server_pub_key.pub_key_auth is not None
     c._auth_context.unwrap(server_pub_key.pub_key_auth)
 
     request = TSRequest(credssp._CREDSSP_VERSION)

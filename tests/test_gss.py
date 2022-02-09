@@ -45,7 +45,7 @@ def test_build_iov_list(kerb_cred):
         spnego.iov.BufferType.header,
         spnego.iov.BufferType.stream,
         b"\x02",
-    ])
+    ], c._convert_iov_buffer)
 
     assert len(actual) == 6
     assert actual[0] == (spnego.iov.BufferType.header, False, b"\x01")
@@ -61,7 +61,7 @@ def test_build_iov_list_invalid_tuple(kerb_cred):
 
     expected = "IOV entry tuple must contain 2 values, the type and data, see IOVBuffer."
     with pytest.raises(ValueError, match=expected):
-        c._build_iov_list([(1, 2, 3)])
+        c._build_iov_list([(1, 2, 3)], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
 def test_build_iov_list_invalid_buffer_type(kerb_cred):
@@ -69,7 +69,7 @@ def test_build_iov_list_invalid_buffer_type(kerb_cred):
 
     expected = "IOV entry[0] must specify the BufferType as an int"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([(b"", b"")])
+        c._build_iov_list([(b"", b"")], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
 def test_build_iov_list_invalid_data(kerb_cred):
@@ -77,7 +77,7 @@ def test_build_iov_list_invalid_data(kerb_cred):
 
     expected = "IOV entry[1] must specify the buffer bytes, length of the buffer, or whether it is auto allocated."
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([(1, "data")])
+        c._build_iov_list([(1, "data")], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
 def test_build_iov_list_invalid_value(kerb_cred):
@@ -85,7 +85,7 @@ def test_build_iov_list_invalid_value(kerb_cred):
 
     expected = "IOV entry must be a IOVBuffer tuple, int, or bytes"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([None])
+        c._build_iov_list([None], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
 def test_no_gssapi_library(monkeypatch):

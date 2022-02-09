@@ -251,7 +251,7 @@ class DES:
 
         return count
 
-    def _create_subkeys(self, key: bytes) -> typing.List[bytes]:
+    def _create_subkeys(self, key: bytes) -> typing.List[typing.List[int]]:
         # convert the key into a list of bits
         key_bits = self._get_bits(key)
 
@@ -267,7 +267,7 @@ class DES:
             c.append(self._shift_bits(c[i], shift_index))
             d.append(self._shift_bits(d[i], shift_index))
 
-        subkeys = list()
+        subkeys: typing.List[typing.List[int]] = []
         for i in range(1, 17):
             cd = c[i] + d[i]
             subkey_bits = [cd[x] for x in self._pc2]
@@ -276,7 +276,7 @@ class DES:
         return subkeys
 
     def _shift_bits(self, bits: typing.List[int], shifts: int) -> typing.List[int]:
-        new_bits = [None] * 28
+        new_bits = [0] * 28
         for i in range(28):
             shift_index = i + shifts
             if shift_index >= 28:
@@ -324,12 +324,12 @@ class DES:
 
     def _decode_block(self, block: bytes) -> bytes:
         block_bits = self._get_bits(block)
-        rl = [None] * 64
+        rl = [0] * 64
         for i, idx in enumerate(self._final_ip):
             rl[idx] = block_bits[i]
 
-        right = [None] * 17
-        left = [None] * 17
+        right: typing.List[typing.List[int]] = [[]] * 17
+        left: typing.List[typing.List[int]] = [[]] * 17
         right[16] = rl[0:32]
         left[16] = rl[32:64]
         for i in range(15, -1, -1):
@@ -339,7 +339,7 @@ class DES:
             left[i] = new_l
 
         lr = left[0] + right[0]
-        decrypted_bits = [None] * 64
+        decrypted_bits = [0] * 64
         for i, idx in enumerate(self._ip):
             decrypted_bits[idx] = lr[i]
 
@@ -350,7 +350,7 @@ class DES:
 
         return decrypted_bytes
 
-    def _compute_block(self, block: typing.List[int], key: bytes) -> typing.List[int]:
+    def _compute_block(self, block: typing.List[int], key: typing.List[int]) -> typing.List[int]:
         expanded_block = [block[x] for x in self._e_bit_selection]
         new_block = [int(key[i] != expanded_block[i]) for i in range(48)]
 

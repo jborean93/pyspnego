@@ -4,15 +4,17 @@
 import enum
 import typing
 
+GSSError: typing.Type[Exception]
 try:
     from gssapi.raw import GSSError  # type: ignore
 except ImportError as e:
-    GSSError = ()
+    GSSError = Exception
 
+WinError: typing.Type[Exception]
 try:
     WinError = WindowsError  # type: ignore
 except NameError:
-    WinError = ()
+    WinError = Exception
 
 
 class NativeError(Exception):
@@ -157,7 +159,11 @@ class _SpnegoErrorRegistry(type):
     __gssapi_map: typing.Dict[int, int] = {}
     __sspi_map: typing.Dict[int, int] = {}
 
-    def __init__(cls, name, bases, attributes):
+    def __init__(
+        cls,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> None:
         # Load up the registry with the instantiated class so we can look it up when creating a SpnegoError.
         error_code = getattr(cls, 'ERROR_CODE', None)
 
@@ -175,9 +181,15 @@ class _SpnegoErrorRegistry(type):
                 codes = [codes]
 
             for c in codes:
-                mapping[c] = error_code
+                mapping[c] = error_code or 0
 
-    def __call__(cls, error_code=None, base_error=None, *args, **kwargs):
+    def __call__(
+        cls,
+        error_code: typing.Optional[int] = None,
+        base_error: typing.Optional[Exception] = None,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> "_SpnegoErrorRegistry":
         error_code = error_code if error_code is not None else getattr(cls, 'ERROR_CODE', None)
 
         if error_code is None:
@@ -185,19 +197,26 @@ class _SpnegoErrorRegistry(type):
                 raise ValueError("%s requires either an error_code or base_error" % cls.__name__)
 
             # GSSError
-            if hasattr(base_error, 'maj_code'):
-                error_code = cls.__gssapi_map.get(base_error.maj_code, None)
-
+            maj_code = getattr(base_error, 'maj_code', None)
             # WindowsError
-            elif hasattr(base_error, 'winerror'):
-                error_code = cls.__sspi_map.get(base_error.winerror, None)
+            winerror = getattr(base_error, 'winerror', None)
+
+            if maj_code is not None:
+                error_code = cls.__gssapi_map.get(maj_code, None)
+
+            elif winerror is not None:
+                error_code = cls.__sspi_map.get(winerror, None)
 
             else:
                 raise ValueError("base_error of type '%s' is not supported, must be a gssapi.exceptions.GSSError or "
                                  "WindowsError" % type(base_error).__name__)
 
-        new_cls = cls.__registry.get(error_code, cls)
-        return super(_SpnegoErrorRegistry, new_cls).__call__(error_code, base_error, *args, **kwargs)
+        new_cls = cls.__registry.get(error_code or 0, cls)
+        return super(_SpnegoErrorRegistry, new_cls).__call__(
+            error_code,  # type: ignore[arg-type] # I cannot understand this, seems to be bug?
+            base_error,
+            *args,
+            **kwargs)
 
 
 class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
@@ -229,7 +248,7 @@ class SpnegoError(Exception, metaclass=_SpnegoErrorRegistry):
 
     def __init__(
         self,
-        error_code: typing.Optional[ErrorCode] = None,
+        error_code: typing.Optional[typing.Union[int, ErrorCode]] = None,
         base_error: typing.Optional[Exception] = None,
         context_msg: typing.Optional[str] = None,
     ) -> None:

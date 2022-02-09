@@ -10,9 +10,7 @@ import socket
 import pytest
 
 import spnego
-import spnego._gss as gss
 import spnego._ntlm as ntlm
-import spnego._sspi as sspi
 import spnego.channel_bindings
 from spnego._ntlm_raw.messages import (
     Authenticate,
@@ -230,7 +228,7 @@ def test_ntlm_bad_mic(ntlm_cred):
                       options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
-    auth = memoryview(bytearray(c.step(s.step(c.step()))))
+    auth = memoryview(bytearray(c.step(s.step(c.step())) or b""))
     auth[64:80] = b"\x01" * 16
 
     with pytest.raises(InvalidTokenError, match="Invalid MIC in NTLM authentication message"):
@@ -250,6 +248,7 @@ def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
                       options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
     b_negotiate = c.step()
+    assert b_negotiate is not None
     negotiate = Negotiate.unpack(b_negotiate)
 
     flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
@@ -268,6 +267,7 @@ def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
     challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info, version=version)
 
     b_auth = c.step(challenge.pack())
+    assert b_auth is not None
     auth = Authenticate.unpack(b_auth)
 
     assert auth.workstation == expected
@@ -284,6 +284,7 @@ def test_ntlm_custom_time(include_time, expected, ntlm_cred, mocker, monkeypatch
                       options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
     b_negotiate = c.step()
+    assert b_negotiate is not None
     negotiate = Negotiate.unpack(b_negotiate)
 
     flags = negotiate.flags | NegotiateFlags.request_target | NegotiateFlags.ntlm | \
@@ -322,6 +323,7 @@ def test_ntlm_no_key_exch(ntlm_cred):
     s.step(auth)
 
     # Make sure EncryptedRandomSessionKeyFields was set to 0 (no KEY_EXCH).
+    assert auth is not None
     assert auth[52:54] == b"\x00\x00"
 
     plaintext = os.urandom(32)
@@ -359,7 +361,7 @@ def test_ntlm_lm_request(ntlm_cred, monkeypatch):
                       options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
-    auth = memoryview(bytearray(c.step(s.step(c.step()))))
+    auth = memoryview(bytearray(c.step(s.step(c.step())) or b""))
     auth[20:28] = b"\x00" * 8
 
     s.step(auth.tobytes())
@@ -376,7 +378,7 @@ def test_ntlm_no_lm_allowed(ntlm_cred, monkeypatch):
     monkeypatch.setenv('LM_COMPAT_LEVEL', '4')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
-    auth = memoryview(bytearray(c.step(s.step(c.step()))))
+    auth = memoryview(bytearray(c.step(s.step(c.step())) or b""))
     auth[20:28] = b"\x00" * 8
 
     with pytest.raises(InvalidTokenError, match="Acceptor settings are set to reject LM responses"):
@@ -466,7 +468,7 @@ def test_ntlm_anon_response(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
     s = spnego.server(options=spnego.NegotiateOptions.use_ntlm, protocol='ntlm')
 
-    auth = Authenticate.unpack(c.step(s.step(c.step())))
+    auth = Authenticate.unpack(c.step(s.step(c.step())) or b"")
     anon_auth = Authenticate(flags=auth.flags, lm_challenge_response=b"\x00", nt_challenge_response=b"").pack()
 
     with pytest.raises(OperationNotAvailableError, match="Anonymous user authentication not implemented"):

@@ -6,27 +6,33 @@ import logging
 import logging.config
 import os
 
-from spnego._context import ContextReq
+from spnego._context import (
+    ContextProxy,
+    ContextReq,
+    IOVUnwrapResult,
+    IOVWrapResult,
+    UnwrapResult,
+    WinRMWrapResult,
+    WrapResult,
+)
 from spnego.auth import client, server
 from spnego.exceptions import NegotiateOptions
 
 __all__ = [
+    'ContextProxy',
     'ContextReq',
+    'IOVUnwrapResult',
+    'IOVWrapResult',
+    'NegotiateOptions',
+    'UnwrapResult',
+    'WinRMWrapResult',
+    'WrapResult',
     'client',
     'server',
-    'NegotiateOptions',
 ]
 
 
-try:
-    from logging import NullHandler
-except ImportError:  # pragma: no cover
-    class NullHandler(logging.Handler):
-        def emit(self, record):
-            pass
-
-
-def _setup_logging(logger):
+def _setup_logging(logger: logging.Logger) -> None:
     log_path = os.environ.get('PYSPNEGO_LOG_CFG', None)
 
     if log_path is not None and os.path.exists(log_path):  # pragma: no cover
@@ -37,7 +43,7 @@ def _setup_logging(logger):
         logging.config.dictConfig(config)
     else:
         # no logging was provided
-        logger.addHandler(NullHandler())
+        logger.addHandler(logging.NullHandler())
 
 
 logger = logging.getLogger(__name__)

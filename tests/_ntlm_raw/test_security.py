@@ -6,6 +6,7 @@ import re
 import pytest
 
 from spnego._ntlm_raw.crypto import (
+    RC4Handle,
     compute_response_v1,
     lmowfv1,
     ntowfv1,
@@ -32,7 +33,7 @@ def test_seal_ntlmv1():
     # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/9e2b483e-d185-4feb-aa4f-db6e2c0c49d9
     seal_key = sealkey(TEST_NTLMV1_FLAGS, TEST_RANDOM_SESSION_KEY, usage='initiate')
     seal_handle = rc4init(seal_key)
-    sign_key = signkey(TEST_NTLMV1_FLAGS, TEST_RANDOM_SESSION_KEY, usage='initiate')
+    sign_key = signkey(TEST_NTLMV1_FLAGS, TEST_RANDOM_SESSION_KEY, usage='initiate') or b""
 
     b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(TEST_NTLMV1_FLAGS, seal_handle, sign_key, 0, b_data)
@@ -51,7 +52,7 @@ def test_seal_ntlmv1_with_ess():
                                            lmowfv1(TEST_PASSWD), TEST_SERVER_CHALLENGE, TEST_CLIENT_CHALLENGE)[2]
     seal_key = sealkey(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, key_exchange_key, usage='initiate')
     seal_handle = rc4init(seal_key)
-    sign_key = signkey(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, key_exchange_key, usage='initiate')
+    sign_key = signkey(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, key_exchange_key, usage='initiate') or b""
 
     b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, seal_handle, sign_key, 0, b_data)
@@ -68,7 +69,7 @@ def test_seal_ntlmv2():
 
     seal_key = sealkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate')
     seal_handle = rc4init(seal_key)
-    sign_key = signkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate')
+    sign_key = signkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate') or b""
 
     b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
@@ -84,7 +85,7 @@ def test_seal_ntlmv2_no_key_exch():
 
     seal_key = sealkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate')
     seal_handle = rc4init(seal_key)
-    sign_key = signkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate')
+    sign_key = signkey(flags, TEST_RANDOM_SESSION_KEY, usage='initiate') or b""
 
     b_data = to_bytes("Plaintext", encoding='utf-16-le')
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
@@ -95,7 +96,7 @@ def test_seal_ntlmv2_no_key_exch():
 
 
 def test_sign_with_always_sign():
-    actual = sign(NegotiateFlags.always_sign, None, b"", 0, b"data")
+    actual = sign(NegotiateFlags.always_sign, RC4Handle(b"\x00" * 16), b"", 0, b"data")
 
     assert actual == b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
@@ -104,4 +105,4 @@ def test_sign_no_integrity():
     expected = "SpnegoError (16): Operation not supported or available, Context: Signing without integrity."
 
     with pytest.raises(OperationNotAvailableError, match=re.escape(expected)):
-        sign(0, None, b"", 0, b"data")
+        sign(0, RC4Handle(b"\x00" * 16), b"", 0, b"data")

@@ -8,6 +8,7 @@ import struct
 import typing
 
 from spnego._context import (
+    IOV,
     ContextProxy,
     ContextReq,
     IOVUnwrapResult,
@@ -22,7 +23,7 @@ from spnego._text import to_text
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import NegotiateOptions, SpnegoError
 from spnego.exceptions import WinError as NativeError
-from spnego.iov import BufferType, IOVBuffer
+from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ try:
         SecBufferDesc,
         SecBufferType,
         SecPkgAttr,
+        SecPkgInfo,
         SecStatus,
     )
     from spnego._sspi_raw import SecurityContext as SSPISecContext
@@ -52,6 +54,7 @@ try:
         query_context_attributes,
         verify_signature,
     )
+    from spnego._sspi_raw.sspi import SecPkgAttrSizes
 except ImportError as e:
     SSPI_IMP_ERR = str(e)
     HAS_SSPI = False
@@ -66,11 +69,11 @@ def _available_protocols() -> typing.List[str]:
         return []
 
 
-def _create_iov_result(iov: "SecBufferDesc") -> typing.Tuple[IOVBuffer, ...]:
+def _create_iov_result(iov: "SecBufferDesc") -> typing.Tuple[IOVResBuffer, ...]:
     """ Converts SSPI IOV buffer to generic IOVBuffer result. """
     buffers = []
     for i in iov:
-        buffer_entry = IOVBuffer(type=BufferType(i.buffer_type), data=i.buffer)
+        buffer_entry = IOVResBuffer(type=BufferType(i.buffer_type), data=i.buffer)
         buffers.append(buffer_entry)
 
     return tuple(buffers)
@@ -104,9 +107,11 @@ class SSPIProxy(ContextProxy):
         super(SSPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
                                         protocol, options, False)
 
-        self._attr_sizes = None
+        self._block_size = 0
+        self._max_signature = 0
+        self._security_trailer = 0
+
         self._complete = False
-        self._credential = None
         self._context = SSPISecContext()
         self.__seq_num = 0
 
@@ -142,7 +147,9 @@ class SSPIProxy(ContextProxy):
     @property
     def client_principal(self) -> typing.Optional[str]:
         if self.usage == 'accept':
-            return query_context_attributes(self._context, SecPkgAttr.names)
+            return typing.cast(str, query_context_attributes(self._context, SecPkgAttr.names))
+        else:
+            return None
 
     @property
     def complete(self) -> bool:
@@ -152,13 +159,13 @@ class SSPIProxy(ContextProxy):
     def negotiated_protocol(self) -> typing.Optional[str]:
         # FIXME: Try and replicate GSSAPI. Will return None for acceptor until the first token is returned. Negotiate
         # for both iniator and acceptor until the context is established.
-        package_info = query_context_attributes(self._context, SecPkgAttr.package_info)
+        package_info = typing.cast(SecPkgInfo, query_context_attributes(self._context, SecPkgAttr.package_info))
         return package_info.name.lower()
 
-    @property
+    @property  # type: ignore[misc] # mypy does not support decorated property
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
-        return query_context_attributes(self._context, SecPkgAttr.session_key)
+        return typing.cast(bytes, query_context_attributes(self._context, SecPkgAttr.session_key))
 
     @wrap_system_error(NativeError, "Processing security token")
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
@@ -175,7 +182,7 @@ class SSPIProxy(ContextProxy):
         out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
 
         if self.usage == 'initiate':
-            res = initialize_security_context(self._credential, self._context, self.spn,
+            res = initialize_security_context(self._credential, self._context, self.spn or "",
                                               context_req=self._context_req, input_buffer=in_buffer,
                                               output_buffer=out_buffer)
         else:
@@ -186,7 +193,11 @@ class SSPIProxy(ContextProxy):
 
         if res == SecStatus.SEC_E_OK:
             self._complete = True
-            self._attr_sizes = query_context_attributes(self._context, SecPkgAttr.sizes)
+
+            attr_sizes = typing.cast(SecPkgAttrSizes, query_context_attributes(self._context, SecPkgAttr.sizes))
+            self._block_size = attr_sizes.block_size
+            self._max_signature = attr_sizes.max_signature
+            self._security_trailer = attr_sizes.security_trailer
 
         # TODO: Determine if this returns None or an empty byte string.
         out_token = out_buffer[0].buffer
@@ -197,12 +208,14 @@ class SSPIProxy(ContextProxy):
 
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
         res = self.wrap_iov([BufferType.header, data, BufferType.padding], encrypt=encrypt, qop=qop)
-        return WrapResult(data=b"".join([r.data for r in res.buffers if r.data]), encrypted=res.encrypted)
+        return WrapResult(data=b"".join([
+            r.data for r in res.buffers if r.data
+        ]), encrypted=res.encrypted)
 
     @wrap_system_error(NativeError, "Wrapping IOV buffer")
     def wrap_iov(
         self,
-        iov: typing.List[IOVBuffer],
+        iov: typing.Iterable[IOV],
         encrypt: bool = True,
         qop: typing.Optional[int] = None,
     ) -> IOVWrapResult:
@@ -212,24 +225,32 @@ class SSPIProxy(ContextProxy):
         elif not encrypt:
             qop |= SSPIQoP.wrap_no_encrypt
 
-        iov_buffer = SecBufferDesc(self._build_iov_list(iov))
+        buffers = self._build_iov_list(iov, self._convert_iov_buffer)
+        iov_buffer = SecBufferDesc(buffers)
         encrypt_message(self._context, iov_buffer, seq_no=self._seq_num, qop=qop)
 
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypt)
 
     def wrap_winrm(self, data: bytes) -> WinRMWrapResult:
         iov = self.wrap_iov([BufferType.header, data]).buffers
-        enc_data = iov[1].data
+        header = iov[0].data or b""
+        enc_data = iov[1].data or b""
 
-        return WinRMWrapResult(header=iov[0].data, data=enc_data, padding_length=0)
+        return WinRMWrapResult(header=header, data=enc_data, padding_length=0)
 
     def unwrap(self, data: bytes) -> UnwrapResult:
         res = self.unwrap_iov([(BufferType.stream, data), BufferType.data])
-        return UnwrapResult(data=res.buffers[1].data, encrypted=res.encrypted, qop=res.qop)
+
+        dec_data = res.buffers[1].data or b""
+        return UnwrapResult(data=dec_data, encrypted=res.encrypted, qop=res.qop)
 
     @wrap_system_error(NativeError, "Unwrapping IOV buffer")
-    def unwrap_iov(self, iov: typing.List[IOVBuffer]) -> IOVUnwrapResult:
-        iov_buffer = SecBufferDesc(self._build_iov_list(iov))
+    def unwrap_iov(
+        self,
+        iov: typing.Iterable[IOV],
+    ) -> IOVUnwrapResult:
+        buffers = self._build_iov_list(iov, self._convert_iov_buffer)
+        iov_buffer = SecBufferDesc(buffers)
         qop = decrypt_message(self._context, iov_buffer, seq_no=self._seq_num)
         encrypted = qop & SSPIQoP.wrap_no_encrypt == 0
 
@@ -237,24 +258,24 @@ class SSPIProxy(ContextProxy):
 
     def unwrap_winrm(self, header: bytes, data: bytes) -> bytes:
         iov = self.unwrap_iov([(BufferType.header, header), data]).buffers
-        return iov[1].data
+        return iov[1].data or b""
 
     @wrap_system_error(NativeError, "Signing message")
     def sign(self, data: bytes, qop: typing.Optional[int] = None) -> bytes:
         iov = SecBufferDesc(self._build_iov_list([
             data,
-            (BufferType.header, self._attr_sizes.max_signature)
-        ]))
+            (BufferType.header, self._max_signature)
+        ], self._convert_iov_buffer))
         make_signature(self._context, qop or 0, iov, self._seq_num)
 
-        return iov[1].buffer
+        return iov[1].buffer or b""
 
     @wrap_system_error(NativeError, "Verifying message")
     def verify(self, data: bytes, mic: bytes) -> int:
         iov = SecBufferDesc(self._build_iov_list([
             data,
             (BufferType.header, mic),
-        ]))
+        ], self._convert_iov_buffer))
 
         return verify_signature(self._context, iov, self._seq_num)
 
@@ -286,7 +307,7 @@ class SSPIProxy(ContextProxy):
         self.__seq_num += 1
         return num
 
-    def _convert_iov_buffer(self, buffer: IOVBuffer) -> typing.Any:
+    def _convert_iov_buffer(self, buffer: IOVBuffer) -> "SecBuffer":
         kwargs: typing.Dict[str, typing.Any] = {}
 
         if isinstance(buffer.data, bytes):
@@ -295,9 +316,9 @@ class SSPIProxy(ContextProxy):
             kwargs['length'] = buffer.data
         else:
             auto_alloc_size = {
-                BufferType.header: self._attr_sizes.security_trailer,
-                BufferType.padding: self._attr_sizes.block_size,
-                BufferType.trailer: self._attr_sizes.security_trailer,
+                BufferType.header: self._security_trailer,
+                BufferType.padding: self._block_size,
+                BufferType.trailer: self._security_trailer,
             }
 
             # If alloc wasn't explicitly set, only alloc if the type is a specific auto alloc type.
@@ -318,9 +339,9 @@ class SSPIProxy(ContextProxy):
         b_bindings = io.BytesIO()
         b_bindings_data = io.BytesIO()
 
-        def _pack_binding(name):
+        def _pack_binding(name: str) -> None:
             if name == 'application':
-                b_data = self.channel_bindings.application_data or b""
+                b_data = getattr(self.channel_bindings, 'application_data') or b""
 
             else:
                 b_bindings.write(struct.pack("<I", getattr(self.channel_bindings, '%s_addrtype' % name)))

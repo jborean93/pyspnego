@@ -24,7 +24,7 @@ except ImportError:
     HAS_SSPI = False
 
 
-def get_data(name):
+def get_data(name: str) -> bytes:
     with open(os.path.join(os.path.dirname(__file__), 'data', name), mode='rb') as fd:
         return fd.read()
 
@@ -59,7 +59,7 @@ def ntlm_cred(tmpdir, monkeypatch):
                 if err.winerror != 2224:  # Account already exists
                     raise
 
-            def cleanup():
+            def cleanup() -> None:
                 win32net.NetUserDel(None, username)
         else:
             domain = 'Dȫm̈Ąiᴞ'
@@ -71,9 +71,9 @@ def ntlm_cred(tmpdir, monkeypatch):
             try:
                 original_locale = locale.getlocale(locale.LC_CTYPE)
             except ValueError:
-                original_locale = (None, None)
+                original_locale = None
 
-            def cleanup():
+            def cleanup() -> None:
                 locale.setlocale(locale.LC_CTYPE, original_locale)
 
             locale.setlocale(locale.LC_CTYPE, 'en_US.UTF-8')

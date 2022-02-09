@@ -325,7 +325,9 @@ class NegTokenInit:
     def pack(self) -> bytes:
         """ Packs the NegTokenInit as a byte string. """
 
-        def pack_elements(value_map):
+        def pack_elements(
+            value_map: typing.Iterable[typing.Tuple[int, typing.Any, typing.Callable]],
+        ) -> typing.List[bytes]:
             elements = []
             for tag, value, pack_func in value_map:
                 if value is not None:
@@ -334,7 +336,7 @@ class NegTokenInit:
             return elements
 
         req_flags = struct.pack("B", self.req_flags) if self.req_flags is not None else None
-        base_map = [
+        base_map: typing.List[typing.Tuple[int, typing.Any, typing.Callable]] = [
             (0, self.mech_types, pack_mech_type_list),
             (1, req_flags, pack_asn1_bit_string),
             (2, self.mech_token, pack_asn1_octet_string),
@@ -342,11 +344,10 @@ class NegTokenInit:
 
         # The placement of the mechListMIC is dependent on whether we are packing a NegTokenInit with or without the
         # negHints field.
-        neg_hints_map = [
+        neg_hints = pack_elements([
             (0, self.hint_name, pack_asn1_general_string),
             (1, self.hint_address, pack_asn1_octet_string),
-        ]
-        neg_hints = pack_elements(neg_hints_map)
+        ])
 
         if neg_hints:
             base_map.append((3, neg_hints, pack_asn1_sequence))

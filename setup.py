@@ -96,6 +96,10 @@ setup(
     name='pyspnego',
     version=get_version(os.path.join('src', 'spnego', '_version.py')),
     packages=find_packages(where="src"),
+    package_data={
+        "spnego": ["py.typed"],
+        "spnego._sspi_raw": ["*.pyi"],
+    },
     package_dir={"": "src"},
     entry_points={
         "console_scripts": [
@@ -104,7 +108,6 @@ setup(
     },
     ext_modules=extensions,
     zip_safe=False,
-    include_package_data=False,
     cmdclass={
         "sdist": sdist_spnego,
     },

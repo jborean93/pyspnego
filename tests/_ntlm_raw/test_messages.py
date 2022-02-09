@@ -358,6 +358,7 @@ def test_challenge_pack_target_info():
     assert challenge.flags == messages.NegotiateFlags.oem | messages.NegotiateFlags.target_info
     assert challenge.server_challenge == b"\x11" * 8
     assert challenge.target_name is None
+    assert challenge.target_info is not None
     assert len(challenge.target_info) == 2
     assert challenge.target_info[messages.AvId.dns_computer_name] == "café"
     assert challenge.target_info[messages.AvId.eol] == b""
@@ -390,6 +391,7 @@ def test_challenge_pack_all_fields():
         messages.NegotiateFlags.version | messages.NegotiateFlags.unicode
     assert challenge.server_challenge == b"\x11" * 8
     assert challenge.target_name == "café"
+    assert challenge.target_info is not None
     assert len(challenge.target_info) == 2
     assert challenge.target_info[messages.AvId.dns_computer_name] == "café"
     assert challenge.target_info[messages.AvId.eol] == b""
@@ -495,6 +497,7 @@ def test_challenge_unpack_ntlmv2():
     assert actual.target_name == TEST_SERVER_NAME
     assert actual.flags == TEST_NTLMV2_FLAGS
     assert actual.server_challenge == TEST_SERVER_CHALLENGE
+    assert actual.target_info is not None
     assert len(actual.target_info) == 3
     assert actual.target_info[messages.AvId.nb_domain_name] == TEST_USER_DOM
     assert actual.target_info[messages.AvId.nb_computer_name] == TEST_SERVER_NAME

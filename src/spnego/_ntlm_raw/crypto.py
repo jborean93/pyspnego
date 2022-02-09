@@ -41,8 +41,10 @@ class RC4Handle:
 
     def __init__(self, key: bytes) -> None:
         self._key = key
-        self._handle = None
-        self.reset()
+
+        arc4 = algorithms.ARC4(self._key)
+        cipher = Cipher(arc4, mode=None, backend=default_backend())
+        self._handle = cipher.encryptor()
 
     def update(self, b_data: bytes) -> bytes:
         """ Update the RC4 stream and return the encrypted/decrypted bytes. """
@@ -545,7 +547,7 @@ def signkey(flags: int, session_key: bytes, usage: str) -> typing.Optional[bytes
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/524cdccb-563e-4793-92b0-7bc321fce096
     """
     if flags & NegotiateFlags.extended_session_security == 0:
-        return
+        return None
 
     direction = b"client-to-server" if usage == 'initiate' else b"server-to-client"
 

@@ -6,7 +6,7 @@ import socket
 import spnego
 
 
-def main():
+def main() -> None:
     server = socket.gethostname()
     username = 'vagrant-domain@DOMAIN.LOCAL'
     password = 'VagrantPass1'

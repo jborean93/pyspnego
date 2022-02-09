@@ -3,12 +3,12 @@
 import spnego
 
 
-def exchange_data(data):
+def exchange_data(data: bytes) -> bytes:
     # Insert code to send to acceptor and receive token
     return b""
 
 
-def main():
+def main() -> None:
     client = spnego.client('username', 'password', hostname='server')
 
     in_token = None
