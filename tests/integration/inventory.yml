@@ -38,7 +38,7 @@ all:
           hosts:
             CENTOS8-MIT:
               ansible_host: 192.168.65.13
-              vagrant_box: centos/8
+              vagrant_box: centos/stream8
               krb_packages:
               - gssntlmssp
               - krb5-devel
@@ -46,7 +46,7 @@ all:
               krb_provider: MIT
             CENTOS8-HEIMDAL:
               ansible_host: 192.168.65.14
-              vagrant_box: centos/8
+              vagrant_box: centos/stream8
               krb_packages:
               - heimdal-devel
               - heimdal-libs
