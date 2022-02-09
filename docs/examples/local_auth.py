@@ -8,8 +8,8 @@ import spnego
 
 def main() -> None:
     server = socket.gethostname()
-    username = 'vagrant-domain@DOMAIN.LOCAL'
-    password = 'VagrantPass1'
+    username = "vagrant-domain@DOMAIN.LOCAL"
+    password = "VagrantPass1"
 
     c = spnego.client(username, password, server)
     s = spnego.server(server)
@@ -22,8 +22,8 @@ def main() -> None:
 
         in_token = s.step(out_token)
 
-    print("Client Session key: %s" % base64.b64encode(c.session_key).decode('utf-8'))
-    print("Server Session key: %s" % base64.b64encode(s.session_key).decode('utf-8'))
+    print("Client Session key: %s" % base64.b64encode(c.session_key).decode("utf-8"))
+    print("Server Session key: %s" % base64.b64encode(s.session_key).decode("utf-8"))
     print("Authenticated client: %s" % s.client_principal)
 
     c_enc_msg = c.wrap(b"Hello World")
@@ -38,5 +38,5 @@ def main() -> None:
     c.verify(b"data", s_sig)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

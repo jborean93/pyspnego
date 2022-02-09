@@ -7,7 +7,7 @@ import typing
 
 
 def _pack_value(addr_type: typing.Optional["AddressType"], b: typing.Optional[bytes]) -> bytes:
-    """ Packs an type/data entry into the byte structure required. """
+    """Packs an type/data entry into the byte structure required."""
     if not b:
         b = b""
 
@@ -15,13 +15,13 @@ def _pack_value(addr_type: typing.Optional["AddressType"], b: typing.Optional[by
 
 
 def _unpack_value(b_mem: memoryview, offset: int) -> typing.Tuple[bytes, int]:
-    """ Unpacks a raw C struct value to a byte string. """
-    length = struct.unpack("<I", b_mem[offset:offset + 4].tobytes())[0]
+    """Unpacks a raw C struct value to a byte string."""
+    length = struct.unpack("<I", b_mem[offset : offset + 4].tobytes())[0]
     new_offset = offset + length + 4
 
     data = b""
     if length:
-        data = b_mem[offset + 4:offset + 4 + length].tobytes()
+        data = b_mem[offset + 4 : offset + 4 + length].tobytes()
 
     return data, new_offset
 
@@ -83,15 +83,27 @@ class GssChannelBindings:
         self.application_data = application_data
 
     def __repr__(self) -> str:
-        return "{0}.{1} initiator_addrtype={2}|initiator_address={3}|acceptor_addrtype={4}|acceptor_address={5}|" \
-               "application_data={6}".format(type(self).__module__, type(self).__name__, repr(self.initiator_addrtype),
-                                             repr(self.initiator_address), repr(self.acceptor_addrtype),
-                                             repr(self.acceptor_address), repr(self.application_data))
+        return (
+            "{0}.{1} initiator_addrtype={2}|initiator_address={3}|acceptor_addrtype={4}|acceptor_address={5}|"
+            "application_data={6}".format(
+                type(self).__module__,
+                type(self).__name__,
+                repr(self.initiator_addrtype),
+                repr(self.initiator_address),
+                repr(self.acceptor_addrtype),
+                repr(self.acceptor_address),
+                repr(self.application_data),
+            )
+        )
 
     def __str__(self) -> str:
         return "{0} initiator_addr({1}|{2!r}) | acceptor_addr({3}|{4!r}) | application_data({5!r})".format(
-            type(self).__name__, str(self.initiator_addrtype), self.initiator_address, str(self.acceptor_addrtype),
-            self.acceptor_address, self.application_data
+            type(self).__name__,
+            str(self.initiator_addrtype),
+            self.initiator_address,
+            str(self.acceptor_addrtype),
+            self.acceptor_address,
+            self.application_data,
         )
 
     def __eq__(self, other: object) -> bool:
@@ -104,12 +116,14 @@ class GssChannelBindings:
         return self.pack() == other
 
     def pack(self) -> bytes:
-        """ Pack struct into a byte string. """
-        return b"".join([
-            _pack_value(self.initiator_addrtype, self.initiator_address),
-            _pack_value(self.acceptor_addrtype, self.acceptor_address),
-            _pack_value(None, self.application_data)
-        ])
+        """Pack struct into a byte string."""
+        return b"".join(
+            [
+                _pack_value(self.initiator_addrtype, self.initiator_address),
+                _pack_value(self.acceptor_addrtype, self.acceptor_address),
+                _pack_value(None, self.application_data),
+            ]
+        )
 
     @staticmethod
     def unpack(b_data: bytes) -> "GssChannelBindings":
@@ -118,11 +132,15 @@ class GssChannelBindings:
         initiator_addrtype = struct.unpack("<I", b_mem[:4].tobytes())[0]
         initiator_address, offset = _unpack_value(b_mem, 4)
 
-        acceptor_addrtype = struct.unpack("<I", b_mem[offset:offset + 4].tobytes())[0]
+        acceptor_addrtype = struct.unpack("<I", b_mem[offset : offset + 4].tobytes())[0]
         acceptor_address, offset = _unpack_value(b_mem, offset + 4)
 
         application_data = _unpack_value(b_mem, offset)[0]
 
-        return GssChannelBindings(initiator_addrtype=initiator_addrtype, initiator_address=initiator_address,
-                                  acceptor_addrtype=acceptor_addrtype, acceptor_address=acceptor_address,
-                                  application_data=application_data)
+        return GssChannelBindings(
+            initiator_addrtype=initiator_addrtype,
+            initiator_address=initiator_address,
+            acceptor_addrtype=acceptor_addrtype,
+            acceptor_address=acceptor_address,
+            application_data=application_data,
+        )

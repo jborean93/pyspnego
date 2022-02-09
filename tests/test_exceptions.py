@@ -12,15 +12,25 @@ GSSError = exceptions.GSSError
 WinError = exceptions.WinError
 
 
-@pytest.mark.parametrize('option, expected', [
-    (exceptions.NegotiateOptions.negotiate_kerberos, 'The Python gssapi library is not installed so Kerberos cannot '
-                                                     'be negotiated.'),
-    (exceptions.NegotiateOptions.wrapping_iov, 'The system is missing the GSSAPI IOV extension headers or NTLM or '
-                                               'CredSSP is being requested, cannot utilize wrap_iov and unwrap_iov'),
-    (exceptions.NegotiateOptions.wrapping_winrm, 'The system is missing the GSSAPI IOV extension headers required '
-                                                 'for WinRM encryption with Kerberos.'),
-    (exceptions.NegotiateOptions.session_key, 'The protocol selected does not support getting the session key.'),
-])
+@pytest.mark.parametrize(
+    "option, expected",
+    [
+        (
+            exceptions.NegotiateOptions.negotiate_kerberos,
+            "The Python gssapi library is not installed so Kerberos cannot " "be negotiated.",
+        ),
+        (
+            exceptions.NegotiateOptions.wrapping_iov,
+            "The system is missing the GSSAPI IOV extension headers or NTLM or "
+            "CredSSP is being requested, cannot utilize wrap_iov and unwrap_iov",
+        ),
+        (
+            exceptions.NegotiateOptions.wrapping_winrm,
+            "The system is missing the GSSAPI IOV extension headers required " "for WinRM encryption with Kerberos.",
+        ),
+        (exceptions.NegotiateOptions.session_key, "The protocol selected does not support getting the session key."),
+    ],
+)
 def test_feature_missing_error(option, expected):
     err = exceptions.FeatureMissingError(option)
     assert str(err) == expected
@@ -43,7 +53,7 @@ def test_spnego_error_unknown_error():
     actual = exceptions.SpnegoError(1024)
 
     assert isinstance(actual, exceptions.SpnegoError)
-    assert actual.message == 'SpnegoError (1024): Unknown error code'
+    assert actual.message == "SpnegoError (1024): Unknown error code"
 
 
 def test_invalid_token_error():
@@ -52,7 +62,7 @@ def test_invalid_token_error():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (9): A token was invalid, or the logon was denied'
+    assert actual.message == "SpnegoError (9): A token was invalid, or the logon was denied"
 
 
 def test_invalid_token_error_with_context():
@@ -61,10 +71,10 @@ def test_invalid_token_error_with_context():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (9): A token was invalid, or the logon was denied, Context: Context'
+    assert actual.message == "SpnegoError (9): A token was invalid, or the logon was denied, Context: Context"
 
 
-@pytest.mark.skipif(GSSError == Exception, reason='Need a GSSError to test this out')
+@pytest.mark.skipif(GSSError == Exception, reason="Need a GSSError to test this out")
 def test_invalid_token_from_gssapi():
     base_error = GSSError(589824, 0)
 
@@ -72,10 +82,10 @@ def test_invalid_token_from_gssapi():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message.startswith('SpnegoError (9): Major (589824)')
+    assert actual.message.startswith("SpnegoError (9): Major (589824)")
 
 
-@pytest.mark.skipif(WinError == Exception, reason='Need a WindowsError to test this out')
+@pytest.mark.skipif(WinError == Exception, reason="Need a WindowsError to test this out")
 def test_invalid_token_from_sspi():
     base_error = WinError("Error")
     setattr(base_error, "winerror", -2146893048)
@@ -84,10 +94,10 @@ def test_invalid_token_from_sspi():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message.startswith('SpnegoError (9): ')
+    assert actual.message.startswith("SpnegoError (9): ")
 
 
-@pytest.mark.skipif(WinError == Exception, reason='Need a WindowsError to test this out')
+@pytest.mark.skipif(WinError == Exception, reason="Need a WindowsError to test this out")
 def test_invalid_token_from_sspi_logon_denied():
     base_error = WinError("Error")
     setattr(base_error, "winerror", -2146893044)
@@ -96,7 +106,7 @@ def test_invalid_token_from_sspi_logon_denied():
     assert isinstance(actual, exceptions.InvalidTokenError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.invalid_token
     assert actual.base_error == base_error
-    assert actual.message.startswith('SpnegoError (9): ')
+    assert actual.message.startswith("SpnegoError (9): ")
 
 
 def test_operation_not_available_error():
@@ -105,7 +115,7 @@ def test_operation_not_available_error():
     assert isinstance(actual, exceptions.OperationNotAvailableError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (16): Operation not supported or available'
+    assert actual.message == "SpnegoError (16): Operation not supported or available"
 
 
 def test_operation_not_available_error_with_context():
@@ -114,10 +124,10 @@ def test_operation_not_available_error_with_context():
     assert isinstance(actual, exceptions.OperationNotAvailableError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error is None
-    assert actual.message == 'SpnegoError (16): Operation not supported or available, Context: Context'
+    assert actual.message == "SpnegoError (16): Operation not supported or available, Context: Context"
 
 
-@pytest.mark.skipif(GSSError == Exception, reason='Need a GSSError to test this out')
+@pytest.mark.skipif(GSSError == Exception, reason="Need a GSSError to test this out")
 def test_operation_not_available_from_gssapi():
     base_error = GSSError(1048576, 0)
 
@@ -125,10 +135,10 @@ def test_operation_not_available_from_gssapi():
     assert isinstance(actual, exceptions.OperationNotAvailableError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error == base_error
-    assert actual.message.startswith('SpnegoError (16): Major (1048576): ')
+    assert actual.message.startswith("SpnegoError (16): Major (1048576): ")
 
 
-@pytest.mark.skipif(WinError == Exception, reason='Need a WindowsError to test this out')
+@pytest.mark.skipif(WinError == Exception, reason="Need a WindowsError to test this out")
 def test_operation_not_available_from_sspi():
     base_error = WinError("Error")
     setattr(base_error, "winerror", -2146893054)
@@ -137,4 +147,4 @@ def test_operation_not_available_from_sspi():
     assert isinstance(actual, exceptions.OperationNotAvailableError)
     assert actual.ERROR_CODE == exceptions.ErrorCode.unavailable
     assert actual.base_error == base_error
-    assert actual.message.startswith('SpnegoError (16): ')
+    assert actual.message.startswith("SpnegoError (16): ")

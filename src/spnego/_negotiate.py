@@ -49,13 +49,14 @@ class NegotiateProxy(ContextProxy):
         service: typing.Optional[str] = None,
         channel_bindings: typing.Optional[GssChannelBindings] = None,
         context_req: ContextReq = ContextReq.default,
-        usage: str = 'initiate',
-        protocol: str = 'negotiate',
+        usage: str = "initiate",
+        protocol: str = "negotiate",
         options: NegotiateOptions = NegotiateOptions.none,
         **kwargs: typing.Any,
     ) -> None:
-        super(NegotiateProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req,
-                                             usage, protocol, options, False)
+        super(NegotiateProxy, self).__init__(
+            username, password, hostname, service, channel_bindings, context_req, usage, protocol, options, False
+        )
 
         self._hostname = hostname
         self._service = service
@@ -74,11 +75,11 @@ class NegotiateProxy(ContextProxy):
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
         # We always support Negotiate and NTLM as we have our builtin NTLM backend and only support kerberos if gssapi
         # is present.
-        protocols = ['ntlm', 'negotiate']
+        protocols = ["ntlm", "negotiate"]
 
         # Make sure we add Kerberos first as the order is important.
-        if 'kerberos' in GSSAPIProxy.available_protocols(options=options):
-            protocols.insert(0, 'kerberos')
+        if "kerberos" in GSSAPIProxy.available_protocols(options=options):
+            protocols.insert(0, "kerberos")
 
         return protocols
 
@@ -114,7 +115,7 @@ class NegotiateProxy(ContextProxy):
         mech_token_in, mech_list_mic, is_spnego = self._step_spnego_input(in_token=in_token)
 
         mech_token_out = None
-        if mech_token_in or self.usage == 'initiate':
+        if mech_token_in or self.usage == "initiate":
             # Step 2. Process the inner context tokens.
             mech_token_out = self._step_spnego_token(in_token=mech_token_in)
 
@@ -160,7 +161,7 @@ class NegotiateProxy(ContextProxy):
                 # opposite end supports.
                 mech_list = self._rebuild_context_list(mech_types=in_token.mech_types)
 
-                if self.usage == 'initiate':
+                if self.usage == "initiate":
                     # If initiate processes a NegTokenInit2 token that's just used as a hint, use the actually
                     # supported mechs as the true mech list.
                     self._mech_list = mech_list
@@ -270,11 +271,11 @@ class NegotiateProxy(ContextProxy):
             self._init_sent = True
 
             init_kwargs: typing.Dict[str, typing.Any] = {
-                'mech_token': out_token,
-                'mech_list_mic': out_mic,
+                "mech_token": out_token,
+                "mech_list_mic": out_mic,
             }
-            if self.usage == 'accept':
-                init_kwargs['hint_name'] = b'not_defined_in_RFC4178@please_ignore'
+            if self.usage == "accept":
+                init_kwargs["hint_name"] = b"not_defined_in_RFC4178@please_ignore"
 
             final_token = NegTokenInit(self._mech_list, **init_kwargs).pack()
 
@@ -296,8 +297,9 @@ class NegotiateProxy(ContextProxy):
                 state = NegState.accept_complete
                 self._complete = True
 
-            final_token = NegTokenResp(neg_state=state, supported_mech=supported_mech, response_token=out_token,
-                                       mech_list_mic=out_mic).pack()
+            final_token = NegTokenResp(
+                neg_state=state, supported_mech=supported_mech, response_token=out_token, mech_list_mic=out_mic
+            ).pack()
 
         return final_token
 
@@ -353,25 +355,25 @@ class NegotiateProxy(ContextProxy):
         return self._context._requires_mech_list_mic
 
     def _preferred_mech_list(self) -> typing.List[GSSMech]:
-        """ Get a list of mechs that can be used in priority order (highest to lowest). """
-        available_protocols = [p for p in self.available_protocols(self.options) if p != 'negotiate']
+        """Get a list of mechs that can be used in priority order (highest to lowest)."""
+        available_protocols = [p for p in self.available_protocols(self.options) if p != "negotiate"]
         return [getattr(GSSMech, p) for p in available_protocols]
 
     def _rebuild_context_list(
         self,
         mech_types: typing.Optional[typing.List[str]] = None,
     ) -> typing.List[str]:
-        """ Builds a new context list that are available to the client. """
+        """Builds a new context list that are available to the client."""
         context_kwargs = {
-            'username': self.username,
-            'password': self.password,
-            'hostname': self._hostname,
-            'service': self._service,
-            'channel_bindings': self.channel_bindings,
-            'context_req': self.context_req,
-            'usage': self.usage,
-            'options': self.options,
-            '_is_wrapped': True,
+            "username": self.username,
+            "password": self.password,
+            "hostname": self._hostname,
+            "service": self._service,
+            "channel_bindings": self.channel_bindings,
+            "context_req": self.context_req,
+            "usage": self.usage,
+            "options": self.options,
+            "_is_wrapped": True,
         }
         gssapi_protocols = GSSAPIProxy.available_protocols(options=self.options)
         all_protocols = self._preferred_mech_list()
@@ -388,7 +390,7 @@ class NegotiateProxy(ContextProxy):
                 proxy_obj = GSSAPIProxy if protocol in gssapi_protocols else NTLMProxy
                 log.debug("Checking %s with %s when building SPNEGO mech list" % (proxy_obj.__name__, protocol))
                 context = proxy_obj(protocol=protocol, **context_kwargs)
-                first_token = context.step() if self.usage == 'initiate' else None
+                first_token = context.step() if self.usage == "initiate" else None
             except Exception as e:
                 last_err = e
                 log.debug("Failed to create gssapi context for SPNEGO protocol %s: %s", protocol, str(e))

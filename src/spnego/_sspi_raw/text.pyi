@@ -11,14 +11,11 @@ class WideChar:
         self,
         length: int,
     ) -> "WideChar": ...
-
     def __len__(self) -> int: ...
-
     def to_text(
         self,
         length: int = 0,
     ) -> str: ...
-
     @staticmethod
     def from_text(
         text: str,

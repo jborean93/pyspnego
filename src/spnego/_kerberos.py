@@ -36,9 +36,10 @@ def _enum_labels(
     value: typing.Union[int, str, enum.Enum],
     enum_type: typing.Optional[typing.Type] = None,
 ) -> typing.Dict[int, str]:
-    """ Gets the human friendly labels of a known enum and what value they map to. """
+    """Gets the human friendly labels of a known enum and what value they map to."""
+
     def get_labels(v: typing.Any) -> typing.Dict[int, str]:
-        return typing.cast(typing.Dict[int, str], getattr(v, 'native_labels', lambda: {})())
+        return typing.cast(typing.Dict[int, str], getattr(v, "native_labels", lambda: {})())
 
     return get_labels(enum_type) if enum_type else get_labels(value)
 
@@ -47,8 +48,8 @@ def parse_enum(
     value: typing.Union[int, str, enum.Enum],
     enum_type: typing.Optional[typing.Type] = None,
 ) -> str:
-    """ Parses an IntEnum into a human representative object of that enum. """
-    enum_name = 'UNKNOWN'
+    """Parses an IntEnum into a human representative object of that enum."""
+    enum_name = "UNKNOWN"
 
     labels = _enum_labels(value, enum_type)
     value = int(value) if isinstance(value, int) else value
@@ -65,7 +66,7 @@ def parse_flags(
     value: typing.Union[int, enum.IntFlag],
     enum_type: typing.Optional[typing.Type] = None,
 ) -> typing.Dict[str, typing.Any]:
-    """ Parses an IntFlag into each flag value that is set. """
+    """Parses an IntFlag into each flag value that is set."""
     raw_value = int(value)
     flags = []
 
@@ -78,11 +79,11 @@ def parse_flags(
             flags.append("%s (%d)" % (name, v))
 
     if value != 0:
-        flags.append('UNKNOWN (%d)' % value)
+        flags.append("UNKNOWN (%d)" % value)
 
     return {
-        'raw': raw_value,
-        'flags': flags,
+        "raw": raw_value,
+        "flags": flags,
     }
 
 
@@ -91,8 +92,8 @@ def parse_kerberos_token(
     secret: typing.Optional[str] = None,
     encoding: typing.Optional[str] = None,
 ) -> typing.Union[str, typing.Dict[str, typing.Any]]:
-    """ Parses a KerberosV5Msg object to a dict. """
-    text_encoding = encoding if encoding else 'utf-8'
+    """Parses a KerberosV5Msg object to a dict."""
+    text_encoding = encoding if encoding else "utf-8"
 
     def parse_default(value: typing.Any) -> typing.Any:
         return value
@@ -101,21 +102,21 @@ def parse_kerberos_token(
         return value.isoformat()
 
     def parse_text(value: bytes) -> str:
-        return to_text(value, encoding=text_encoding, errors='replace')
+        return to_text(value, encoding=text_encoding, errors="replace")
 
     def parse_bytes(value: bytes) -> str:
         return base64.b16encode(value).decode()
 
     def parse_principal_name(value: PrincipalName) -> typing.Dict[str, typing.Any]:
         return {
-            'name-type': parse_enum(value.name_type),
-            'name-string': [parse_text(v) for v in value.value],
+            "name-type": parse_enum(value.name_type),
+            "name-string": [parse_text(v) for v in value.value],
         }
 
     def parse_host_address(value: HostAddress) -> typing.Dict[str, typing.Any]:
         return {
-            'addr-type': parse_enum(value.addr_type),
-            'address': parse_text(value.value),
+            "addr-type": parse_enum(value.addr_type),
+            "address": parse_text(value.value),
         }
 
     def parse_token(value: typing.Any) -> typing.Union[str, typing.Dict[str, typing.Any]]:
@@ -160,27 +161,29 @@ def parse_kerberos_token(
 
 
 def unpack_hostname(value: typing.Union[bytes, ASN1Value]) -> "HostAddress":
-    """ Unpacks an ASN.1 value to a HostAddress. """
+    """Unpacks an ASN.1 value to a HostAddress."""
     s = unpack_asn1_tagged_sequence(value)
 
-    name_type = KerberosHostAddressType(get_sequence_value(s, 0, 'HostAddress', 'addr-type', unpack_asn1_integer))
-    name = get_sequence_value(s, 1, 'HostAddress', 'address', unpack_asn1_octet_string)
+    name_type = KerberosHostAddressType(get_sequence_value(s, 0, "HostAddress", "addr-type", unpack_asn1_integer))
+    name = get_sequence_value(s, 1, "HostAddress", "address", unpack_asn1_octet_string)
 
     return HostAddress(name_type, name)
 
 
 def unpack_principal_name(value: typing.Union[bytes, ASN1Value]) -> "PrincipalName":
-    """ Unpacks an ASN.1 value to a PrincipalName. """
+    """Unpacks an ASN.1 value to a PrincipalName."""
     s = unpack_asn1_tagged_sequence(value)
 
-    name_type = KerberosPrincipalNameType(get_sequence_value(s, 0, 'PrincipalName', 'name-type', unpack_asn1_integer))
-    name = [unpack_asn1_general_string(n) for n in
-            get_sequence_value(s, 1, 'PrincipalName', 'name-string', unpack_asn1_sequence)]
+    name_type = KerberosPrincipalNameType(get_sequence_value(s, 0, "PrincipalName", "name-type", unpack_asn1_integer))
+    name = [
+        unpack_asn1_general_string(n)
+        for n in get_sequence_value(s, 1, "PrincipalName", "name-string", unpack_asn1_sequence)
+    ]
 
     return PrincipalName(name_type, name)
 
 
-HostAddress = collections.namedtuple('HostAddress', ['addr_type', 'value'])
+HostAddress = collections.namedtuple("HostAddress", ["addr_type", "value"])
 """Kerberos HostAddress and HostAddresses
 
 A Kerberos Host Address ASN.1 definition is defined in `RFC 4120 5.2.5`_::
@@ -198,7 +201,7 @@ Attributes:
     https://www.rfc-editor.org/rfc/rfc4120#section-5.2.5
 """
 
-PrincipalName = collections.namedtuple('PrincipalName', ['name_type', 'value'])
+PrincipalName = collections.namedtuple("PrincipalName", ["name_type", "value"])
 """Kerberos Realm and PrincipalName
 
 A Kerberos Principal Name ASN.1 definition is defined in `RFC 4120 5.2.2`_::
@@ -226,9 +229,9 @@ class KerberosAPOptions(enum.IntFlag):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosAPOptions", str]:
         return {
-            KerberosAPOptions.mutual_required: 'mutual-required',
-            KerberosAPOptions.use_session_key: 'use-session-key',
-            KerberosAPOptions.reserved: 'reserved',
+            KerberosAPOptions.mutual_required: "mutual-required",
+            KerberosAPOptions.use_session_key: "use-session-key",
+            KerberosAPOptions.reserved: "reserved",
         }
 
 
@@ -270,38 +273,38 @@ class KerberosKDCOptions(enum.IntFlag):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosKDCOptions", str]:
         return {
-            KerberosKDCOptions.reserved: 'reserved',
-            KerberosKDCOptions.forwardable: 'forwardable',
-            KerberosKDCOptions.forwarded: 'forwarded',
-            KerberosKDCOptions.proxiable: 'proxiable',
-            KerberosKDCOptions.proxy: 'proxy',
-            KerberosKDCOptions.allow_postdate: 'allow-postdate',
-            KerberosKDCOptions.postdated: 'postdated',
-            KerberosKDCOptions.unused7: 'unused7',
-            KerberosKDCOptions.renewable: 'renewable',
-            KerberosKDCOptions.unused9: 'unused9',
-            KerberosKDCOptions.unused10: 'unused10',
-            KerberosKDCOptions.opt_hardware_auth: 'opt-hardware-auth',
-            KerberosKDCOptions.unused12: 'unused12',
-            KerberosKDCOptions.unused13: 'unused13',
-            KerberosKDCOptions.constrained_delegation: 'constrained-delegation',
-            KerberosKDCOptions.canonicalize: 'canonicalize',
-            KerberosKDCOptions.request_anonymous: 'request-anonymous',
-            KerberosKDCOptions.unused17: 'unused17',
-            KerberosKDCOptions.unused18: 'unused18',
-            KerberosKDCOptions.unused19: 'unused19',
-            KerberosKDCOptions.unused20: 'unused20',
-            KerberosKDCOptions.unused21: 'unused21',
-            KerberosKDCOptions.unused22: 'unused22',
-            KerberosKDCOptions.unused23: 'unused23',
-            KerberosKDCOptions.unused24: 'unused24',
-            KerberosKDCOptions.unused25: 'unused25',
-            KerberosKDCOptions.disable_transited_check: 'disable-transited-check',
-            KerberosKDCOptions.renewable_ok: 'renewable-ok',
-            KerberosKDCOptions.enc_tkt_in_skey: 'enc-tkt-in-skey',
-            KerberosKDCOptions.unused29: 'unused29',
-            KerberosKDCOptions.renew: 'renew',
-            KerberosKDCOptions.validate: 'validate',
+            KerberosKDCOptions.reserved: "reserved",
+            KerberosKDCOptions.forwardable: "forwardable",
+            KerberosKDCOptions.forwarded: "forwarded",
+            KerberosKDCOptions.proxiable: "proxiable",
+            KerberosKDCOptions.proxy: "proxy",
+            KerberosKDCOptions.allow_postdate: "allow-postdate",
+            KerberosKDCOptions.postdated: "postdated",
+            KerberosKDCOptions.unused7: "unused7",
+            KerberosKDCOptions.renewable: "renewable",
+            KerberosKDCOptions.unused9: "unused9",
+            KerberosKDCOptions.unused10: "unused10",
+            KerberosKDCOptions.opt_hardware_auth: "opt-hardware-auth",
+            KerberosKDCOptions.unused12: "unused12",
+            KerberosKDCOptions.unused13: "unused13",
+            KerberosKDCOptions.constrained_delegation: "constrained-delegation",
+            KerberosKDCOptions.canonicalize: "canonicalize",
+            KerberosKDCOptions.request_anonymous: "request-anonymous",
+            KerberosKDCOptions.unused17: "unused17",
+            KerberosKDCOptions.unused18: "unused18",
+            KerberosKDCOptions.unused19: "unused19",
+            KerberosKDCOptions.unused20: "unused20",
+            KerberosKDCOptions.unused21: "unused21",
+            KerberosKDCOptions.unused22: "unused22",
+            KerberosKDCOptions.unused23: "unused23",
+            KerberosKDCOptions.unused24: "unused24",
+            KerberosKDCOptions.unused25: "unused25",
+            KerberosKDCOptions.disable_transited_check: "disable-transited-check",
+            KerberosKDCOptions.renewable_ok: "renewable-ok",
+            KerberosKDCOptions.enc_tkt_in_skey: "enc-tkt-in-skey",
+            KerberosKDCOptions.unused29: "unused29",
+            KerberosKDCOptions.renew: "renew",
+            KerberosKDCOptions.validate: "validate",
         }
 
 
@@ -320,25 +323,25 @@ class KerberosEncryptionType(enum.IntEnum):
     rc4_hmac = 0x0017
     rc4_hmac_exp = 0x0018
     camellia128_cts_cmac = 0x0019
-    camellia256_cts_cmac = 0x001a
+    camellia256_cts_cmac = 0x001A
 
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosEncryptionType", str]:
         return {
-            KerberosEncryptionType.des_cbc_crc: 'DES_CBC_CRC',
-            KerberosEncryptionType.des_cbc_md4: 'DES_CBC_MD4',
-            KerberosEncryptionType.des_cbc_md5: 'DES_CBC_MD5',
-            KerberosEncryptionType.des_cbc_raw: 'DES_CBC_RAW',
-            KerberosEncryptionType.des3_cbc_raw: 'DES3_CBC_RAW',
-            KerberosEncryptionType.des3_cbc_sha1: 'DES3_CBC_SHA1',
-            KerberosEncryptionType.aes128_cts_hmac_sha1_96: 'AES128_CTS_HMAC_SHA1_96',
-            KerberosEncryptionType.aes256_cts_hmac_sha1_96: 'AES256_CTS_HMAC_SHA1_96',
-            KerberosEncryptionType.aes128_cts_hmac_sha256_128: 'AES128_CTS_HMAC_SHA256_128',
-            KerberosEncryptionType.aes256_cts_hmac_sha384_192: 'AES256_CTS_HMAC_SHA384_192',
-            KerberosEncryptionType.rc4_hmac: 'RC4_HMAC',
-            KerberosEncryptionType.rc4_hmac_exp: 'RC4_HMAC_EXP',
-            KerberosEncryptionType.camellia128_cts_cmac: 'CAMELLIA128_CTS_CMAC',
-            KerberosEncryptionType.camellia256_cts_cmac: 'CAMELLIA256_CTS_CMAC',
+            KerberosEncryptionType.des_cbc_crc: "DES_CBC_CRC",
+            KerberosEncryptionType.des_cbc_md4: "DES_CBC_MD4",
+            KerberosEncryptionType.des_cbc_md5: "DES_CBC_MD5",
+            KerberosEncryptionType.des_cbc_raw: "DES_CBC_RAW",
+            KerberosEncryptionType.des3_cbc_raw: "DES3_CBC_RAW",
+            KerberosEncryptionType.des3_cbc_sha1: "DES3_CBC_SHA1",
+            KerberosEncryptionType.aes128_cts_hmac_sha1_96: "AES128_CTS_HMAC_SHA1_96",
+            KerberosEncryptionType.aes256_cts_hmac_sha1_96: "AES256_CTS_HMAC_SHA1_96",
+            KerberosEncryptionType.aes128_cts_hmac_sha256_128: "AES128_CTS_HMAC_SHA256_128",
+            KerberosEncryptionType.aes256_cts_hmac_sha384_192: "AES256_CTS_HMAC_SHA384_192",
+            KerberosEncryptionType.rc4_hmac: "RC4_HMAC",
+            KerberosEncryptionType.rc4_hmac_exp: "RC4_HMAC_EXP",
+            KerberosEncryptionType.camellia128_cts_cmac: "CAMELLIA128_CTS_CMAC",
+            KerberosEncryptionType.camellia256_cts_cmac: "CAMELLIA256_CTS_CMAC",
         }
 
 
@@ -416,74 +419,74 @@ class KerberosErrorCode(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosErrorCode", str]:
         return {
-            KerberosErrorCode.none: 'KDC_ERR_NONE',
-            KerberosErrorCode.name_exp: 'KDC_ERR_NAME_EXP',
-            KerberosErrorCode.service_exp: 'KDC_ERR_SERVICE_EXP',
-            KerberosErrorCode.bad_pvno: 'KDC_ERR_BAD_PVNO',
-            KerberosErrorCode.c_old_mast_kvno: 'KDC_ERR_C_OLD_MAST_KVNO',
-            KerberosErrorCode.s_old_mast_kvno: 'KDC_ERR_S_OLD_MAST_KVNO',
-            KerberosErrorCode.c_principal_unknown: 'KDC_ERR_C_PRINCIPAL_UNKNOWN',
-            KerberosErrorCode.s_principal_unknown: 'KDC_ERR_S_PRINCIPAL_UNKNOWN',
-            KerberosErrorCode.principal_not_unique: 'KDC_ERR_PRINCIPAL_NOT_UNIQUE',
-            KerberosErrorCode.null_key: 'KDC_ERR_NULL_KEY',
-            KerberosErrorCode.cannot_postdate: 'KDC_ERR_CANNOT_POSTDATE',
-            KerberosErrorCode.never_valid: 'KDC_ERR_NEVER_VALID',
-            KerberosErrorCode.policy: 'KDC_ERR_POLICY',
-            KerberosErrorCode.badoption: 'KDC_ERR_BADOPTION',
-            KerberosErrorCode.etype_nosupp: 'KDC_ERR_ETYPE_NOSUPP',
-            KerberosErrorCode.sumtype_nosupp: 'KDC_ERR_SUMTYPE_NOSUPP',
-            KerberosErrorCode.padata_type_nosupp: 'KDC_ERR_PADATA_TYPE_NOSUPP',
-            KerberosErrorCode.trtype_nosupp: 'KDC_ERR_TRTYPE_NOSUPP',
-            KerberosErrorCode.client_revoked: 'KDC_ERR_CLIENT_REVOKED',
-            KerberosErrorCode.service_revoked: 'KDC_ERR_SERVICE_REVOKED',
-            KerberosErrorCode.tgt_revoked: 'KDC_ERR_TGT_REVOKED',
-            KerberosErrorCode.client_notyet: 'KDC_ERR_CLIENT_NOTYET',
-            KerberosErrorCode.service_notyet: 'KDC_ERR_SERVICE_NOTYET',
-            KerberosErrorCode.key_expired: 'KDC_ERR_KEY_EXPIRED',
-            KerberosErrorCode.preauth_failed: 'KDC_ERR_PREAUTH_FAILED',
-            KerberosErrorCode.preauth_required: 'KDC_ERR_PREAUTH_REQUIRED',
-            KerberosErrorCode.server_nomatch: 'KDC_ERR_SERVER_NOMATCH',
-            KerberosErrorCode.must_use_user2user: 'KDC_ERR_MUST_USE_USER2USER',
-            KerberosErrorCode.path_not_accepted: 'KDC_ERR_PATH_NOT_ACCEPTED',
-            KerberosErrorCode.kdc_svc_unavailable: 'KDC_ERR_SVC_UNAVAILABLE',
-            KerberosErrorCode.ap_bad_integrity: 'KRB_AP_ERR_BAD_INTEGRITY',
-            KerberosErrorCode.ap_txt_expired: 'KRB_AP_ERR_TKT_EXPIRED',
-            KerberosErrorCode.ap_tkt_nyv: 'KRB_AP_ERR_TKT_NYV',
-            KerberosErrorCode.ap_repeat: 'KRB_AP_ERR_REPEAT',
-            KerberosErrorCode.ap_not_use: 'KRB_AP_ERR_NOT_US',
-            KerberosErrorCode.ap_badmatch: 'KRB_AP_ERR_BADMATCH',
-            KerberosErrorCode.ap_skew: 'KRB_AP_ERR_SKEW',
-            KerberosErrorCode.ap_badaddr: 'KRB_AP_ERR_BADADDR',
-            KerberosErrorCode.ap_badversion: 'KRB_AP_ERR_BADVERSION',
-            KerberosErrorCode.ap_msg_type: 'KRB_AP_ERR_MSG_TYPE',
-            KerberosErrorCode.ap_modified: 'KRB_AP_ERR_MODIFIED',
-            KerberosErrorCode.ap_badorder: 'KRB_AP_ERR_BADORDER',
-            KerberosErrorCode.ap_badkeyver: 'KRB_AP_ERR_BADKEYVER',
-            KerberosErrorCode.ap_nokey: 'KRB_AP_ERR_NOKEY',
-            KerberosErrorCode.ap_mut_fail: 'KRB_AP_ERR_MUT_FAIL',
-            KerberosErrorCode.ap_baddirection: 'KRB_AP_ERR_BADDIRECTION',
-            KerberosErrorCode.ap_method: 'KRB_AP_ERR_METHOD',
-            KerberosErrorCode.ap_badseq: 'KRB_AP_ERR_BADSEQ',
-            KerberosErrorCode.ap_inapp_cksum: 'KRB_AP_ERR_INAPP_CKSUM',
-            KerberosErrorCode.ap_path_not_accepted: 'KRB_AP_PATH_NOT_ACCEPTED',
-            KerberosErrorCode.response_too_big: 'KRB_ERR_RESPONSE_TOO_BIG',
-            KerberosErrorCode.generic: 'KRB_ERR_GENERIC',
-            KerberosErrorCode.field_toolong: 'KRB_ERR_FIELD_TOOLONG',
-            KerberosErrorCode.kdc_client_not_trusted: 'KDC_ERROR_CLIENT_NOT_TRUSTED',
-            KerberosErrorCode.kdc_not_trusted: 'KDC_ERROR_KDC_NOT_TRUSTED',
-            KerberosErrorCode.kdc_invalid_sig: 'KDC_ERROR_INVALID_SIG',
-            KerberosErrorCode.kdc_key_too_weak: 'KDC_ERR_KEY_TOO_WEAK',
-            KerberosErrorCode.kdc_certificate_mismatch: 'KDC_ERR_CERTIFICATE_MISMATCH',
-            KerberosErrorCode.ap_no_tgt: 'KRB_AP_ERR_NO_TGT',
-            KerberosErrorCode.kdc_wrong_realm: 'KDC_ERR_WRONG_REALM',
-            KerberosErrorCode.ap_user_to_user_required: 'KRB_AP_ERR_USER_TO_USER_REQUIRED',
-            KerberosErrorCode.kdc_cant_verify_certificate: 'KDC_ERR_CANT_VERIFY_CERTIFICATE',
-            KerberosErrorCode.kdc_invalid_certificate: 'KDC_ERR_INVALID_CERTIFICATE',
-            KerberosErrorCode.kdc_revoked_certificate: 'KDC_ERR_REVOKED_CERTIFICATE',
-            KerberosErrorCode.kdc_revocation_status_unknown: 'KDC_ERR_REVOCATION_STATUS_UNKNOWN',
-            KerberosErrorCode.kdc_revocation_status_unavailable: 'KDC_ERR_REVOCATION_STATUS_UNAVAILABLE',
-            KerberosErrorCode.kdc_client_name_mismatch: 'KDC_ERR_CLIENT_NAME_MISMATCH',
-            KerberosErrorCode.kdc_name_mismatch: 'KDC_ERR_KDC_NAME_MISMATCH',
+            KerberosErrorCode.none: "KDC_ERR_NONE",
+            KerberosErrorCode.name_exp: "KDC_ERR_NAME_EXP",
+            KerberosErrorCode.service_exp: "KDC_ERR_SERVICE_EXP",
+            KerberosErrorCode.bad_pvno: "KDC_ERR_BAD_PVNO",
+            KerberosErrorCode.c_old_mast_kvno: "KDC_ERR_C_OLD_MAST_KVNO",
+            KerberosErrorCode.s_old_mast_kvno: "KDC_ERR_S_OLD_MAST_KVNO",
+            KerberosErrorCode.c_principal_unknown: "KDC_ERR_C_PRINCIPAL_UNKNOWN",
+            KerberosErrorCode.s_principal_unknown: "KDC_ERR_S_PRINCIPAL_UNKNOWN",
+            KerberosErrorCode.principal_not_unique: "KDC_ERR_PRINCIPAL_NOT_UNIQUE",
+            KerberosErrorCode.null_key: "KDC_ERR_NULL_KEY",
+            KerberosErrorCode.cannot_postdate: "KDC_ERR_CANNOT_POSTDATE",
+            KerberosErrorCode.never_valid: "KDC_ERR_NEVER_VALID",
+            KerberosErrorCode.policy: "KDC_ERR_POLICY",
+            KerberosErrorCode.badoption: "KDC_ERR_BADOPTION",
+            KerberosErrorCode.etype_nosupp: "KDC_ERR_ETYPE_NOSUPP",
+            KerberosErrorCode.sumtype_nosupp: "KDC_ERR_SUMTYPE_NOSUPP",
+            KerberosErrorCode.padata_type_nosupp: "KDC_ERR_PADATA_TYPE_NOSUPP",
+            KerberosErrorCode.trtype_nosupp: "KDC_ERR_TRTYPE_NOSUPP",
+            KerberosErrorCode.client_revoked: "KDC_ERR_CLIENT_REVOKED",
+            KerberosErrorCode.service_revoked: "KDC_ERR_SERVICE_REVOKED",
+            KerberosErrorCode.tgt_revoked: "KDC_ERR_TGT_REVOKED",
+            KerberosErrorCode.client_notyet: "KDC_ERR_CLIENT_NOTYET",
+            KerberosErrorCode.service_notyet: "KDC_ERR_SERVICE_NOTYET",
+            KerberosErrorCode.key_expired: "KDC_ERR_KEY_EXPIRED",
+            KerberosErrorCode.preauth_failed: "KDC_ERR_PREAUTH_FAILED",
+            KerberosErrorCode.preauth_required: "KDC_ERR_PREAUTH_REQUIRED",
+            KerberosErrorCode.server_nomatch: "KDC_ERR_SERVER_NOMATCH",
+            KerberosErrorCode.must_use_user2user: "KDC_ERR_MUST_USE_USER2USER",
+            KerberosErrorCode.path_not_accepted: "KDC_ERR_PATH_NOT_ACCEPTED",
+            KerberosErrorCode.kdc_svc_unavailable: "KDC_ERR_SVC_UNAVAILABLE",
+            KerberosErrorCode.ap_bad_integrity: "KRB_AP_ERR_BAD_INTEGRITY",
+            KerberosErrorCode.ap_txt_expired: "KRB_AP_ERR_TKT_EXPIRED",
+            KerberosErrorCode.ap_tkt_nyv: "KRB_AP_ERR_TKT_NYV",
+            KerberosErrorCode.ap_repeat: "KRB_AP_ERR_REPEAT",
+            KerberosErrorCode.ap_not_use: "KRB_AP_ERR_NOT_US",
+            KerberosErrorCode.ap_badmatch: "KRB_AP_ERR_BADMATCH",
+            KerberosErrorCode.ap_skew: "KRB_AP_ERR_SKEW",
+            KerberosErrorCode.ap_badaddr: "KRB_AP_ERR_BADADDR",
+            KerberosErrorCode.ap_badversion: "KRB_AP_ERR_BADVERSION",
+            KerberosErrorCode.ap_msg_type: "KRB_AP_ERR_MSG_TYPE",
+            KerberosErrorCode.ap_modified: "KRB_AP_ERR_MODIFIED",
+            KerberosErrorCode.ap_badorder: "KRB_AP_ERR_BADORDER",
+            KerberosErrorCode.ap_badkeyver: "KRB_AP_ERR_BADKEYVER",
+            KerberosErrorCode.ap_nokey: "KRB_AP_ERR_NOKEY",
+            KerberosErrorCode.ap_mut_fail: "KRB_AP_ERR_MUT_FAIL",
+            KerberosErrorCode.ap_baddirection: "KRB_AP_ERR_BADDIRECTION",
+            KerberosErrorCode.ap_method: "KRB_AP_ERR_METHOD",
+            KerberosErrorCode.ap_badseq: "KRB_AP_ERR_BADSEQ",
+            KerberosErrorCode.ap_inapp_cksum: "KRB_AP_ERR_INAPP_CKSUM",
+            KerberosErrorCode.ap_path_not_accepted: "KRB_AP_PATH_NOT_ACCEPTED",
+            KerberosErrorCode.response_too_big: "KRB_ERR_RESPONSE_TOO_BIG",
+            KerberosErrorCode.generic: "KRB_ERR_GENERIC",
+            KerberosErrorCode.field_toolong: "KRB_ERR_FIELD_TOOLONG",
+            KerberosErrorCode.kdc_client_not_trusted: "KDC_ERROR_CLIENT_NOT_TRUSTED",
+            KerberosErrorCode.kdc_not_trusted: "KDC_ERROR_KDC_NOT_TRUSTED",
+            KerberosErrorCode.kdc_invalid_sig: "KDC_ERROR_INVALID_SIG",
+            KerberosErrorCode.kdc_key_too_weak: "KDC_ERR_KEY_TOO_WEAK",
+            KerberosErrorCode.kdc_certificate_mismatch: "KDC_ERR_CERTIFICATE_MISMATCH",
+            KerberosErrorCode.ap_no_tgt: "KRB_AP_ERR_NO_TGT",
+            KerberosErrorCode.kdc_wrong_realm: "KDC_ERR_WRONG_REALM",
+            KerberosErrorCode.ap_user_to_user_required: "KRB_AP_ERR_USER_TO_USER_REQUIRED",
+            KerberosErrorCode.kdc_cant_verify_certificate: "KDC_ERR_CANT_VERIFY_CERTIFICATE",
+            KerberosErrorCode.kdc_invalid_certificate: "KDC_ERR_INVALID_CERTIFICATE",
+            KerberosErrorCode.kdc_revoked_certificate: "KDC_ERR_REVOKED_CERTIFICATE",
+            KerberosErrorCode.kdc_revocation_status_unknown: "KDC_ERR_REVOCATION_STATUS_UNKNOWN",
+            KerberosErrorCode.kdc_revocation_status_unavailable: "KDC_ERR_REVOCATION_STATUS_UNAVAILABLE",
+            KerberosErrorCode.kdc_client_name_mismatch: "KDC_ERR_CLIENT_NAME_MISMATCH",
+            KerberosErrorCode.kdc_name_mismatch: "KDC_ERR_KDC_NAME_MISMATCH",
         }
 
 
@@ -501,14 +504,14 @@ class KerberosMessageType(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosMessageType", str]:
         return {
-            KerberosMessageType.unknown: 'UNKNOWN',
-            KerberosMessageType.as_req: 'AS-REQ',
-            KerberosMessageType.as_rep: 'AS-REP',
-            KerberosMessageType.tgs_req: 'TGS-REQ',
-            KerberosMessageType.tgs_rep: 'TGS-REP',
-            KerberosMessageType.ap_req: 'AP-REQ',
-            KerberosMessageType.ap_rep: 'AP-REP',
-            KerberosMessageType.error: 'KRB-ERROR',
+            KerberosMessageType.unknown: "UNKNOWN",
+            KerberosMessageType.as_req: "AS-REQ",
+            KerberosMessageType.as_rep: "AS-REP",
+            KerberosMessageType.tgs_req: "TGS-REQ",
+            KerberosMessageType.tgs_rep: "TGS-REP",
+            KerberosMessageType.ap_req: "AP-REQ",
+            KerberosMessageType.ap_rep: "AP-REP",
+            KerberosMessageType.error: "KRB-ERROR",
         }
 
 
@@ -586,73 +589,73 @@ class KerberosPADataType(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosPADataType", str]:
         return {
-            KerberosPADataType.tgs_req: 'PA-TGS-REQ',
-            KerberosPADataType.enc_timestamp: 'PA-ENC-TIMESTAMP',
-            KerberosPADataType.pw_salt: 'PA-PW-SALT',
-            KerberosPADataType.reserved: 'reserved',
-            KerberosPADataType.enc_unix_time: 'PA-ENC-UNIX-TIME',
-            KerberosPADataType.sandia_secureid: 'PA-SANDIA-SECUREID',
-            KerberosPADataType.sesame: 'PA-SESAME',
-            KerberosPADataType.osf_dce: 'PA-OSF-DCE',
-            KerberosPADataType.cybersafe_secureid: 'PA-CYBERSAFE-SECUREID',
-            KerberosPADataType.afs3_salt: 'PA-AFS3-SALT',
-            KerberosPADataType.etype_info: 'PA-ETYPE-INFO',
-            KerberosPADataType.sam_challenge: 'PA-SAM-CHALLENGE',
-            KerberosPADataType.sam_response: 'PA-SAM-RESPONSE',
-            KerberosPADataType.pk_as_req_old: 'PA-PK-AS-REQ_OLD',
-            KerberosPADataType.pk_as_rep_old: 'PA-PK-AS-REP_OLD',
-            KerberosPADataType.pk_as_req: 'PA-PK-AS-REQ',
-            KerberosPADataType.pk_as_rep: 'PA-PK-AS-REP',
-            KerberosPADataType.pk_ocsp_response: 'PA-PK-OCSP-RESPONSE',
-            KerberosPADataType.etype_info2: 'PA-ETYPE-INFO2',
-            KerberosPADataType.use_specified_kvno: 'PA-USE-SPECIFIED-KVNO or PA-SVR-REFERRAL-INFO',
-            KerberosPADataType.sam_redirect: 'PA-SAM-REDIRECT',
-            KerberosPADataType.get_from_typed_data: 'PA-GET-FROM-TYPED-DATA',
-            KerberosPADataType.td_padata: 'TD-PADATA',
-            KerberosPADataType.sam_etype_info: 'PA-SAM-ETYPE-INFO',
-            KerberosPADataType.alt_princ: 'PA-ALT-PRINC',
-            KerberosPADataType.server_referral: 'PA-SERVER-REFERRAL',
-            KerberosPADataType.sam_challenge2: 'PA-SAM-CHALLENGE2',
-            KerberosPADataType.sam_response2: 'PA-SAM-RESPONSE2',
-            KerberosPADataType.extra_tgt: 'PA-EXTRA-TGT',
-            KerberosPADataType.td_pkinit_cms_certificates: 'TD-PKINIT-CMS-CERTIFICATES',
-            KerberosPADataType.td_krb_principal: 'TD-KRB-PRINCIPAL',
-            KerberosPADataType.td_krb_realm: 'TD-KRB-REALM',
-            KerberosPADataType.td_trusted_certifiers: 'TD-TRUSTED-CERTIFIERS',
-            KerberosPADataType.td_certificate_index: 'TD-CERTIFICATE-INDEX',
-            KerberosPADataType.td_app_defined_error: 'TD-APP-DEFINED-ERROR',
-            KerberosPADataType.td_req_nonce: 'TD-REQ-NONCE',
-            KerberosPADataType.td_req_seq: 'TD-REQ-SEQ',
-            KerberosPADataType.td_dh_parameters: 'TD_DH_PARAMETERS',
-            KerberosPADataType.td_cms_digest_algorithms: 'TD-CMS-DIGEST-ALGORITHMS',
-            KerberosPADataType.td_cert_digest_algorithms: 'TD-CERT-DIGEST-ALGORITHMS',
-            KerberosPADataType.pac_request: 'PA-PAC-REQUEST',
-            KerberosPADataType.for_user: 'PA-FOR_USER',
-            KerberosPADataType.for_x509_user: 'PA-FOR-X509-USER',
-            KerberosPADataType.for_check_dups: 'PA-FOR-CHECK_DUPS',
-            KerberosPADataType.as_checksum: 'PA-AS-CHECKSUM',
-            KerberosPADataType.fx_cookie: 'PA-FX-COOKIE',
-            KerberosPADataType.authentication_set: 'PA-AUTHENTICATION-SET',
-            KerberosPADataType.auth_set_selected: 'PA-AUTH-SET-SELECTED',
-            KerberosPADataType.fx_fast: 'PA-FX-FAST',
-            KerberosPADataType.fx_error: 'PA-FX-ERROR',
-            KerberosPADataType.encrypted_challenge: 'PA-ENCRYPTED-CHALLENGE',
-            KerberosPADataType.otp_challenge: 'PA-OTP-CHALLENGE',
-            KerberosPADataType.otp_request: 'PA-OTP-REQUEST',
-            KerberosPADataType.otp_confirm: 'PA-OTP-CONFIRM',
-            KerberosPADataType.otp_pin_change: 'PA-OTP-PIN-CHANGE',
-            KerberosPADataType.epak_as_req: 'PA-EPAK-AS-REQ',
-            KerberosPADataType.epak_as_rep: 'PA-EPAK-AS-REP',
-            KerberosPADataType.pkinit_kx: 'PA_PKINIT_KX',
-            KerberosPADataType.pku2u_name: 'PA_PKU2U_NAME',
-            KerberosPADataType.enc_pa_rep: 'PA-REQ-ENC-PA-REP',
-            KerberosPADataType.as_freshness: 'PA_AS_FRESHNESS',
-            KerberosPADataType.spake: 'PA-SPAKE',
-            KerberosPADataType.kerb_key_list_req: 'KERB-KEY-LIST-REQ',
-            KerberosPADataType.kerb_key_list_rep: 'KERB-KEY-LIST-REP',
-            KerberosPADataType.supported_etypes: 'PA-SUPPORTED-ETYPES',
-            KerberosPADataType.extended_error: 'PA-EXTENDED_ERROR',
-            KerberosPADataType.pac_options: 'PA-PAC-OPTIONS',
+            KerberosPADataType.tgs_req: "PA-TGS-REQ",
+            KerberosPADataType.enc_timestamp: "PA-ENC-TIMESTAMP",
+            KerberosPADataType.pw_salt: "PA-PW-SALT",
+            KerberosPADataType.reserved: "reserved",
+            KerberosPADataType.enc_unix_time: "PA-ENC-UNIX-TIME",
+            KerberosPADataType.sandia_secureid: "PA-SANDIA-SECUREID",
+            KerberosPADataType.sesame: "PA-SESAME",
+            KerberosPADataType.osf_dce: "PA-OSF-DCE",
+            KerberosPADataType.cybersafe_secureid: "PA-CYBERSAFE-SECUREID",
+            KerberosPADataType.afs3_salt: "PA-AFS3-SALT",
+            KerberosPADataType.etype_info: "PA-ETYPE-INFO",
+            KerberosPADataType.sam_challenge: "PA-SAM-CHALLENGE",
+            KerberosPADataType.sam_response: "PA-SAM-RESPONSE",
+            KerberosPADataType.pk_as_req_old: "PA-PK-AS-REQ_OLD",
+            KerberosPADataType.pk_as_rep_old: "PA-PK-AS-REP_OLD",
+            KerberosPADataType.pk_as_req: "PA-PK-AS-REQ",
+            KerberosPADataType.pk_as_rep: "PA-PK-AS-REP",
+            KerberosPADataType.pk_ocsp_response: "PA-PK-OCSP-RESPONSE",
+            KerberosPADataType.etype_info2: "PA-ETYPE-INFO2",
+            KerberosPADataType.use_specified_kvno: "PA-USE-SPECIFIED-KVNO or PA-SVR-REFERRAL-INFO",
+            KerberosPADataType.sam_redirect: "PA-SAM-REDIRECT",
+            KerberosPADataType.get_from_typed_data: "PA-GET-FROM-TYPED-DATA",
+            KerberosPADataType.td_padata: "TD-PADATA",
+            KerberosPADataType.sam_etype_info: "PA-SAM-ETYPE-INFO",
+            KerberosPADataType.alt_princ: "PA-ALT-PRINC",
+            KerberosPADataType.server_referral: "PA-SERVER-REFERRAL",
+            KerberosPADataType.sam_challenge2: "PA-SAM-CHALLENGE2",
+            KerberosPADataType.sam_response2: "PA-SAM-RESPONSE2",
+            KerberosPADataType.extra_tgt: "PA-EXTRA-TGT",
+            KerberosPADataType.td_pkinit_cms_certificates: "TD-PKINIT-CMS-CERTIFICATES",
+            KerberosPADataType.td_krb_principal: "TD-KRB-PRINCIPAL",
+            KerberosPADataType.td_krb_realm: "TD-KRB-REALM",
+            KerberosPADataType.td_trusted_certifiers: "TD-TRUSTED-CERTIFIERS",
+            KerberosPADataType.td_certificate_index: "TD-CERTIFICATE-INDEX",
+            KerberosPADataType.td_app_defined_error: "TD-APP-DEFINED-ERROR",
+            KerberosPADataType.td_req_nonce: "TD-REQ-NONCE",
+            KerberosPADataType.td_req_seq: "TD-REQ-SEQ",
+            KerberosPADataType.td_dh_parameters: "TD_DH_PARAMETERS",
+            KerberosPADataType.td_cms_digest_algorithms: "TD-CMS-DIGEST-ALGORITHMS",
+            KerberosPADataType.td_cert_digest_algorithms: "TD-CERT-DIGEST-ALGORITHMS",
+            KerberosPADataType.pac_request: "PA-PAC-REQUEST",
+            KerberosPADataType.for_user: "PA-FOR_USER",
+            KerberosPADataType.for_x509_user: "PA-FOR-X509-USER",
+            KerberosPADataType.for_check_dups: "PA-FOR-CHECK_DUPS",
+            KerberosPADataType.as_checksum: "PA-AS-CHECKSUM",
+            KerberosPADataType.fx_cookie: "PA-FX-COOKIE",
+            KerberosPADataType.authentication_set: "PA-AUTHENTICATION-SET",
+            KerberosPADataType.auth_set_selected: "PA-AUTH-SET-SELECTED",
+            KerberosPADataType.fx_fast: "PA-FX-FAST",
+            KerberosPADataType.fx_error: "PA-FX-ERROR",
+            KerberosPADataType.encrypted_challenge: "PA-ENCRYPTED-CHALLENGE",
+            KerberosPADataType.otp_challenge: "PA-OTP-CHALLENGE",
+            KerberosPADataType.otp_request: "PA-OTP-REQUEST",
+            KerberosPADataType.otp_confirm: "PA-OTP-CONFIRM",
+            KerberosPADataType.otp_pin_change: "PA-OTP-PIN-CHANGE",
+            KerberosPADataType.epak_as_req: "PA-EPAK-AS-REQ",
+            KerberosPADataType.epak_as_rep: "PA-EPAK-AS-REP",
+            KerberosPADataType.pkinit_kx: "PA_PKINIT_KX",
+            KerberosPADataType.pku2u_name: "PA_PKU2U_NAME",
+            KerberosPADataType.enc_pa_rep: "PA-REQ-ENC-PA-REP",
+            KerberosPADataType.as_freshness: "PA_AS_FRESHNESS",
+            KerberosPADataType.spake: "PA-SPAKE",
+            KerberosPADataType.kerb_key_list_req: "KERB-KEY-LIST-REQ",
+            KerberosPADataType.kerb_key_list_rep: "KERB-KEY-LIST-REP",
+            KerberosPADataType.supported_etypes: "PA-SUPPORTED-ETYPES",
+            KerberosPADataType.extended_error: "PA-EXTENDED_ERROR",
+            KerberosPADataType.pac_options: "PA-PAC-OPTIONS",
         }
 
 
@@ -671,15 +674,15 @@ class KerberosPrincipalNameType(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosPrincipalNameType", str]:
         return {
-            KerberosPrincipalNameType.unknown: 'NT-UNKNOWN',
-            KerberosPrincipalNameType.principal: 'NT-PRINCIPAL',
-            KerberosPrincipalNameType.srv_inst: 'NT-SRV-INST',
-            KerberosPrincipalNameType.srv_hst: 'NT-SRV-HST',
-            KerberosPrincipalNameType.srv_xhst: 'NT-SRV-XHST',
-            KerberosPrincipalNameType.uid: 'NT-UID',
-            KerberosPrincipalNameType.x500_principal: 'NT-X500-PRINCIPAL',
-            KerberosPrincipalNameType.smtp_name: 'NT-SMTP-NAME',
-            KerberosPrincipalNameType.enterprise: 'NT-ENTERPRISE',
+            KerberosPrincipalNameType.unknown: "NT-UNKNOWN",
+            KerberosPrincipalNameType.principal: "NT-PRINCIPAL",
+            KerberosPrincipalNameType.srv_inst: "NT-SRV-INST",
+            KerberosPrincipalNameType.srv_hst: "NT-SRV-HST",
+            KerberosPrincipalNameType.srv_xhst: "NT-SRV-XHST",
+            KerberosPrincipalNameType.uid: "NT-UID",
+            KerberosPrincipalNameType.x500_principal: "NT-X500-PRINCIPAL",
+            KerberosPrincipalNameType.smtp_name: "NT-SMTP-NAME",
+            KerberosPrincipalNameType.enterprise: "NT-ENTERPRISE",
         }
 
 
@@ -698,15 +701,15 @@ class KerberosHostAddressType(enum.IntEnum):
     @classmethod
     def native_labels(cls) -> typing.Dict["KerberosHostAddressType", str]:
         return {
-            KerberosHostAddressType.ipv4: 'IPv4',
-            KerberosHostAddressType.directional: 'Directional',
-            KerberosHostAddressType.chaos_net: 'ChaosNet',
-            KerberosHostAddressType.xns: 'XNS',
-            KerberosHostAddressType.iso: 'ISO',
-            KerberosHostAddressType.decnet_phase_iv: 'DECNET Phase IV',
-            KerberosHostAddressType.apple_talk_ddp: 'AppleTalk DDP',
-            KerberosHostAddressType.netbios: 'NetBios',
-            KerberosHostAddressType.ipv6: 'IPv6',
+            KerberosHostAddressType.ipv4: "IPv4",
+            KerberosHostAddressType.directional: "Directional",
+            KerberosHostAddressType.chaos_net: "ChaosNet",
+            KerberosHostAddressType.xns: "XNS",
+            KerberosHostAddressType.iso: "ISO",
+            KerberosHostAddressType.decnet_phase_iv: "DECNET Phase IV",
+            KerberosHostAddressType.apple_talk_ddp: "AppleTalk DDP",
+            KerberosHostAddressType.netbios: "NetBios",
+            KerberosHostAddressType.ipv6: "IPv6",
         }
 
 
@@ -730,12 +733,12 @@ class _KerberosMsgType(type):
         *args: typing.Any,
         **kwargs: typing.Any,
     ) -> None:
-        pvno = getattr(cls, 'PVNO', 0)
+        pvno = getattr(cls, "PVNO", 0)
 
         if pvno not in cls.__registry:
             cls.__registry[pvno] = {}
 
-        msg_type = getattr(cls, 'MESSAGE_TYPE', None)
+        msg_type = getattr(cls, "MESSAGE_TYPE", None)
         if msg_type is not None:
             cls.__registry[pvno][msg_type] = cls
 
@@ -797,21 +800,22 @@ class KrbAsReq(KerberosV5Msg):
     .. _RFC 4120 5.4.1:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
     """
+
     MESSAGE_TYPE = KerberosMessageType.as_req
 
     PARSE_MAP = [
-        ('pvno', 'PVNO', ParseType.default),
-        ('msg-type', 'MESSAGE_TYPE', ParseType.enum),
-        ('padata', 'padata', ParseType.token),
-        ('req-body', 'req_body', ParseType.token)
+        ("pvno", "PVNO", ParseType.default),
+        ("msg-type", "MESSAGE_TYPE", ParseType.enum),
+        ("padata", "padata", ParseType.token),
+        ("req-body", "req_body", ParseType.token),
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         def unpack_padata(value: typing.Union[ASN1Value, bytes]) -> typing.List:
             return [PAData.unpack(p) for p in unpack_asn1_sequence(value)]
 
-        self.padata = get_sequence_value(sequence, 3, 'KDC-REQ', 'pa-data', unpack_padata)
-        self.req_body = get_sequence_value(sequence, 4, 'KDC-REQ', 'req-body', KdcReqBody.unpack)
+        self.padata = get_sequence_value(sequence, 3, "KDC-REQ", "pa-data", unpack_padata)
+        self.req_body = get_sequence_value(sequence, 4, "KDC-REQ", "req-body", KdcReqBody.unpack)
 
 
 class KrbAsRep(KerberosV5Msg):
@@ -848,36 +852,39 @@ class KrbAsRep(KerberosV5Msg):
     .. _RFC 4120 5.4.2:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.4.2
     """
+
     MESSAGE_TYPE = KerberosMessageType.as_rep
 
     PARSE_MAP = [
-        ('pvno', 'PVNO', ParseType.default),
-        ('msg-type', 'MESSAGE_TYPE', ParseType.enum),
-        ('padata', 'padata', ParseType.token),
-        ('crealm', 'crealm', ParseType.text),
-        ('cname', 'cname', ParseType.principal_name),
-        ('ticket', 'ticket', ParseType.token),
-        ('enc-part', 'enc_part', ParseType.token),
+        ("pvno", "PVNO", ParseType.default),
+        ("msg-type", "MESSAGE_TYPE", ParseType.enum),
+        ("padata", "padata", ParseType.token),
+        ("crealm", "crealm", ParseType.text),
+        ("cname", "cname", ParseType.principal_name),
+        ("ticket", "ticket", ParseType.token),
+        ("enc-part", "enc_part", ParseType.token),
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
         def unpack_padata(value: typing.Union[ASN1Value, bytes]) -> typing.List:
             return [PAData.unpack(p) for p in unpack_asn1_sequence(value)]
 
-        self.padata = get_sequence_value(sequence, 2, 'KDC-REP', 'pa-data', unpack_padata)
-        self.crealm = get_sequence_value(sequence, 3, 'KDC-REP', 'crealm', unpack_asn1_general_string)
-        self.cname = get_sequence_value(sequence, 4, 'KDC-REP', 'cname', unpack_principal_name)
-        self.ticket = get_sequence_value(sequence, 5, 'KDC-REP', 'ticket', Ticket.unpack)
-        self.enc_part = get_sequence_value(sequence, 6, 'KDC-REP', 'enc-part', EncryptedData.unpack)
+        self.padata = get_sequence_value(sequence, 2, "KDC-REP", "pa-data", unpack_padata)
+        self.crealm = get_sequence_value(sequence, 3, "KDC-REP", "crealm", unpack_asn1_general_string)
+        self.cname = get_sequence_value(sequence, 4, "KDC-REP", "cname", unpack_principal_name)
+        self.ticket = get_sequence_value(sequence, 5, "KDC-REP", "ticket", Ticket.unpack)
+        self.enc_part = get_sequence_value(sequence, 6, "KDC-REP", "enc-part", EncryptedData.unpack)
 
 
 class KrbTgsReq(KrbAsReq):
-    """ The KRB_TGS_REQ is the same as KRB_AS_REQ but with a different MESSAGE_TYPE. """
+    """The KRB_TGS_REQ is the same as KRB_AS_REQ but with a different MESSAGE_TYPE."""
+
     MESSAGE_TYPE = KerberosMessageType.tgs_req
 
 
 class KrbTgsRep(KrbAsRep):
-    """ The KRB_TGS_REP is the same as KRB_AS_REP but with a different MESSAGE_TYPE. """
+    """The KRB_TGS_REP is the same as KRB_AS_REP but with a different MESSAGE_TYPE."""
+
     MESSAGE_TYPE = KerberosMessageType.tgs_rep
 
 
@@ -907,23 +914,24 @@ class KrbApReq(KerberosV5Msg):
     .. _RFC 4120 5.5.1:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1
     """
+
     MESSAGE_TYPE = KerberosMessageType.ap_req
 
     PARSE_MAP = [
-        ('pvno', 'PVNO', ParseType.default),
-        ('msg-type', 'MESSAGE_TYPE', ParseType.enum),
-        ('ap-options', 'ap_options', ParseType.flags),
-        ('ticket', 'ticket', ParseType.token),
-        ('authenticator', 'authenticator', ParseType.token),
+        ("pvno", "PVNO", ParseType.default),
+        ("msg-type", "MESSAGE_TYPE", ParseType.enum),
+        ("ap-options", "ap_options", ParseType.flags),
+        ("ticket", "ticket", ParseType.token),
+        ("authenticator", "authenticator", ParseType.token),
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
-        raw_ap_options = get_sequence_value(sequence, 2, 'AP-REQ', 'ap-options', unpack_asn1_bit_string)
+        raw_ap_options = get_sequence_value(sequence, 2, "AP-REQ", "ap-options", unpack_asn1_bit_string)
         ap_options = KerberosAPOptions(struct.unpack("<I", raw_ap_options)[0])
 
         self.ap_options = ap_options
-        self.ticket = get_sequence_value(sequence, 3, 'AP-REQ', 'ticket', Ticket.unpack)
-        self.authenticator = get_sequence_value(sequence, 4, 'AP-REQ', 'authenticator', EncryptedData.unpack)
+        self.ticket = get_sequence_value(sequence, 3, "AP-REQ", "ticket", Ticket.unpack)
+        self.authenticator = get_sequence_value(sequence, 4, "AP-REQ", "authenticator", EncryptedData.unpack)
 
 
 class KrbApRep(KerberosV5Msg):
@@ -948,16 +956,17 @@ class KrbApRep(KerberosV5Msg):
     .. _RFC 4120 5.5.2:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.5.2
     """
+
     MESSAGE_TYPE = KerberosMessageType.ap_rep
 
     PARSE_MAP = [
-        ('pvno', 'PVNO', ParseType.default),
-        ('msg-type', 'MESSAGE_TYPE', ParseType.enum),
-        ('enc-part', 'enc_part', ParseType.token),
+        ("pvno", "PVNO", ParseType.default),
+        ("msg-type", "MESSAGE_TYPE", ParseType.enum),
+        ("enc-part", "enc_part", ParseType.token),
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
-        self.enc_part = get_sequence_value(sequence, 2, 'AP-REP', 'enc-part', EncryptedData.unpack)
+        self.enc_part = get_sequence_value(sequence, 2, "AP-REP", "enc-part", EncryptedData.unpack)
 
 
 class KrbError(KerberosV5Msg):
@@ -1002,37 +1011,39 @@ class KrbError(KerberosV5Msg):
     .. _RFC 4120 5.9.1:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.9.1
     """
+
     MESSAGE_TYPE = KerberosMessageType.error
 
     PARSE_MAP = [
-        ('pvno', 'PVNO', ParseType.default),
-        ('msg-type', 'MESSAGE_TYPE', ParseType.enum),
-        ('ctime', 'ctime', ParseType.datetime),
-        ('cusec', 'cusec', ParseType.default),
-        ('stime', 'stime', ParseType.datetime),
-        ('susec', 'susec', ParseType.default),
-        ('error-code', 'error_code', ParseType.enum),
-        ('crealm', 'crealm', ParseType.text),
-        ('cname', 'cname', ParseType.principal_name),
-        ('realm', 'realm', ParseType.text),
-        ('sname', 'sname', ParseType.principal_name),
-        ('e-text', 'e_text', ParseType.text),
-        ('e-data', 'e_data', ParseType.bytes),
+        ("pvno", "PVNO", ParseType.default),
+        ("msg-type", "MESSAGE_TYPE", ParseType.enum),
+        ("ctime", "ctime", ParseType.datetime),
+        ("cusec", "cusec", ParseType.default),
+        ("stime", "stime", ParseType.datetime),
+        ("susec", "susec", ParseType.default),
+        ("error-code", "error_code", ParseType.enum),
+        ("crealm", "crealm", ParseType.text),
+        ("cname", "cname", ParseType.principal_name),
+        ("realm", "realm", ParseType.text),
+        ("sname", "sname", ParseType.principal_name),
+        ("e-text", "e_text", ParseType.text),
+        ("e-data", "e_data", ParseType.bytes),
     ]
 
     def __init__(self, sequence: typing.Dict[int, ASN1Value]) -> None:
-        self.ctime = get_sequence_value(sequence, 2, 'KRB-ERROR', 'ctime', unpack_asn1_generalized_time)
-        self.cusec = get_sequence_value(sequence, 3, 'KRB-ERROR', 'cusec', unpack_asn1_integer)
-        self.stime = get_sequence_value(sequence, 4, 'KRB-ERROR', 'stime', unpack_asn1_generalized_time)
-        self.susec = get_sequence_value(sequence, 5, 'KRB-ERROR', 'susec', unpack_asn1_integer)
-        self.error_code = KerberosErrorCode(get_sequence_value(sequence, 6, 'KRB-ERROR', 'error-code',
-                                                               unpack_asn1_integer))
-        self.crealm = get_sequence_value(sequence, 7, 'KRB-ERROR', 'crealm', unpack_asn1_general_string)
-        self.cname = get_sequence_value(sequence, 8, 'KRB-ERROR', 'cname', unpack_principal_name)
-        self.realm = get_sequence_value(sequence, 9, 'KRB-ERROR', 'realm', unpack_asn1_general_string)
-        self.sname = get_sequence_value(sequence, 10, 'KRB-ERROR', 'realm', unpack_principal_name)
-        self.e_text = get_sequence_value(sequence, 11, 'KRB-ERROR', 'e-text', unpack_asn1_general_string)
-        self.e_data = get_sequence_value(sequence, 12, 'KRB-ERROR', 'e-data', unpack_asn1_octet_string)
+        self.ctime = get_sequence_value(sequence, 2, "KRB-ERROR", "ctime", unpack_asn1_generalized_time)
+        self.cusec = get_sequence_value(sequence, 3, "KRB-ERROR", "cusec", unpack_asn1_integer)
+        self.stime = get_sequence_value(sequence, 4, "KRB-ERROR", "stime", unpack_asn1_generalized_time)
+        self.susec = get_sequence_value(sequence, 5, "KRB-ERROR", "susec", unpack_asn1_integer)
+        self.error_code = KerberosErrorCode(
+            get_sequence_value(sequence, 6, "KRB-ERROR", "error-code", unpack_asn1_integer)
+        )
+        self.crealm = get_sequence_value(sequence, 7, "KRB-ERROR", "crealm", unpack_asn1_general_string)
+        self.cname = get_sequence_value(sequence, 8, "KRB-ERROR", "cname", unpack_principal_name)
+        self.realm = get_sequence_value(sequence, 9, "KRB-ERROR", "realm", unpack_asn1_general_string)
+        self.sname = get_sequence_value(sequence, 10, "KRB-ERROR", "realm", unpack_principal_name)
+        self.e_text = get_sequence_value(sequence, 11, "KRB-ERROR", "e-text", unpack_asn1_general_string)
+        self.e_data = get_sequence_value(sequence, 12, "KRB-ERROR", "e-data", unpack_asn1_octet_string)
 
 
 class PAData:
@@ -1058,9 +1069,10 @@ class PAData:
     .. RFC 4120 5.2.7:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.2.7
     """
+
     PARSE_MAP = [
-        ('padata-type', 'data_type', ParseType.enum),
-        ('padata-value', 'value', ParseType.token),
+        ("padata-type", "data_type", ParseType.enum),
+        ("padata-value", "value", ParseType.token),
     ]
 
     def __init__(self, data_type: typing.Union[int, KerberosPADataType], value: bytes) -> None:
@@ -1103,8 +1115,8 @@ class PAData:
             except ValueError:
                 return int_val
 
-        data_type = get_sequence_value(sequence, 1, 'PA-DATA', 'padata-type', unpack_data_type)
-        pa_value = get_sequence_value(sequence, 2, 'PA-DATA', 'padata-value', unpack_asn1_octet_string)
+        data_type = get_sequence_value(sequence, 1, "PA-DATA", "padata-type", unpack_data_type)
+        pa_value = get_sequence_value(sequence, 2, "PA-DATA", "padata-value", unpack_asn1_octet_string)
 
         return PAData(data_type, pa_value)
 
@@ -1133,10 +1145,11 @@ class PAETypeInfo2:
     .. RFC 4120 5.2.7.5:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.2.7.5
     """
+
     PARSE_MAP = [
-        ('etype', 'etype', ParseType.enum),
-        ('salt', 'salt', ParseType.bytes),
-        ('s2kparams', 's2kparams', ParseType.bytes),
+        ("etype", "etype", ParseType.enum),
+        ("salt", "salt", ParseType.bytes),
+        ("s2kparams", "s2kparams", ParseType.bytes),
     ]
 
     def __init__(
@@ -1153,9 +1166,9 @@ class PAETypeInfo2:
     def unpack(value: typing.Union[ASN1Value, bytes]) -> "PAETypeInfo2":
         sequence = unpack_asn1_tagged_sequence(value)
 
-        etype = KerberosEncryptionType(get_sequence_value(sequence, 0, 'PA-ETYPE-INFO2', 'etype', unpack_asn1_integer))
-        salt = get_sequence_value(sequence, 1, 'ETYPE-INFO2-ENTRY', 'salt', unpack_asn1_general_string)
-        s2kparams = get_sequence_value(sequence, 2, 'ETYPE-INFO2-ENTRY', 's2kparams', unpack_asn1_octet_string)
+        etype = KerberosEncryptionType(get_sequence_value(sequence, 0, "PA-ETYPE-INFO2", "etype", unpack_asn1_integer))
+        salt = get_sequence_value(sequence, 1, "ETYPE-INFO2-ENTRY", "salt", unpack_asn1_general_string)
+        s2kparams = get_sequence_value(sequence, 2, "ETYPE-INFO2-ENTRY", "s2kparams", unpack_asn1_octet_string)
 
         return PAETypeInfo2(etype, salt, s2kparams)
 
@@ -1185,10 +1198,11 @@ class EncryptedData:
     .. RFC 4120 5.2.9:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.2.9
     """
+
     PARSE_MAP = [
-        ('etype', 'etype', ParseType.enum),
-        ('kvno', 'kvno', ParseType.default),
-        ('cipher', 'cipher', ParseType.bytes),
+        ("etype", "etype", ParseType.enum),
+        ("kvno", "kvno", ParseType.default),
+        ("cipher", "cipher", ParseType.bytes),
     ]
 
     def __init__(self, etype: KerberosEncryptionType, kvno: typing.Optional[int], cipher: bytes) -> None:
@@ -1200,9 +1214,9 @@ class EncryptedData:
     def unpack(value: typing.Union[bytes, ASN1Value]) -> "EncryptedData":
         sequence = unpack_asn1_tagged_sequence(value)
 
-        etype = KerberosEncryptionType(get_sequence_value(sequence, 0, 'EncryptedData', 'etype', unpack_asn1_integer))
-        kvno = get_sequence_value(sequence, 1, 'EncryptedData', 'kvno', unpack_asn1_integer)
-        cipher = get_sequence_value(sequence, 2, 'EncryptedData', 'cipher', unpack_asn1_octet_string)
+        etype = KerberosEncryptionType(get_sequence_value(sequence, 0, "EncryptedData", "etype", unpack_asn1_integer))
+        kvno = get_sequence_value(sequence, 1, "EncryptedData", "kvno", unpack_asn1_integer)
+        cipher = get_sequence_value(sequence, 2, "EncryptedData", "cipher", unpack_asn1_octet_string)
 
         return EncryptedData(etype, kvno, cipher)
 
@@ -1234,11 +1248,12 @@ class Ticket:
     .. _RFC 4120 5.3:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.3
     """
+
     PARSE_MAP = [
-        ('tkt-vno', 'tkt_vno', ParseType.default),
-        ('realm', 'realm', ParseType.text),
-        ('sname', 'sname', ParseType.principal_name),
-        ('enc-part', 'enc_part', ParseType.token),
+        ("tkt-vno", "tkt_vno", ParseType.default),
+        ("realm", "realm", ParseType.text),
+        ("sname", "sname", ParseType.principal_name),
+        ("enc-part", "enc_part", ParseType.token),
     ]
 
     def __init__(
@@ -1258,10 +1273,10 @@ class Ticket:
         b_data = extract_asn1_tlv(value, TagClass.application, 1)
         sequence = unpack_asn1_tagged_sequence(unpack_asn1(b_data)[0])
 
-        tkt_vno = get_sequence_value(sequence, 0, 'Ticket', 'tkt-vno', unpack_asn1_integer)
-        realm = get_sequence_value(sequence, 1, 'Ticket', 'realm', unpack_asn1_general_string)
-        sname = get_sequence_value(sequence, 2, 'Ticket', 'sname', unpack_principal_name)
-        enc_part = get_sequence_value(sequence, 3, 'Ticket', 'enc-part', EncryptedData.unpack)
+        tkt_vno = get_sequence_value(sequence, 0, "Ticket", "tkt-vno", unpack_asn1_integer)
+        realm = get_sequence_value(sequence, 1, "Ticket", "realm", unpack_asn1_general_string)
+        sname = get_sequence_value(sequence, 2, "Ticket", "sname", unpack_principal_name)
+        enc_part = get_sequence_value(sequence, 3, "Ticket", "enc-part", EncryptedData.unpack)
 
         return Ticket(tkt_vno, realm, sname, enc_part)
 
@@ -1327,19 +1342,20 @@ class KdcReqBody:
     .. _RFC 4120 5.4.1:
         https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
     """
+
     PARSE_MAP = [
-        ('kdc-options', 'kdc_options', (ParseType.flags, KerberosKDCOptions)),
-        ('cname', 'cname', ParseType.principal_name),
-        ('realm', 'realm', ParseType.text),
-        ('sname', 'sname', ParseType.principal_name),
-        ('from', 'postdated_from', ParseType.datetime),
-        ('till', 'postdated_till', ParseType.datetime),
-        ('rtime', 'rtime', ParseType.datetime),
-        ('nonce', 'nonce', ParseType.default),
-        ('etype', 'etype', ParseType.enum),
-        ('addresses', 'addresses', ParseType.host_address),
-        ('enc-authorization-data', 'enc_authorization_data', ParseType.token),
-        ('additional-tickets', 'additional_tickets', ParseType.token),
+        ("kdc-options", "kdc_options", (ParseType.flags, KerberosKDCOptions)),
+        ("cname", "cname", ParseType.principal_name),
+        ("realm", "realm", ParseType.text),
+        ("sname", "sname", ParseType.principal_name),
+        ("from", "postdated_from", ParseType.datetime),
+        ("till", "postdated_till", ParseType.datetime),
+        ("rtime", "rtime", ParseType.datetime),
+        ("nonce", "nonce", ParseType.default),
+        ("etype", "etype", ParseType.enum),
+        ("addresses", "addresses", ParseType.host_address),
+        ("enc-authorization-data", "enc_authorization_data", ParseType.token),
+        ("additional-tickets", "additional_tickets", ParseType.token),
     ]
 
     def __init__(
@@ -1387,19 +1403,30 @@ class KdcReqBody:
         def unpack_ticket(value: typing.Union[ASN1Value, bytes]) -> typing.List[Ticket]:
             return [Ticket.unpack(t) for t in unpack_asn1_sequence(value)]
 
-        kdc_options = get_sequence_value(sequence, 0, 'KDC-REQ-BODY', 'kdc-options', unpack_kdc_options)
-        cname = get_sequence_value(sequence, 1, 'KDC-REQ-BODY', 'cname', unpack_principal_name)
-        realm = get_sequence_value(sequence, 2, 'KDC-REQ-BODY', 'realm', unpack_asn1_general_string)
-        sname = get_sequence_value(sequence, 3, 'KDC-REQ-BODY', 'sname', unpack_principal_name)
-        postdated_from = get_sequence_value(sequence, 4, 'KDC-REQ-BODY', 'from', unpack_asn1_generalized_time)
-        postdated_till = get_sequence_value(sequence, 5, 'KDC-REQ-BODY', 'till', unpack_asn1_generalized_time)
-        rtime = get_sequence_value(sequence, 6, 'KDC-REQ-BODY', 'rtime', unpack_asn1_generalized_time)
-        nonce = get_sequence_value(sequence, 7, 'KDC-REQ-BODY', 'nonce', unpack_asn1_integer)
-        etype = get_sequence_value(sequence, 8, 'KDC-REQ-BODY', 'etype', unpack_etype)
-        addresses = get_sequence_value(sequence, 9, 'KDC-REQ-BODY', 'addresses', unpack_addresses)
-        enc_auth_data = get_sequence_value(sequence, 10, 'KDC-REQ-BODY', 'enc-authorization-data',
-                                           EncryptedData.unpack)
-        additional_tickets = get_sequence_value(sequence, 11, 'KDC-REQ-BODY', 'additional-tickets', unpack_ticket)
+        kdc_options = get_sequence_value(sequence, 0, "KDC-REQ-BODY", "kdc-options", unpack_kdc_options)
+        cname = get_sequence_value(sequence, 1, "KDC-REQ-BODY", "cname", unpack_principal_name)
+        realm = get_sequence_value(sequence, 2, "KDC-REQ-BODY", "realm", unpack_asn1_general_string)
+        sname = get_sequence_value(sequence, 3, "KDC-REQ-BODY", "sname", unpack_principal_name)
+        postdated_from = get_sequence_value(sequence, 4, "KDC-REQ-BODY", "from", unpack_asn1_generalized_time)
+        postdated_till = get_sequence_value(sequence, 5, "KDC-REQ-BODY", "till", unpack_asn1_generalized_time)
+        rtime = get_sequence_value(sequence, 6, "KDC-REQ-BODY", "rtime", unpack_asn1_generalized_time)
+        nonce = get_sequence_value(sequence, 7, "KDC-REQ-BODY", "nonce", unpack_asn1_integer)
+        etype = get_sequence_value(sequence, 8, "KDC-REQ-BODY", "etype", unpack_etype)
+        addresses = get_sequence_value(sequence, 9, "KDC-REQ-BODY", "addresses", unpack_addresses)
+        enc_auth_data = get_sequence_value(sequence, 10, "KDC-REQ-BODY", "enc-authorization-data", EncryptedData.unpack)
+        additional_tickets = get_sequence_value(sequence, 11, "KDC-REQ-BODY", "additional-tickets", unpack_ticket)
 
-        return KdcReqBody(kdc_options, cname, realm, sname, postdated_from, postdated_till, rtime, nonce, etype,
-                          addresses, enc_auth_data, additional_tickets)
+        return KdcReqBody(
+            kdc_options,
+            cname,
+            realm,
+            sname,
+            postdated_from,
+            postdated_till,
+            rtime,
+            nonce,
+            etype,
+            addresses,
+            enc_auth_data,
+            additional_tickets,
+        )

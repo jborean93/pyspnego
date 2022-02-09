@@ -32,43 +32,48 @@ def _new_context(
 
     # Unless otherwise specified, we always favour the platform implementations (SSPI/GSSAPI) if they are available.
     # Otherwise fallback to the Python implementations (NegotiateProxy/NTLMProxy).
-    use_flags = (NegotiateOptions.use_sspi | NegotiateOptions.use_gssapi | NegotiateOptions.use_negotiate |
-                 NegotiateOptions.use_ntlm)
+    use_flags = (
+        NegotiateOptions.use_sspi
+        | NegotiateOptions.use_gssapi
+        | NegotiateOptions.use_negotiate
+        | NegotiateOptions.use_ntlm
+    )
     use_specified = options & use_flags != 0
 
     # When requesting a delegated context with explicit credentials we cannot rely on GSSAPI for Negotiate auth. There
     # is no way to explicitly request a forwardable Kerberos ticket for use with SPNEGO.
     forwardable = bool(context_req & ContextReq.delegate or context_req & ContextReq.delegate_policy)
-    if username and password and forwardable and 'negotiate' in gssapi_protocols:
-        gssapi_protocols.remove('negotiate')
+    if username and password and forwardable and "negotiate" in gssapi_protocols:
+        gssapi_protocols.remove("negotiate")
 
     proxy: typing.Type[ContextProxy]
 
     # If the protocol is CredSSP then we can only use CredSSPProxy. The use_flags still control what underlying
     # Negotiate auth is used in the CredSSP authentication process.
-    if proto == 'credssp':
+    if proto == "credssp":
         proxy = CredSSPProxy
 
     # If the procotol has been explicitly set to NTLM and an NTLM hash has been provided as the password, do not favour
     # the platform implementations. Instead, use the Python NTLMProxy implementation, since SSPI/GSSAPI so not allow
     # authentication using hashes.
-    elif proto == 'ntlm' and password is not None and is_ntlm_hash(password):
+    elif proto == "ntlm" and password is not None and is_ntlm_hash(password):
         proxy = NTLMProxy
 
     elif options & NegotiateOptions.use_sspi or (not use_specified and proto in sspi_protocols):
         proxy = SSPIProxy
 
-    elif options & NegotiateOptions.use_gssapi or (not use_specified and (proto == 'kerberos' or
-                                                   proto in gssapi_protocols)):
+    elif options & NegotiateOptions.use_gssapi or (
+        not use_specified and (proto == "kerberos" or proto in gssapi_protocols)
+    ):
         proxy = GSSAPIProxy
 
-    elif options & NegotiateOptions.use_negotiate or (not use_specified and proto == 'negotiate'):
+    elif options & NegotiateOptions.use_negotiate or (not use_specified and proto == "negotiate"):
         # If GSSAPI does not offer full negotiate support, use our own wrapper.
         proxy = NegotiateProxy
 
-    elif options & NegotiateOptions.use_ntlm or (not use_specified and proto == 'ntlm'):
+    elif options & NegotiateOptions.use_ntlm or (not use_specified and proto == "ntlm"):
         # Finally if GSSAPI does not support ntlm, use our own wrapper.
-        proto = 'ntlm' if proto == 'negotiate' else proto
+        proto = "ntlm" if proto == "negotiate" else proto
         proxy = NTLMProxy
 
     else:
@@ -80,11 +85,11 @@ def _new_context(
 def client(
     username: typing.Optional[str] = None,
     password: typing.Optional[str] = None,
-    hostname: str = 'unspecified',
-    service: str = 'host',
+    hostname: str = "unspecified",
+    service: str = "host",
     channel_bindings: typing.Optional[GssChannelBindings] = None,
     context_req: ContextReq = ContextReq.default,
-    protocol: str = 'negotiate',
+    protocol: str = "negotiate",
     options: NegotiateOptions = NegotiateOptions.none,
     **kwargs: typing.Any,
 ) -> ContextProxy:
@@ -104,16 +109,17 @@ def client(
     Returns:
         ContextProxy: The context proxy for a client.
     """
-    return _new_context(username, password, hostname, service, channel_bindings, context_req, protocol, options,
-                        'initiate', **kwargs)
+    return _new_context(
+        username, password, hostname, service, channel_bindings, context_req, protocol, options, "initiate", **kwargs
+    )
 
 
 def server(
-    hostname: str = 'unspecified',
-    service: str = 'host',
+    hostname: str = "unspecified",
+    service: str = "host",
     channel_bindings: typing.Optional[GssChannelBindings] = None,
     context_req: ContextReq = ContextReq.default,
-    protocol: str = 'negotiate',
+    protocol: str = "negotiate",
     options: NegotiateOptions = NegotiateOptions.none,
     **kwargs: typing.Any,
 ) -> ContextProxy:
@@ -131,5 +137,6 @@ def server(
     Returns:
         ContextProxy: The context proxy for a client.
     """
-    return _new_context(None, None, hostname, service, channel_bindings, context_req, protocol, options,
-                        'accept', **kwargs)
+    return _new_context(
+        None, None, hostname, service, channel_bindings, context_req, protocol, options, "accept", **kwargs
+    )

@@ -13,14 +13,17 @@ except ImportError:
     SKIP = True
 
 
-@pytest.mark.skipif(SKIP, reason='Can only test Cython code on Windows with compiled code.')
-@pytest.mark.parametrize('string, expected', [
-    (None, 0),
-    ("", 0),
-    ('cafe', 5),
-    ('café', 5),
-    (to_text(b"\xF0\x9D\x84\x9E"), 3),  # Surrogate pair + null char
-])
+@pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
+@pytest.mark.parametrize(
+    "string, expected",
+    [
+        (None, 0),
+        ("", 0),
+        ("cafe", 5),
+        ("café", 5),
+        (to_text(b"\xF0\x9D\x84\x9E"), 3),  # Surrogate pair + null char
+    ],
+)
 def test_wide_char(string, expected):
     wide_char = text.WideChar.from_text(string)
 

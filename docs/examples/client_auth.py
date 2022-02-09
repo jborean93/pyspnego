@@ -9,7 +9,7 @@ def exchange_data(data: bytes) -> bytes:
 
 
 def main() -> None:
-    client = spnego.client('username', 'password', hostname='server')
+    client = spnego.client("username", "password", hostname="server")
 
     in_token = None
     while client.complete:
@@ -27,8 +27,8 @@ def main() -> None:
     resp = exchange_data(enc_data.data)
     dec_data = client.unwrap(resp)
 
-    print("Server response: %s" % dec_data.data.decode('utf-8'))
+    print("Server response: %s" % dec_data.data.decode("utf-8"))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

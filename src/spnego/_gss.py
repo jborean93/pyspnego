@@ -54,14 +54,14 @@ except ImportError as err:
 _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
 # https://github.com/simo5/gss-ntlmssp/blob/bfc7232dbb2259072a976fc9cdb6ae4bfd323304/src/gssapi_ntlmssp.h#L68
-_GSS_NTLMSSP_RESET_CRYPTO_OID = '1.3.6.1.4.1.7165.655.1.3'
+_GSS_NTLMSSP_RESET_CRYPTO_OID = "1.3.6.1.4.1.7165.655.1.3"
 
 # https://github.com/krb5/krb5/blob/master/src/lib/gssapi/spnego/spnego_mech.c#L483
-_GSS_SPNEGO_REQUIRE_MIC_OID_STRING = '1.3.6.1.4.1.7165.655.1.2'
+_GSS_SPNEGO_REQUIRE_MIC_OID_STRING = "1.3.6.1.4.1.7165.655.1.2"
 
 
 def _available_protocols(options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
-    """ Return a list of protocols that GSSAPIProxy can offer. """
+    """Return a list of protocols that GSSAPIProxy can offer."""
     if not options:
         options = NegotiateOptions(0)
 
@@ -69,21 +69,21 @@ def _available_protocols(options: typing.Optional[NegotiateOptions] = None) -> t
     if HAS_GSSAPI:
         # We can't offer Kerberos if the caller requires WinRM wrapping and IOV isn't available.
         if not (options & NegotiateOptions.wrapping_winrm and not HAS_IOV):
-            protocols = ['kerberos']
+            protocols = ["kerberos"]
 
         # We can only offer NTLM if the mech is installed and can retrieve the functionality the caller desires.
         if _gss_ntlmssp_available(session_key=bool(options & NegotiateOptions.session_key)):
-            protocols.append('ntlm')
+            protocols.append("ntlm")
 
         # We can only offer Negotiate if we can offer both Kerberos and NTLM.
         if len(protocols) == 2:
-            protocols.append('negotiate')
+            protocols.append("negotiate")
 
     return protocols
 
 
 def _create_iov_result(iov: "GSSIOV") -> typing.Tuple[IOVResBuffer, ...]:
-    """ Converts GSSAPI IOV buffer to generic IOVBuffer result. """
+    """Converts GSSAPI IOV buffer to generic IOVBuffer result."""
     buffers = []
     for i in iov:
         buffer_entry = IOVResBuffer(type=BufferType(i.type), data=i.value)
@@ -136,7 +136,7 @@ def _get_gssapi_credential(
     """
     principal = None
     if username:
-        name_type = getattr(gssapi.NameType, 'user' if usage == 'initiate' else 'hostbased_service')
+        name_type = getattr(gssapi.NameType, "user" if usage == "initiate" else "hostbased_service")
         principal = gssapi.Name(base=username, name_type=name_type)
 
     if principal and password:
@@ -155,7 +155,7 @@ def _get_gssapi_credential(
 
         cred = gssapi.Credentials(base=raw_cred)
 
-    elif principal or usage == 'accept':
+    elif principal or usage == "accept":
         cred = gssapi.Credentials(name=principal, usage=usage, mechs=[mech])
 
         # We don't need to check the actual lifetime, just trying to get the valid will have gssapi check the lifetime
@@ -209,13 +209,13 @@ def _gss_ntlmssp_available(session_key: bool = False) -> bool:
     # Cache the result so we don't run this check multiple times.
     try:
         res = _gss_ntlmssp_available.result  # type: ignore
-        return res['session_key'] if session_key else res['available']
+        return res["session_key"] if session_key else res["available"]
     except AttributeError:
         pass
 
     ntlm_features = {
-        'available': False,
-        'session_key': False,
+        "available": False,
+        "session_key": False,
     }
 
     # If any of these calls results in a GSSError we treat that as NTLM being unusable because these are standard
@@ -223,9 +223,9 @@ def _gss_ntlmssp_available(session_key: bool = False) -> bool:
     ntlm = gssapi.OID.from_int_seq(GSSMech.ntlm.value)
     try:
         # This can be anything, the first NTLM message doesn't need a valid target name or credential.
-        spn = gssapi.Name('http@test', name_type=gssapi.NameType.hostbased_service)
-        cred = _get_gssapi_credential(ntlm, 'initiate', username='user', password='pass')
-        context = gssapi.SecurityContext(creds=cred, usage='initiate', name=spn, mech=ntlm)
+        spn = gssapi.Name("http@test", name_type=gssapi.NameType.hostbased_service)
+        cred = _get_gssapi_credential(ntlm, "initiate", username="user", password="pass")
+        context = gssapi.SecurityContext(creds=cred, usage="initiate", name=spn, mech=ntlm)
 
         context.step()  # Need to at least have a context set up before we can call gss_set_sec_context_option.
 
@@ -233,7 +233,7 @@ def _gss_ntlmssp_available(session_key: bool = False) -> bool:
         # it does not implement 'GSS_NTLMSSP_RESET_CRYPTO_OID' so by running this we can weed out that broken impl.
         _gss_ntlmssp_reset_crypto(context)
 
-        ntlm_features['available'] = True
+        ntlm_features["available"] = True
     except GSSError as gss_err:
         log.debug("GSSAPI does not support required the NTLM interfaces: %s" % str(gss_err))
     else:
@@ -247,8 +247,8 @@ def _gss_ntlmssp_available(session_key: bool = False) -> bool:
             # the context is not yet established. Any other errors would mean this isn't supported and we can't use
             # the current version installed if we need session_key interrogation.
             # https://github.com/gssapi/gss-ntlmssp/blob/9d7a275a4d6494606fb54713876e4f5cbf4d1362/src/gss_sec_ctx.c#L1277
-            if getattr(o_err, 'min_code', 0) == 1314127894:  # ERR_NOTAVAIL
-                ntlm_features['session_key'] = True
+            if getattr(o_err, "min_code", 0) == 1314127894:  # ERR_NOTAVAIL
+                ntlm_features["session_key"] = True
 
             else:
                 log.debug("GSSAPI ntlmssp does not support session key interrogation: %s" % str(o_err))
@@ -258,20 +258,20 @@ def _gss_ntlmssp_available(session_key: bool = False) -> bool:
 
 
 def _gss_ntlmssp_reset_crypto(context: "gssapi.SecurityContext", outgoing: bool = True) -> None:
-    """ Resets the NTLM RC4 ciphers when being used with SPNEGO. """
+    """Resets the NTLM RC4 ciphers when being used with SPNEGO."""
     reset_crypto = gssapi.OID.from_int_seq(_GSS_NTLMSSP_RESET_CRYPTO_OID)
     value = b"\x00\x00\x00\x00" if outgoing else b"\x01\x00\x00\x00"
     set_sec_context_option(reset_crypto, context=context, value=value)
 
 
 def _gss_sasl_description(mech: "gssapi.OID") -> typing.Optional[bytes]:
-    """ Attempts to get the SASL description of the mech specified. """
+    """Attempts to get the SASL description of the mech specified."""
     try:
         res = _gss_sasl_description.result  # type: ignore
         return res[mech.dotted_form]
 
     except (AttributeError, KeyError):
-        res = getattr(_gss_sasl_description, 'result', {})
+        res = getattr(_gss_sasl_description, "result", {})
 
     try:
         sasl_desc = gssapi.raw.inquire_saslname_for_mech(mech).mech_description
@@ -348,6 +348,7 @@ class GSSAPIProxy(ContextProxy):
     uses the Python gssapi library to interface with the gss_* calls to provider Kerberos, and potentially native
     ntlm/negotiate functionality.
     """
+
     def __init__(
         self,
         username: typing.Optional[str] = None,
@@ -356,8 +357,8 @@ class GSSAPIProxy(ContextProxy):
         service: typing.Optional[str] = None,
         channel_bindings: typing.Optional[GssChannelBindings] = None,
         context_req: ContextReq = ContextReq.default,
-        usage: str = 'initiate',
-        protocol: str = 'negotiate',
+        usage: str = "initiate",
+        protocol: str = "negotiate",
         options: NegotiateOptions = NegotiateOptions.none,
         _is_wrapped: bool = False,
         **kwargs: typing.Any,
@@ -366,39 +367,41 @@ class GSSAPIProxy(ContextProxy):
         if not HAS_GSSAPI:
             raise ImportError("GSSAPIProxy requires the Python gssapi library: %s" % GSSAPI_IMP_ERR)
 
-        super(GSSAPIProxy, self).__init__(username, password, hostname, service, channel_bindings, context_req, usage,
-                                          protocol, options, _is_wrapped)
+        super(GSSAPIProxy, self).__init__(
+            username, password, hostname, service, channel_bindings, context_req, usage, protocol, options, _is_wrapped
+        )
 
         mech_str = {
-            'kerberos': GSSMech.kerberos.value,
-            'negotiate': GSSMech.spnego.value,
-            'ntlm': GSSMech.ntlm.value,
+            "kerberos": GSSMech.kerberos.value,
+            "negotiate": GSSMech.spnego.value,
+            "ntlm": GSSMech.ntlm.value,
         }[self.protocol]
         mech = gssapi.OID.from_int_seq(mech_str)
 
         cred = None
         try:
-            cred = _get_gssapi_credential(mech, self.usage, username=username, password=password,
-                                          context_req=context_req)
+            cred = _get_gssapi_credential(
+                mech, self.usage, username=username, password=password, context_req=context_req
+            )
         except GSSError as gss_err:
             raise SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential") from gss_err
 
         context_kwargs: typing.Dict[str, typing.Any] = {}
 
         if self.channel_bindings:
-            context_kwargs['channel_bindings'] = ChannelBindings(
+            context_kwargs["channel_bindings"] = ChannelBindings(
                 initiator_address_type=self.channel_bindings.initiator_addrtype,
                 initiator_address=self.channel_bindings.initiator_address,
                 acceptor_address_type=self.channel_bindings.acceptor_addrtype,
                 acceptor_address=self.channel_bindings.acceptor_address,
-                application_data=self.channel_bindings.application_data
+                application_data=self.channel_bindings.application_data,
             )
 
-        if self.usage == 'initiate':
-            spn = "%s@%s" % (service if service else 'host', hostname or 'unspecified')
-            context_kwargs['name'] = gssapi.Name(spn, name_type=gssapi.NameType.hostbased_service)
-            context_kwargs['mech'] = mech
-            context_kwargs['flags'] = self._context_req
+        if self.usage == "initiate":
+            spn = "%s@%s" % (service if service else "host", hostname or "unspecified")
+            context_kwargs["name"] = gssapi.Name(spn, name_type=gssapi.NameType.hostbased_service)
+            context_kwargs["mech"] = mech
+            context_kwargs["flags"] = self._context_req
 
         self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, **context_kwargs)
 
@@ -415,7 +418,7 @@ class GSSAPIProxy(ContextProxy):
     @property
     def client_principal(self) -> typing.Optional[str]:
         # Looks like a bug in python-gssapi where the value still has the terminating null char.
-        return to_text(self._context.initiator_name).rstrip('\x00') if self.usage == 'accept' else None
+        return to_text(self._context.initiator_name).rstrip("\x00") if self.usage == "accept" else None
 
     @property
     def complete(self) -> bool:
@@ -430,13 +433,12 @@ class GSSAPIProxy(ContextProxy):
             return None
 
         return {
-            GSSMech.kerberos.value: 'kerberos',
-            GSSMech.ntlm.value: 'ntlm',
-
+            GSSMech.kerberos.value: "kerberos",
+            GSSMech.ntlm.value: "ntlm",
             # Only set until the negotiate process is complete, will change to one of the above once the context is
             # set up.
-            GSSMech.spnego.value: 'negotiate',
-        }.get(oid, 'unknown: %s' % self._context.mech.dotted_form)
+            GSSMech.spnego.value: "negotiate",
+        }.get(oid, "unknown: %s" % self._context.mech.dotted_form)
 
     @property  # type: ignore
     @wrap_system_error(NativeError, "Retrieving session key")
@@ -463,7 +465,7 @@ class GSSAPIProxy(ContextProxy):
         # gss-ntlmssp used to hardcode the conf_state=0 which results in encrpted=False. Because we know it is always
         # sealed we just manually set to True.
         # https://github.com/gssapi/gss-ntlmssp/pull/15
-        encrypted = True if self.negotiated_protocol == 'ntlm' else res.encrypted
+        encrypted = True if self.negotiated_protocol == "ntlm" else res.encrypted
 
         return WrapResult(data=res.message, encrypted=encrypted)
 
@@ -481,7 +483,7 @@ class GSSAPIProxy(ContextProxy):
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted)
 
     def wrap_winrm(self, data: bytes) -> WinRMWrapResult:
-        if self.negotiated_protocol == 'ntlm':
+        if self.negotiated_protocol == "ntlm":
             # NTLM does not support IOV wrapping, luckily the header is a fixed size so we can split at that.
             wrap_result = self.wrap(data).data
             header = wrap_result[:16]
@@ -501,7 +503,7 @@ class GSSAPIProxy(ContextProxy):
         res = gssapi.raw.unwrap(self._context, data)
 
         # See wrap for more info.
-        encrypted = True if self.negotiated_protocol == 'ntlm' else res.encrypted
+        encrypted = True if self.negotiated_protocol == "ntlm" else res.encrypted
 
         return UnwrapResult(data=res.message, encrypted=encrypted, qop=res.qop)
 
@@ -528,13 +530,9 @@ class GSSAPIProxy(ContextProxy):
         sasl_desc = _gss_sasl_description(self._context.mech)
 
         # https://github.com/krb5/krb5/blob/f2e28f13156785851819fc74cae52100e0521690/src/lib/gssapi/krb5/gssapi_krb5.c#L686
-        if sasl_desc and sasl_desc == b'Kerberos 5 GSS-API Mechanism':
+        if sasl_desc and sasl_desc == b"Kerberos 5 GSS-API Mechanism":
             # TODO: Should done when self.negotiated_protocol == 'kerberos', above explains why this can't be done yet.
-            iov = self.unwrap_iov([
-                (IOVBufferType.header, header),
-                data,
-                IOVBufferType.data
-            ]).buffers
+            iov = self.unwrap_iov([(IOVBufferType.header, header), data, IOVBufferType.data]).buffers
             return iov[1].data or b""
 
         else:
@@ -551,18 +549,16 @@ class GSSAPIProxy(ContextProxy):
     @property
     def _context_attr_map(self) -> typing.List[typing.Tuple[ContextReq, int]]:
         attr_map = [
-            (ContextReq.delegate, 'delegate_to_peer'),
-            (ContextReq.mutual_auth, 'mutual_authentication'),
-            (ContextReq.replay_detect, 'replay_detection'),
-            (ContextReq.sequence_detect, 'out_of_sequence_detection'),
-            (ContextReq.confidentiality, 'confidentiality'),
-            (ContextReq.integrity, 'integrity'),
-
+            (ContextReq.delegate, "delegate_to_peer"),
+            (ContextReq.mutual_auth, "mutual_authentication"),
+            (ContextReq.replay_detect, "replay_detection"),
+            (ContextReq.sequence_detect, "out_of_sequence_detection"),
+            (ContextReq.confidentiality, "confidentiality"),
+            (ContextReq.integrity, "integrity"),
             # Only present when the DCE extensions are installed.
-            (ContextReq.identify, 'identify'),
-
+            (ContextReq.identify, "identify"),
             # Only present with newer versions of python-gssapi https://github.com/pythongssapi/python-gssapi/pull/218.
-            (ContextReq.delegate_policy, 'ok_as_delegate'),
+            (ContextReq.delegate_policy, "ok_as_delegate"),
         ]
         attrs = []
         for spnego_flag, gssapi_name in attr_map:
@@ -603,5 +599,5 @@ class GSSAPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "NTLM reset crypto state")
     def _reset_ntlm_crypto_state(self, outgoing: bool = True) -> None:
-        if self.negotiated_protocol == 'ntlm':
+        if self.negotiated_protocol == "ntlm":
             _gss_ntlmssp_reset_crypto(self._context, outgoing=outgoing)

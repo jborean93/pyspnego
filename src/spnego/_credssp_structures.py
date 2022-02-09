@@ -25,19 +25,19 @@ def unpack_text_field(
     name: str,
     **kwargs: typing.Optional[str],
 ) -> typing.Optional[str]:
-    """ Extracts a text field from a tagged ASN.1 sequence. """
+    """Extracts a text field from a tagged ASN.1 sequence."""
     raw_value = get_sequence_value(sequence, idx, structure, name, unpack_asn1_octet_string)
     if raw_value is None:
-        if 'default' not in kwargs:
+        if "default" not in kwargs:
             raise ValueError("Missing mandatory text field '%s' in '%s'" % (name, structure))
 
-        return kwargs['default']
+        return kwargs["default"]
 
-    return raw_value.decode('utf-16-le')
+    return raw_value.decode("utf-16-le")
 
 
 def unpack_sequence(data: typing.Union[ASN1Value, bytes]) -> typing.Dict[int, ASN1Value]:
-    """ Helper function that can unpack a sequence as either it's raw bytes or the already unpacked ASN.1 tuple. """
+    """Helper function that can unpack a sequence as either it's raw bytes or the already unpacked ASN.1 tuple."""
     if not isinstance(data, ASN1Value):
         data = unpack_asn1(data)[0]
 
@@ -70,16 +70,18 @@ class NegoData:
         self.nego_token = nego_token
 
     def pack(self) -> bytes:
-        """ Packs the NegoData as a byte string. """
-        return pack_asn1_sequence([
-            pack_asn1(TagClass.context_specific, True, 0, pack_asn1_octet_string(self.nego_token)),
-        ])
+        """Packs the NegoData as a byte string."""
+        return pack_asn1_sequence(
+            [
+                pack_asn1(TagClass.context_specific, True, 0, pack_asn1_octet_string(self.nego_token)),
+            ]
+        )
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "NegoData":
-        """ Unpacks the NegoData TLV value. """
+        """Unpacks the NegoData TLV value."""
         nego_data = unpack_sequence(b_data)
-        nego_token = get_sequence_value(nego_data, 0, 'NegoData', 'negoToken', unpack_asn1_octet_string)
+        nego_token = get_sequence_value(nego_data, 0, "NegoData", "negoToken", unpack_asn1_octet_string)
 
         return NegoData(nego_token)
 
@@ -144,10 +146,8 @@ class TSRequest:
         self.client_nonce = client_nonce
 
     def pack(self) -> bytes:
-        """ Packs the TSRequest as a byte string. """
-        elements = [
-            pack_asn1(TagClass.context_specific, True, 0, pack_asn1_integer(self.version))
-        ]
+        """Packs the TSRequest as a byte string."""
+        elements = [pack_asn1(TagClass.context_specific, True, 0, pack_asn1_integer(self.version))]
         if self.nego_tokens:
             nego_tokens = [token.pack() for token in self.nego_tokens]
             elements.append(pack_asn1(TagClass.context_specific, True, 1, pack_asn1_sequence(nego_tokens)))
@@ -166,12 +166,12 @@ class TSRequest:
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSRequest":
-        """ Unpacks the TSRequest TLV value. """
+        """Unpacks the TSRequest TLV value."""
         request = unpack_sequence(b_data)
 
-        version = get_sequence_value(request, 0, 'TSRequest', 'version', unpack_asn1_integer)
+        version = get_sequence_value(request, 0, "TSRequest", "version", unpack_asn1_integer)
 
-        nego_tokens = get_sequence_value(request, 1, 'TSRequest', 'negoTokens')
+        nego_tokens = get_sequence_value(request, 1, "TSRequest", "negoTokens")
         if nego_tokens is not None:
             remaining_bytes = nego_tokens.b_data
             nego_tokens = []
@@ -179,13 +179,19 @@ class TSRequest:
                 nego_tokens.append(NegoData.unpack(remaining_bytes))
                 remaining_bytes = unpack_asn1(remaining_bytes)[1]
 
-        auth_info = get_sequence_value(request, 2, 'TSRequest', 'authInfo', unpack_asn1_octet_string)
-        pub_key_auth = get_sequence_value(request, 3, 'TSRequest', 'pubKeyAuth', unpack_asn1_octet_string)
-        error_code = get_sequence_value(request, 4, 'TSRequest', 'errorCode', unpack_asn1_integer)
-        client_nonce = get_sequence_value(request, 5, 'TSRequest', 'clientNonce', unpack_asn1_octet_string)
+        auth_info = get_sequence_value(request, 2, "TSRequest", "authInfo", unpack_asn1_octet_string)
+        pub_key_auth = get_sequence_value(request, 3, "TSRequest", "pubKeyAuth", unpack_asn1_octet_string)
+        error_code = get_sequence_value(request, 4, "TSRequest", "errorCode", unpack_asn1_integer)
+        client_nonce = get_sequence_value(request, 5, "TSRequest", "clientNonce", unpack_asn1_octet_string)
 
-        return TSRequest(version, nego_tokens=nego_tokens, auth_info=auth_info, pub_key_auth=pub_key_auth,
-                         error_code=error_code, client_nonce=client_nonce)
+        return TSRequest(
+            version,
+            nego_tokens=nego_tokens,
+            auth_info=auth_info,
+            pub_key_auth=pub_key_auth,
+            error_code=error_code,
+            client_nonce=client_nonce,
+        )
 
 
 class TSCredentials:
@@ -215,7 +221,7 @@ class TSCredentials:
 
     @property
     def cred_type(self) -> int:
-        """ The credential type of credentials as an integer. """
+        """The credential type of credentials as an integer."""
         if isinstance(self.credentials, TSPasswordCreds):
             return 1
 
@@ -226,34 +232,38 @@ class TSCredentials:
             return 6
 
         else:
-            raise ValueError('Invalid credential type set')
+            raise ValueError("Invalid credential type set")
 
     def pack(self) -> bytes:
-        """ Packs the TSCredentials as a byte string. """
+        """Packs the TSCredentials as a byte string."""
         cred_type = self.cred_type
         credentials = self.credentials.pack()
 
-        return pack_asn1_sequence([
-            pack_asn1(TagClass.context_specific, True, 0, pack_asn1_integer(cred_type)),
-            pack_asn1(TagClass.context_specific, True, 1, pack_asn1_octet_string(credentials)),
-        ])
+        return pack_asn1_sequence(
+            [
+                pack_asn1(TagClass.context_specific, True, 0, pack_asn1_integer(cred_type)),
+                pack_asn1(TagClass.context_specific, True, 1, pack_asn1_octet_string(credentials)),
+            ]
+        )
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSCredentials":
-        """ Unpacks the TSCredentials TLV value. """
+        """Unpacks the TSCredentials TLV value."""
         credential = unpack_sequence(b_data)
-        cred_type = get_sequence_value(credential, 0, 'TSCredentials', 'credType', unpack_asn1_integer)
-        credentials_raw = get_sequence_value(credential, 1, 'TSCredentials', 'credentials', unpack_asn1_octet_string)
+        cred_type = get_sequence_value(credential, 0, "TSCredentials", "credType", unpack_asn1_integer)
+        credentials_raw = get_sequence_value(credential, 1, "TSCredentials", "credentials", unpack_asn1_octet_string)
 
-        cred_class: typing.Optional[typing.Union[
-            typing.Type[TSPasswordCreds], typing.Type[TSSmartCardCreds], typing.Type[TSRemoteGuardCreds]
-        ]] = {
+        cred_class: typing.Optional[
+            typing.Union[typing.Type[TSPasswordCreds], typing.Type[TSSmartCardCreds], typing.Type[TSRemoteGuardCreds]]
+        ] = {
             1: TSPasswordCreds,
             2: TSSmartCardCreds,
             6: TSRemoteGuardCreds,
-        }.get(cred_type)
+        }.get(
+            cred_type
+        )
         if not cred_class:
-            raise ValueError('Unknown credType %s in TSCredentials, cannot unpack' % cred_type)
+            raise ValueError("Unknown credType %s in TSCredentials, cannot unpack" % cred_type)
 
         credentials = cred_class.unpack(credentials_raw)
         return TSCredentials(credentials)
@@ -292,22 +302,22 @@ class TSPasswordCreds:
         self.password = password
 
     def pack(self) -> bytes:
-        """ Packs the TSPasswordCreds as a byte string. """
+        """Packs the TSPasswordCreds as a byte string."""
         elements = []
         for idx, value in enumerate([self.domain_name, self.username, self.password]):
-            b_value = value.encode('utf-16-le')
+            b_value = value.encode("utf-16-le")
             elements.append(pack_asn1(TagClass.context_specific, True, idx, pack_asn1_octet_string(b_value)))
 
         return pack_asn1_sequence(elements)
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSPasswordCreds":
-        """ Unpacks the TSPasswordCreds TLV value. """
+        """Unpacks the TSPasswordCreds TLV value."""
         creds = unpack_sequence(b_data)
 
-        domain_name = unpack_text_field(creds, 0, 'TSPasswordCreds', 'domainName') or ""
-        username = unpack_text_field(creds, 1, 'TSPasswordCreds', 'userName') or ""
-        password = unpack_text_field(creds, 2, 'TSPasswordCreds', 'password') or ""
+        domain_name = unpack_text_field(creds, 0, "TSPasswordCreds", "domainName") or ""
+        username = unpack_text_field(creds, 1, "TSPasswordCreds", "userName") or ""
+        password = unpack_text_field(creds, 2, "TSPasswordCreds", "password") or ""
 
         return TSPasswordCreds(domain_name, username, password)
 
@@ -355,27 +365,27 @@ class TSSmartCardCreds:
         self.domain_hint = domain_hint
 
     def pack(self) -> bytes:
-        """ Packs the TSSmartCardCreds as a byte string. """
+        """Packs the TSSmartCardCreds as a byte string."""
         elements = [
-            pack_asn1(TagClass.context_specific, True, 0, pack_asn1_octet_string(self.pin.encode('utf-16-le'))),
+            pack_asn1(TagClass.context_specific, True, 0, pack_asn1_octet_string(self.pin.encode("utf-16-le"))),
             pack_asn1(TagClass.context_specific, True, 1, self.csp_data.pack()),
         ]
         for idx, value in [(2, self.user_hint), (3, self.domain_hint)]:
             if value:
-                b_value = value.encode('utf-16-le')
+                b_value = value.encode("utf-16-le")
                 elements.append(pack_asn1(TagClass.context_specific, True, idx, pack_asn1_octet_string(b_value)))
 
         return pack_asn1_sequence(elements)
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSSmartCardCreds":
-        """ Unpacks the TSSmartCardCreds TLV value. """
+        """Unpacks the TSSmartCardCreds TLV value."""
         creds = unpack_sequence(b_data)
 
-        pin = unpack_text_field(creds, 0, 'TSSmartCardCreds', 'pin') or ""
-        csp_data = get_sequence_value(creds, 1, 'TSSmartCardCreds', 'cspData', TSCspDataDetail.unpack)
-        user_hint = unpack_text_field(creds, 2, 'TSSmartCardCreds', 'userHint', default=None)
-        domain_hint = unpack_text_field(creds, 3, 'TSSmartCardCreds', 'domainHint', default=None)
+        pin = unpack_text_field(creds, 0, "TSSmartCardCreds", "pin") or ""
+        csp_data = get_sequence_value(creds, 1, "TSSmartCardCreds", "cspData", TSCspDataDetail.unpack)
+        user_hint = unpack_text_field(creds, 2, "TSSmartCardCreds", "userHint", default=None)
+        domain_hint = unpack_text_field(creds, 3, "TSSmartCardCreds", "domainHint", default=None)
 
         return TSSmartCardCreds(pin, csp_data, user_hint, domain_hint)
 
@@ -428,7 +438,7 @@ class TSCspDataDetail:
         self.csp_name = csp_name
 
     def pack(self) -> bytes:
-        """ Packs the TSCspDataDetail as a byte string. """
+        """Packs the TSCspDataDetail as a byte string."""
         elements = [
             pack_asn1(TagClass.context_specific, True, 0, pack_asn1_integer(self.key_spec)),
         ]
@@ -441,21 +451,21 @@ class TSCspDataDetail:
         ]
         for idx, value in value_map:
             if value:
-                b_value = value.encode('utf-16-le')
+                b_value = value.encode("utf-16-le")
                 elements.append(pack_asn1(TagClass.context_specific, True, idx, pack_asn1_octet_string(b_value)))
 
         return pack_asn1_sequence(elements)
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSCspDataDetail":
-        """ Unpacks the TSCspDataDetail TLV value. """
+        """Unpacks the TSCspDataDetail TLV value."""
         csp_data = unpack_sequence(b_data)
 
-        key_spec = get_sequence_value(csp_data, 0, 'TSCspDataDetail', 'keySpec', unpack_asn1_integer)
-        card_name = unpack_text_field(csp_data, 1, 'TSCspDataDetail', 'cardName', default=None)
-        reader_name = unpack_text_field(csp_data, 2, 'TSCspDataDetail', 'readerName', default=None)
-        container_name = unpack_text_field(csp_data, 3, 'TSCspDataDetail', 'containerName', default=None)
-        csp_name = unpack_text_field(csp_data, 4, 'TSCspDataDetail', 'cspName', default=None)
+        key_spec = get_sequence_value(csp_data, 0, "TSCspDataDetail", "keySpec", unpack_asn1_integer)
+        card_name = unpack_text_field(csp_data, 1, "TSCspDataDetail", "cardName", default=None)
+        reader_name = unpack_text_field(csp_data, 2, "TSCspDataDetail", "readerName", default=None)
+        container_name = unpack_text_field(csp_data, 3, "TSCspDataDetail", "containerName", default=None)
+        csp_name = unpack_text_field(csp_data, 4, "TSCspDataDetail", "cspName", default=None)
 
         return TSCspDataDetail(key_spec, card_name, reader_name, container_name, csp_name)
 
@@ -499,7 +509,7 @@ class TSRemoteGuardCreds:
         self.supplemental_creds = supplemental_creds
 
     def pack(self) -> bytes:
-        """ Packs the TSRemoteGuardCreds as a byte string. """
+        """Packs the TSRemoteGuardCreds as a byte string."""
         elements = [pack_asn1(TagClass.context_specific, True, 0, self.logon_cred.pack())]
         if self.supplemental_creds is not None:
             supplemental_creds = [cred.pack() for cred in self.supplemental_creds]
@@ -509,11 +519,11 @@ class TSRemoteGuardCreds:
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSRemoteGuardCreds":
-        """ Unpacks the TSRemoteGuardCreds TLV value. """
+        """Unpacks the TSRemoteGuardCreds TLV value."""
         cred = unpack_sequence(b_data)
-        logon_cred = get_sequence_value(cred, 0, 'TSRemoteGuardCreds', 'logonCred', TSRemoteGuardPackageCred.unpack)
+        logon_cred = get_sequence_value(cred, 0, "TSRemoteGuardCreds", "logonCred", TSRemoteGuardPackageCred.unpack)
 
-        raw_supplemental_creds = get_sequence_value(cred, 1, 'TSRemoteGuardCreds', 'supplementalCreds')
+        raw_supplemental_creds = get_sequence_value(cred, 1, "TSRemoteGuardCreds", "supplementalCreds")
         if raw_supplemental_creds:
             supplemental_creds = []
             remaining_bytes = raw_supplemental_creds.b_data
@@ -557,19 +567,22 @@ class TSRemoteGuardPackageCred:
         self.cred_buffer = cred_buffer
 
     def pack(self) -> bytes:
-        """ Packs the TSRemoteGuardPackageCred as a byte string. """
-        b_package_name = self.package_name.encode('utf-16-le')
-        return pack_asn1_sequence([
-            pack_asn1(TagClass.context_specific, True, 0, pack_asn1_octet_string(b_package_name)),
-            pack_asn1(TagClass.context_specific, True, 1, pack_asn1_octet_string(self.cred_buffer)),
-        ])
+        """Packs the TSRemoteGuardPackageCred as a byte string."""
+        b_package_name = self.package_name.encode("utf-16-le")
+        return pack_asn1_sequence(
+            [
+                pack_asn1(TagClass.context_specific, True, 0, pack_asn1_octet_string(b_package_name)),
+                pack_asn1(TagClass.context_specific, True, 1, pack_asn1_octet_string(self.cred_buffer)),
+            ]
+        )
 
     @staticmethod
     def unpack(b_data: typing.Union[ASN1Value, bytes]) -> "TSRemoteGuardPackageCred":
-        """ Unpacks the TSRemoteGuardPackageCred TLV value. """
+        """Unpacks the TSRemoteGuardPackageCred TLV value."""
         package_cred = unpack_sequence(b_data)
-        package_name = unpack_text_field(package_cred, 0, 'TSRemoteGuardPackageCred', 'packageName') or ""
-        cred_buffer = get_sequence_value(package_cred, 1, 'TSRemoteGuardPackageCred', 'credBuffer',
-                                         unpack_asn1_octet_string)
+        package_name = unpack_text_field(package_cred, 0, "TSRemoteGuardPackageCred", "packageName") or ""
+        cred_buffer = get_sequence_value(
+            package_cred, 1, "TSRemoteGuardPackageCred", "credBuffer", unpack_asn1_octet_string
+        )
 
         return TSRemoteGuardPackageCred(package_name, cred_buffer)

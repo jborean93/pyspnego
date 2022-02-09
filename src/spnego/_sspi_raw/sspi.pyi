@@ -30,7 +30,6 @@ class ClientContextAttr:
     no_additional_token: int = ...
     reauthentication: int = ...
 
-
 class ClientContextReq:
     allocate_memory: int = ...
     confidentiality: int = ...
@@ -49,12 +48,10 @@ class ClientContextReq:
     use_session_key: int = ...
     use_supplied_creds: int = ...
 
-
 class CredentialUse:
     inbound: int = ...
     outbound: int = ...
     both: int = ...
-
 
 class SecBufferType:
     empty: int = ...
@@ -79,13 +76,11 @@ class SecBufferType:
     readonly_with_checksum: int = ...
     reserved: int = ...
 
-
 class SecPkgAttr:
     names: int = ...
     package_info: int = ...
     session_key: int = ...
     sizes: int = ...
-
 
 class SecStatus:
     SEC_E_BUFFER_TOO_SMALL: int = ...
@@ -114,7 +109,6 @@ class SecStatus:
     SEC_I_CONTINUE_NEEDED: int = ...
     SEC_I_INCOMPLETE_CREDENTIALS: int = ...
 
-
 class ServerContextAttr:
     delegate: int = ...
     mutual_auth: int = ...
@@ -139,7 +133,6 @@ class ServerContextAttr:
     fragment_only: int = ...
     no_token: int = ...
     no_additional_token: int = ...
-
 
 class ServerContextReq:
     delegate: int = ...
@@ -167,22 +160,18 @@ class ServerContextReq:
     proxy_bindings: int = ...
     allow_missing_binding: int = ...
 
-
 class SSPIQoP:
     wrap_no_encrypt: int = ...
-
 
 class TargetDataRep:
     native: int = ...
     network: int = ...
-
 
 class SecPkgAttrSizes(t.NamedTuple):
     max_token: int
     max_signature: int
     block_size: int
     security_trailer: int
-
 
 class SecPkgInfo(t.NamedTuple):
     capabilities: int
@@ -192,82 +181,63 @@ class SecPkgInfo(t.NamedTuple):
     name: str
     comment: str
 
-
 class Credential:
     expiry: int
-
 
 class SecurityContext:
     context_attr: int
     expiry: int
     init: int
 
-
 class SecBufferDesc:
-
     def __new__(
         cls,
         buffers: t.List[SecBuffer],
         version: int = 0,
     ) -> "SecBufferDesc": ...
-
     def __len__(self) -> int: ...
-
     def __getitem__(
         self,
         key: int,
     ) -> SecBuffer: ...
-
     def __setitem__(
         self,
         key: int,
         value: SecBuffer,
     ) -> None: ...
-
     def __iter__(self) -> t.Iterator[SecBuffer]: ...
-
     @property
     def version(self) -> int: ...
-
     @version.setter
     def version(
         self,
         value: int,
     ) -> None: ...
 
-
 class SecBuffer:
-
     def __new__(
         cls,
         buffer_type: int,
         buffer: t.Optional[bytes] = None,
         length: int = 0,
     ) -> "SecBuffer": ...
-
     def __len__(self) -> int: ...
-
     @property
     def buffer_type(self) -> int: ...
-
     @buffer_type.setter
     def buffer_type(
         self,
         value: int,
     ) -> None: ...
-
     @property
     def buffer(self) -> t.Optional[bytes]: ...
-
     @buffer.setter
     def buffer(
         self,
         value: bytes,
     ) -> None: ...
 
-
 class _AuthIdentityBase: ...
-
 
 class WinNTAuthIdentity(_AuthIdentityBase):
 
@@ -282,7 +252,6 @@ class WinNTAuthIdentity(_AuthIdentityBase):
         password: t.Optional[str],
     ) -> "WinNTAuthIdentity": ...
 
-
 def accept_security_context(
     credential: Credential,
     context: SecurityContext,
@@ -291,31 +260,23 @@ def accept_security_context(
     target_data_rep: int = 16,
     output_buffer: t.Optional[SecBufferDesc] = None,
 ) -> int: ...
-
-
 def acquire_credentials_handle(
     principal: t.Optional[str],
     package: str,
     credential_use: int = 2,
     auth_data: t.Optional[_AuthIdentityBase] = None,
 ) -> Credential: ...
-
-
 def decrypt_message(
     context: SecurityContext,
     message: SecBufferDesc,
     seq_no: int = 0,
 ) -> int: ...
-
-
 def encrypt_message(
     context: SecurityContext,
     message: SecBufferDesc,
     seq_no: int = 0,
     qop: int = 0,
 ) -> None: ...
-
-
 def initialize_security_context(
     credential: Credential,
     context: SecurityContext,
@@ -325,22 +286,16 @@ def initialize_security_context(
     target_data_rep: int = 16,
     output_buffer: t.Optional[SecBufferDesc] = None,
 ) -> int: ...
-
-
 def make_signature(
     context: SecurityContext,
     qop: int,
     message: SecBufferDesc,
     seq_no: int = 0,
 ) -> None: ...
-
-
 def query_context_attributes(
     context: SecurityContext,
     attribute: int,
 ) -> t.Union[bytes, str, SecPkgInfo, SecPkgAttrSizes]: ...
-
-
 def verify_signature(
     context: SecurityContext,
     message: SecBufferDesc,

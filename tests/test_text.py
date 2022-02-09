@@ -9,7 +9,6 @@ import spnego._text as text
 
 
 class Obj:
-
     def __init__(self, str: typing.Optional[str] = None, repr: typing.Optional[str] = None) -> None:
         self.str = str
         self.repr = repr
@@ -25,7 +24,6 @@ class Obj:
 
 
 class ObjRepr:
-
     def __init__(self, repr: typing.Optional[str] = None) -> None:
         self.repr = repr
 
@@ -34,12 +32,11 @@ class ObjRepr:
 
 
 class ObjUnicodeError:
-
     def __str__(self) -> str:
-        return "café".encode('ascii')  # type: ignore[return-value] # Testing this scenario
+        return "café".encode("ascii")  # type: ignore[return-value] # Testing this scenario
 
     def __repr__(self) -> str:
-        return "café".encode('ascii')  # type: ignore[return-value] # Testing this scenario
+        return "café".encode("ascii")  # type: ignore[return-value] # Testing this scenario
 
 
 def test_to_bytes_from_bytes():
@@ -48,11 +45,14 @@ def test_to_bytes_from_bytes():
     assert actual == b"\xFF\x00\x7F\x80"
 
 
-@pytest.mark.parametrize('value, expected', [
-    ("cafe", b"cafe"),
-    ("café", b"caf\xc3\xa9"),
-    ("ÜseӜ", b"\x55\xCC\x88\x73\x65\xD3\x9C"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("cafe", b"cafe"),
+        ("café", b"caf\xc3\xa9"),
+        ("ÜseӜ", b"\x55\xCC\x88\x73\x65\xD3\x9C"),
+    ],
+)
 def test_to_bytes_from_text(value, expected):
     actual = text.to_bytes(value)
 
@@ -60,16 +60,16 @@ def test_to_bytes_from_text(value, expected):
 
 
 def test_to_bytes_encoding():
-    actual = text.to_bytes("café", encoding='windows-1252')
+    actual = text.to_bytes("café", encoding="windows-1252")
 
     assert actual == b"caf\xe9"
 
 
 def test_to_bytes_errors():
     with pytest.raises(UnicodeEncodeError, match="codec can't encode character"):
-        text.to_bytes("café", encoding='ascii')
+        text.to_bytes("café", encoding="ascii")
 
-    actual = text.to_bytes("café", encoding='ascii', errors='replace')
+    actual = text.to_bytes("café", encoding="ascii", errors="replace")
 
     assert actual == b"caf?"
 
@@ -99,20 +99,20 @@ def test_to_bytes_nonstr_unicode_error():
 
 
 def test_to_bytes_nonstr_passthru():
-    actual = text.to_bytes(Obj(), nonstring='passthru')
+    actual = text.to_bytes(Obj(), nonstring="passthru")
 
     assert actual == Obj()
 
 
 def test_to_bytes_nonstr_empty():
-    actual = text.to_bytes(Obj(), nonstring='empty')
+    actual = text.to_bytes(Obj(), nonstring="empty")
 
     assert actual == b""
 
 
 def test_to_bytes_nonstr_invalid():
     with pytest.raises(ValueError, match="Invalid nonstring value"):
-        text.to_bytes(Obj(), nonstring='invalid')
+        text.to_bytes(Obj(), nonstring="invalid")
 
 
 def test_to_text_from_text():
@@ -121,11 +121,14 @@ def test_to_text_from_text():
     assert actual == "café"
 
 
-@pytest.mark.parametrize('value, expected', [
-    (b"cafe", "cafe"),
-    (b"caf\xc3\xa9", "café"),
-    (b"\x55\xCC\x88\x73\x65\xD3\x9C", "ÜseӜ"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (b"cafe", "cafe"),
+        (b"caf\xc3\xa9", "café"),
+        (b"\x55\xCC\x88\x73\x65\xD3\x9C", "ÜseӜ"),
+    ],
+)
 def test_to_text_from_bytes(value, expected):
     actual = text.to_text(value)
 
@@ -133,7 +136,7 @@ def test_to_text_from_bytes(value, expected):
 
 
 def test_to_text_encoding():
-    actual = text.to_text(b"caf\xe9", encoding='windows-1252')
+    actual = text.to_text(b"caf\xe9", encoding="windows-1252")
 
     assert actual == "café"
 
@@ -142,7 +145,7 @@ def test_to_text_errors():
     with pytest.raises(UnicodeError, match="codec can't decode byte 0xff"):
         text.to_text(b"caf\xFF")
 
-    actual = text.to_text(b"caf\xFF", errors='replace')
+    actual = text.to_text(b"caf\xFF", errors="replace")
 
     assert actual == "caf�"
 
@@ -155,7 +158,6 @@ def test_to_text_nonstr():
 
 def test_to_text_nonstr_unicode():
     class ObjUnicode:
-
         def __unicode__(self):
             return "café"
 
@@ -183,17 +185,17 @@ def test_to_text_nonstr_unicode_error():
 
 
 def test_to_text_nonstr_passthru():
-    actual = text.to_text(Obj(), nonstring='passthru')
+    actual = text.to_text(Obj(), nonstring="passthru")
 
     assert actual == Obj()
 
 
 def test_to_text_nonstr_empty():
-    actual = text.to_text(Obj(), nonstring='empty')
+    actual = text.to_text(Obj(), nonstring="empty")
 
     assert actual == ""
 
 
 def test_to_text_nonstr_invalid():
     with pytest.raises(ValueError, match="Invalid nonstring value"):
-        text.to_text(Obj(), nonstring='invalid')
+        text.to_text(Obj(), nonstring="invalid")
