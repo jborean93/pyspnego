@@ -15,14 +15,28 @@ from spnego._context import (
     WinRMWrapResult,
     WrapResult,
 )
+from spnego._credential import (
+    Credential,
+    CredentialCache,
+    KerberosCCache,
+    KerberosKeytab,
+    NTLMHash,
+    Password,
+)
 from spnego.auth import client, server
 from spnego.exceptions import NegotiateOptions
 
 __all__ = [
     "ContextProxy",
     "ContextReq",
+    "Credential",
+    "CredentialCache",
     "IOVUnwrapResult",
     "IOVWrapResult",
+    "KerberosCCache",
+    "KerberosKeytab",
+    "NTLMHash",
+    "Password",
     "NegotiateOptions",
     "UnwrapResult",
     "WinRMWrapResult",

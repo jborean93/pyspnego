@@ -19,9 +19,10 @@ from spnego._context import (
     split_username,
     wrap_system_error,
 )
+from spnego._credential import Credential, CredentialCache, Password, unify_credentials
 from spnego._text import to_text
 from spnego.channel_bindings import GssChannelBindings
-from spnego.exceptions import NegotiateOptions, SpnegoError
+from spnego.exceptions import InvalidCredentialError, NegotiateOptions, SpnegoError
 from spnego.exceptions import WinError as NativeError
 from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
 
@@ -30,8 +31,9 @@ log = logging.getLogger(__name__)
 HAS_SSPI = True
 SSPI_IMP_ERR = None
 try:
+    from spnego._sspi_raw import ClientContextReq
+    from spnego._sspi_raw import Credential as NativeCredential
     from spnego._sspi_raw import (
-        ClientContextReq,
         CredentialUse,
         SecBuffer,
         SecBufferDesc,
@@ -79,6 +81,50 @@ def _create_iov_result(iov: "SecBufferDesc") -> typing.Tuple[IOVResBuffer, ...]:
     return tuple(buffers)
 
 
+def _get_sspi_credential(
+    principal: typing.Optional[str],
+    protocol: str,
+    usage: str,
+    credentials: typing.List[Credential],
+) -> "NativeCredential":
+    """Get the SSPI credential.
+
+    Will get an SSPI credential for the protocol specified. Currently only
+    supports Password or CredentialCache credential types.
+
+    Args:
+        principal: The principal to use for the AcquireCredentialsHandle call
+        protocol: The protocol of the credential.
+        usage: Either `initiate` for a client context or `accept` for a server
+            context.
+        credentials: List of credentials to retrieve from.
+
+    Returns:
+        NativeCredential: The handle to the SSPI credential to use.
+    """
+    credential_kwargs: typing.Dict[str, typing.Any] = {
+        "package": protocol,
+        "principal": principal,
+        "credential_use": CredentialUse.outbound if usage == "initiate" else CredentialUse.inbound,
+    }
+
+    for cred in credentials:
+        if isinstance(cred, Password):
+            domain, username = split_username(cred.username)
+            credential_kwargs["auth_data"] = WinNTAuthIdentity(
+                to_text(username, nonstring="passthru"),
+                to_text(domain, nonstring="passthru"),
+                to_text(cred.password, nonstring="passthru"),
+            )
+
+            return acquire_credentials_handle(**credential_kwargs)
+
+        elif isinstance(cred, CredentialCache):
+            return acquire_credentials_handle(**credential_kwargs)
+
+    raise InvalidCredentialError(context_msg="No applicable credentials available")
+
+
 class SSPIProxy(ContextProxy):
     """SSPI proxy class for pure SSPI on Windows.
 
@@ -89,7 +135,7 @@ class SSPIProxy(ContextProxy):
 
     def __init__(
         self,
-        username: typing.Optional[str] = None,
+        username: typing.Optional[typing.Union[str, Credential, typing.List[Credential]]] = None,
         password: typing.Optional[str] = None,
         hostname: typing.Optional[str] = None,
         service: typing.Optional[str] = None,
@@ -104,8 +150,9 @@ class SSPIProxy(ContextProxy):
         if not HAS_SSPI:
             raise ImportError("SSPIProxy requires the SSPI Cython extension to be compiled: %s" % SSPI_IMP_ERR)
 
+        credentials = unify_credentials(username, password)
         super(SSPIProxy, self).__init__(
-            username, password, hostname, service, channel_bindings, context_req, usage, protocol, options, False
+            credentials, hostname, service, channel_bindings, context_req, usage, protocol, options
         )
 
         self._block_size = 0
@@ -116,29 +163,9 @@ class SSPIProxy(ContextProxy):
         self._context = SSPISecContext()
         self.__seq_num = 0
 
-        credential_kwargs: typing.Dict[str, typing.Any] = {
-            "package": protocol,
-        }
-
-        if usage == "initiate":
-            # TODO: It seems like the SPN is just an empty string for anon auth.
-            credential_kwargs["principal"] = None
-            credential_kwargs["credential_use"] = CredentialUse.outbound
-
-            if self.username:
-                domain, username = split_username(self.username)
-                credential_kwargs["auth_data"] = WinNTAuthIdentity(
-                    to_text(username, nonstring="passthru"),
-                    to_text(domain, nonstring="passthru"),
-                    to_text(password, nonstring="passthru"),
-                )
-
-        else:
-            credential_kwargs["principal"] = self.spn
-            credential_kwargs["credential_use"] = CredentialUse.inbound
-
         try:
-            self._credential = acquire_credentials_handle(**credential_kwargs)
+            principal = self.spn if usage == "accept" else None
+            self._credential = _get_sspi_credential(principal, protocol, usage, credentials)
         except NativeError as win_err:
             raise SpnegoError(base_error=win_err, context_msg="Getting SSPI credential") from win_err
 
@@ -171,7 +198,8 @@ class SSPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Processing security token")
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
-        log.debug("SSPI step input: %s", base64.b64encode(in_token or b"").decode())
+        if not self._is_wrapped:
+            log.debug("SSPI step input: %s", base64.b64encode(in_token or b"").decode())
 
         sec_tokens = []
         if in_token:
@@ -210,7 +238,8 @@ class SSPIProxy(ContextProxy):
         # TODO: Determine if this returns None or an empty byte string.
         out_token = out_buffer[0].buffer
 
-        log.debug("SSPI step output: %s", base64.b64encode(out_token or b"").decode())
+        if not self._is_wrapped:
+            log.debug("SSPI step output: %s", base64.b64encode(out_token or b"").decode())
 
         return out_token
 

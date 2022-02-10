@@ -4,13 +4,14 @@
 
 import collections
 import re
+import typing
 
 import pytest
 
 import spnego
 import spnego._gss
 import spnego.iov
-from spnego.exceptions import FeatureMissingError
+from spnego.exceptions import FeatureMissingError, InvalidCredentialError
 
 
 def test_gss_sasl_description_fail(mocker, monkeypatch):
@@ -53,7 +54,7 @@ def test_build_iov_list(kerb_cred):
     assert len(actual) == 6
     assert actual[0] == (spnego.iov.BufferType.header, False, b"\x01")
     assert actual[1] == (spnego.iov.BufferType.data, False, b"\x00")
-    assert actual[2] == (spnego.iov.BufferType.padding, False, b"\x00")
+    assert actual[2] == (spnego.iov.BufferType.padding, True, None)
     assert actual[3] == (spnego.iov.BufferType.header, True, None)
     assert actual[4] == (spnego.iov.BufferType.stream, False, None)
     assert actual[5] == (spnego.iov.BufferType.data, False, b"\x02")
@@ -110,3 +111,18 @@ def test_gssapi_no_kerberos(monkeypatch):
         FeatureMissingError, match="The Python gssapi library is not installed so Kerberos cannot be " "negotiated."
     ):
         spnego._gss.GSSAPIProxy(None, None, options=spnego.NegotiateOptions.negotiate_kerberos)
+
+
+@pytest.mark.skipif(not spnego._gss.HAS_GSSAPI, reason="Requires the gssapi library to be installed for testing")
+def test_gssapi_no_valid_acceptor_cred():
+    server_creds: typing.List[typing.Tuple[spnego.Credential, str]] = [
+        (spnego.KerberosCCache("ccache"), "kerberos"),
+        (spnego.KerberosKeytab("user_princ", "ccache"), "kerberos"),
+        (spnego.NTLMHash("user_princ"), "ntlm"),
+    ]
+    for cred, protocol in server_creds:
+        if protocol not in spnego._gss.GSSAPIProxy.available_protocols():
+            continue
+
+        with pytest.raises(InvalidCredentialError, match="No applicable credentials available"):
+            spnego._gss.GSSAPIProxy(cred, protocol=protocol, usage="accept")

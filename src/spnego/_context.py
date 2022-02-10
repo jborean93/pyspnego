@@ -4,7 +4,9 @@
 import abc
 import enum
 import typing
+import warnings
 
+from spnego._credential import Credential
 from spnego._text import to_text
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import FeatureMissingError, NegotiateOptions, SpnegoError
@@ -210,8 +212,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
     calls to what is required internally.
 
     Args:
-        username: The username to authenticate with. Certain providers can use a cache if omitted.
-        password: The password to authenticate with. Certain providers can use a cache if omitted.
+        credentials: A list of credentials to use for authentication.
         hostname: The principal part of the SPN. This is required for Kerberos auth to build the SPN.
         service: The service part of the SPN. This is required for Kerberos auth to build the SPN.
         channel_bindings: The optional :class:`spnego.channel_bindings.GssChannelBindings` for the context.
@@ -220,13 +221,10 @@ class ContextProxy(metaclass=abc.ABCMeta):
         protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, or `negotiate`. Not all providers
             support all three protocols as that is handled by :class:`SPNEGOContext`.
         options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
-        _is_wrapped: Whether the context proxy is wrapped by another context proxy.
 
     Attributes:
         usage (str): The usage of the context, `initiate` for a client and `accept` for a server.
         protocol (str): The protocol to set the context up with; `ntlm`, `kerberos`, or `negotiate`.
-        username (str): The username.
-        password (str): The password for username.
         spn (str): The service principal name of the service to connect to.
         channel_bindings (spnego.channel_bindings.GssChannelBindings): Optional channel bindings to provide with the
             context.
@@ -236,8 +234,7 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
     def __init__(
         self,
-        username: typing.Optional[str],
-        password: typing.Optional[str],
+        credentials: typing.List[Credential],
         hostname: typing.Optional[str],
         service: typing.Optional[str],
         channel_bindings: typing.Optional[GssChannelBindings],
@@ -245,7 +242,6 @@ class ContextProxy(metaclass=abc.ABCMeta):
         usage: str,
         protocol: str,
         options: NegotiateOptions,
-        _is_wrapped: bool = False,
     ) -> None:
         self.usage = usage.lower()
         if self.usage not in ["initiate", "accept"]:
@@ -257,9 +253,6 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         if self.protocol not in self.available_protocols(options=options):
             raise ValueError("Protocol %s is not available" % self.protocol)
-
-        self.username = to_text(username, nonstring="passthru")
-        self.password = to_text(password, nonstring="passthru")
 
         self.spn = None
         if service or hostname:
@@ -276,8 +269,8 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         self._context_attr = 0  # Provider specific context attributes, set by self.step().
 
-        # Whether the context is wrapped inside another context.
-        self._is_wrapped = _is_wrapped
+        # Whether the context is wrapped inside another context - set by NegotiateProxy.
+        self._is_wrapped = False
 
         if options & NegotiateOptions.negotiate_kerberos and (
             self.protocol == "negotiate" and "kerberos" not in self.available_protocols()
@@ -286,6 +279,16 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         if options & NegotiateOptions.wrapping_iov and not self.iov_available():
             raise FeatureMissingError(NegotiateOptions.wrapping_iov)
+
+    @property
+    def username(self) -> None:
+        warnings.warn("username is deprecated", category=DeprecationWarning)
+        return None
+
+    @property
+    def password(self) -> None:
+        warnings.warn("password is deprecated", category=DeprecationWarning)
+        return None
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:

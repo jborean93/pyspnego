@@ -341,6 +341,30 @@
     - HTTP
     - cifs
 
+  - name: create user keytab - MIT
+    command: ktutil
+    args:
+      chdir: ~/
+      creates: ~/user.keytab
+      stdin: "addent -password -p {{ domain_upn }} -k 1 -e aes256-cts\n{{ domain_password }}\nwrite_kt user.keytab"
+    become: no
+    when: krb_provider == 'MIT'
+
+  - name: create user keytab - Heimdal
+    command: >-
+      ktutil
+      --keytab=user.keytab
+      add
+      --principal={{ domain_upn }}
+      --kvno=1
+      --enctype=aes256-cts
+      --password={{ domain_password }}
+    args:
+      chdir: ~/
+      creates: ~/user.keytab
+    become: no
+    when: krb_provider == 'Heimdal'
+
   - name: ensure wheel dir exists
     file:
       path: ~/wheels
