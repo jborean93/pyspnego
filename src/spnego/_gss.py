@@ -2,6 +2,7 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import base64
+import copy
 import logging
 import sys
 import typing
@@ -210,7 +211,12 @@ def _get_gssapi_credential(
                 continue
 
             return gssapi.Credentials(
-                base=_kinit(to_bytes(cred.principal), to_bytes(cred.keytab), forwardable=forwardable, is_keytab=True),
+                base=_kinit(
+                    to_bytes(cred.principal or b""),
+                    to_bytes(cred.keytab),
+                    forwardable=forwardable,
+                    is_keytab=True,
+                ),
                 usage=usage,
             )
 
@@ -354,7 +360,22 @@ def _kinit(
         gssapi.raw.Creds: The GSSAPI credential for the Kerberos mech.
     """
     ctx = krb5.init_context()
-    princ = krb5.parse_name_flags(ctx, username)
+
+    kt: typing.Optional[krb5.KeyTab] = None
+    princ: typing.Optional[krb5.Principal] = None
+    if is_keytab:
+        kt = krb5.kt_resolve(ctx, password)
+
+        # If the username was not specified get the principal of the first entry.
+        if not username:
+            # The principal handle is deleted once the entry is deallocated. Make sure it is stored in a var before
+            # being copied.
+            first_entry = list(kt)[0]
+            princ = copy.copy(first_entry.principal)
+
+    if not princ:
+        princ = krb5.parse_name_flags(ctx, username)
+
     init_opt = krb5.get_init_creds_opt_alloc(ctx)
 
     if hasattr(krb5, "get_init_creds_opt_set_default_flags"):
@@ -367,8 +388,7 @@ def _kinit(
     if forwardable is not None:
         krb5.get_init_creds_opt_set_forwardable(init_opt, forwardable)
 
-    if is_keytab:
-        kt = krb5.kt_resolve(ctx, password)
+    if kt:
         cred = krb5.get_init_creds_keytab(ctx, princ, init_opt, keytab=kt)
     else:
         cred = krb5.get_init_creds_password(ctx, princ, init_opt, password=password)

@@ -547,15 +547,24 @@ $username = '{0}'
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows doesnt support keytabs')
-@pytest.mark.parametrize('protocol', ['kerberos', 'negotiate'])
-def test_kerberos_authentication_with_keytab(protocol, monkeypatch):
+@pytest.mark.parametrize('protocol, set_principal', [
+    ('kerberos', False),
+    ('kerberos', True),
+    ('negotiate', False),
+    ('negotiate', True),
+])
+def test_kerberos_authentication_with_keytab(protocol, set_principal, monkeypatch):
     monkeypatch.setenv('KRB5_KTNAME', '/etc/HTTP.keytab')
 
     auth_kwargs = {}
     if protocol != 'negotiate':
         auth_kwargs['protocol'] = protocol
 
-    keytab = spnego.KerberosKeytab(keytab=os.path.expanduser('~/user.keytab'), principal=USERNAME)
+    if set_principal:
+        keytab = spnego.KerberosKeytab(keytab=os.path.expanduser('~/user.keytab'), principal=USERNAME)
+    else:
+        keytab = spnego.KerberosKeytab(keytab=os.path.expanduser('~/user.keytab'))
+
     c = spnego.client(keytab, hostname=HOST_FQDN, service='HTTP', **auth_kwargs)
     s = spnego.server(**auth_kwargs)
 
@@ -601,7 +610,7 @@ def test_kerberos_authentication_with_cache(protocol, use_cache_cred, monkeypatc
         cred = spnego.KerberosCCache(ccache=tmp_ccache)
 
     else:
-        monkeypatch.setenv('KRB5CCNAME', tmp_ccache)
+        monkeypatch.setenv('KRB5CCNAME', str(tmp_ccache))
         kinit_env['KRB5CCNAME'] = tmp_ccache
 
     process = subprocess.Popen(kinit_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

@@ -820,14 +820,26 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     _message_test(c, s)
 
 
-@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
-def test_kerberos_auth_keytab(protocol, kerb_cred):
+@pytest.mark.parametrize(
+    "protocol, set_principal",
+    [
+        ("kerberos", False),
+        ("kerberos", True),
+        ("negotiate", False),
+        ("negotiate", True),
+    ],
+)
+def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
     if kerb_cred.provider == "heimdal":
         pytest.skip("Environment problem with Heimdal - skip")
 
     kerb_cred.extract_keytab(kerb_cred.user_princ, kerb_cred.client_keytab)
+    if set_principal:
+        kt = spnego.KerberosKeytab(keytab=kerb_cred.client_keytab, principal=kerb_cred.user_princ)
+    else:
+        kt = spnego.KerberosKeytab(keytab=kerb_cred.client_keytab)
+
     context_req = spnego.ContextReq.default
-    kt = spnego.KerberosKeytab(principal=kerb_cred.user_princ, keytab=kerb_cred.client_keytab)
     c = spnego.client(kt, hostname=socket.getfqdn(), protocol=protocol, context_req=context_req)
     s = spnego.server(protocol=protocol)
 

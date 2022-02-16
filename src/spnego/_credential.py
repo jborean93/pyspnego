@@ -105,21 +105,17 @@ class KerberosKeytab:
         This only works on Linux, Windows does not have the concept of a
         keytab.
 
-    .. Note:
-        The principal of the keytab entry to use must be specified. In the
-        future this may become option if the required APIs are implemented in
-        pykrb5.
-
     Attributes:
         keytab: The keytab to use for authentication. The path will not be
             expanded of have variables substituted so should be the absolute
             path to the keytab.
         principal: The Kerberos principal to get the credential for. Should be
-            in the UPN form `username@REALM.COM`.
+            in the UPN form `username@REALM.COM`. Set to `None` to use the
+            first keytab entry.
     """
 
     keytab: str
-    principal: str
+    principal: typing.Optional[str] = None
 
     @property
     def supported_protocols(self) -> typing.List[str]:

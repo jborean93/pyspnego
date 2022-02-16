@@ -115,7 +115,7 @@ setup(
         'kerberos:sys_platform=="win32"': [],
         'kerberos:sys_platform!="win32"': [
             "gssapi>=1.5.0",
-            "krb5",
+            "krb5>=0.3.0",
         ],
         "yaml": [
             "ruamel.yaml",
