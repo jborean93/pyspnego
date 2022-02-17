@@ -99,7 +99,7 @@ class NegotiateProxy(ContextProxy):
 
     @property
     def client_principal(self) -> typing.Optional[str]:
-        return self._context.client_principal
+        return self._context.client_principal if self._context_list else None
 
     @property
     def complete(self) -> bool:
@@ -107,15 +107,15 @@ class NegotiateProxy(ContextProxy):
 
     @property
     def context_attr(self) -> ContextReq:
-        return self._context.context_attr
+        return self._context.context_attr if self._context_list else ContextReq.none
 
     @property
     def negotiated_protocol(self) -> typing.Optional[str]:
-        return self._context.negotiated_protocol
+        return self._context.negotiated_protocol if self._context_list else None
 
     @property
     def session_key(self) -> bytes:
-        return self._context.session_key
+        return self._context.session_key if self._context_list else b""
 
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
         log.debug("SPNEGO step input: %s", base64.b64encode(in_token or b"").decode())
