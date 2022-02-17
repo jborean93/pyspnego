@@ -26,7 +26,12 @@ from spnego._context import (
 from spnego._credssp_structures import TSPasswordCreds
 from spnego._ntlm_raw.crypto import lmowfv1, ntowfv1
 from spnego._spnego import NegTokenResp, unpack_token
-from spnego.exceptions import InvalidCredentialError, NoCredentialError, SpnegoError
+from spnego.exceptions import (
+    InvalidCredentialError,
+    InvalidTokenError,
+    NoCredentialError,
+    SpnegoError,
+)
 
 
 def _message_test(client: spnego.ContextProxy, server: spnego.ContextProxy) -> None:
@@ -1018,6 +1023,8 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
 
     if version:
         monkeypatch.setattr(spnego._credssp, "_CREDSSP_VERSION", version)
+    else:
+        version = spnego._credssp._CREDSSP_VERSION
 
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp", options=options)
     s = spnego.server(protocol="credssp", options=options, **context_kwargs)
@@ -1027,10 +1034,12 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert c.get_extra_info("client_credential") is None
     assert isinstance(c.get_extra_info("sslcontext"), ssl.SSLContext)
     assert isinstance(c.get_extra_info("ssl_object"), ssl.SSLObject)
+    assert c.get_extra_info("auth_stage") == "TLS Handshake"
 
     assert s.get_extra_info("client_credential") is None
     assert isinstance(s.get_extra_info("sslcontext"), ssl.SSLContext)
     assert isinstance(s.get_extra_info("ssl_object"), ssl.SSLObject)
+    assert s.get_extra_info("auth_stage") == "TLS Handshake"
 
     assert c.client_principal is None
     assert c.get_extra_info("client_credential") is None
@@ -1049,18 +1058,26 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
         assert not s.complete
 
     ntlm3_pub_key = c.step(server_tls_token)
+    assert c.get_extra_info("auth_stage") == "Public key exchange"
+    assert s.get_extra_info("auth_stage").startswith("Authentication")
     assert not c.complete
     assert not s.complete
 
     server_pub_key = s.step(ntlm3_pub_key)
+    assert c.get_extra_info("auth_stage") == "Public key exchange"
+    assert s.get_extra_info("auth_stage") == "Public key exchange"
     assert not c.complete
     assert not s.complete
 
     credential = c.step(server_pub_key)
+    assert c.get_extra_info("auth_stage") == "Credential exchange"
+    assert s.get_extra_info("auth_stage") == "Public key exchange"
     assert c.complete
     assert not s.complete
 
     final_token = s.step(credential)
+    assert c.get_extra_info("auth_stage") == "Credential exchange"
+    assert s.get_extra_info("auth_stage") == "Credential exchange"
     assert final_token is None
     assert c.complete
     assert s.complete
@@ -1076,6 +1093,9 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert client_credential.username == username
     assert client_credential.domain_name == domain
     assert client_credential.password == ntlm_cred[1]
+
+    assert c.get_extra_info("protocol_version") == version
+    assert s.get_extra_info("protocol_version") == version
 
     _message_test(c, s)
 
@@ -1251,3 +1271,56 @@ def test_credssp_multiple_creds(ntlm_cred):
     assert client_credential.password == "password"
 
     _message_test(c, s)
+
+
+def test_credssp_min_protocol_failure_initiator(ntlm_cred, monkeypatch):
+    monkeypatch.setattr(spnego._credssp, "_CREDSSP_VERSION", 4)
+
+    c = spnego.client(
+        ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp", credssp_min_protocol=5
+    )
+    s = spnego.server(protocol="credssp")
+
+    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
+    # For NTLM the auth context will be present after the first exchange of NTLM tokens.
+    server_tls_token = None
+    while c._auth_context is None:  # type: ignore[attr-defined]
+        client_tls_token = c.step(server_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+        server_tls_token = s.step(client_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+    with pytest.raises(
+        InvalidTokenError, match="The peer protocol version was 4 and did not meet the minimum requirements of 5"
+    ):
+        c.step(server_tls_token)
+
+
+def test_credssp_min_protocol_failure_acceptor(ntlm_cred, monkeypatch):
+    monkeypatch.setattr(spnego._credssp, "_CREDSSP_VERSION", 4)
+
+    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp")
+    s = spnego.server(protocol="credssp", credssp_min_protocol=5)
+
+    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
+    # For NTLM the auth context will be present after the first exchange of NTLM tokens.
+    server_tls_token = None
+    while True:
+        client_tls_token = c.step(server_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+        if c.get_extra_info("auth_stage").startswith("Authentication"):
+            break
+
+        server_tls_token = s.step(client_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+    with pytest.raises(
+        InvalidTokenError, match="The peer protocol version was 4 and did not meet the minimum requirements of 5"
+    ):
+        s.step(client_tls_token)
