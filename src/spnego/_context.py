@@ -672,6 +672,18 @@ class ContextProxy(metaclass=abc.ABCMeta):
                 The :class:`ssl.SSLObject` instance used for the CredSSP
                 context.
 
+            auth_stage - added in 0.5.0:
+                A string representing that sub authentication stage being
+                performed in the CredSSP authentication stepping. The value
+                here is meant to be a human friendly representation and not
+                something to be relied upon.
+
+            protocol_version - added in 0.5.0:
+                The CredSSP protocol version that was negotiated between the
+                initiator and acceptor. This is the minimum version number
+                offered by both parties once the Negotiate authentication stage
+                is complete.
+
         Args:
             name: The name/id of the information to retrieve.
             default: The default value to return if the information is not

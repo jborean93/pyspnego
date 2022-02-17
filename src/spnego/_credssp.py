@@ -212,6 +212,28 @@ class CredSSPProxy(ContextProxy):
     The acceptor logic is mostly done as a proof of concept and for use with
     testing. Use at your own risk.
 
+    Currently this context proxy supports the following CredSSP protocols:
+
+        2:
+            Earliest protocol that ships with Windows XP, Vista, 7, 8, Server
+            2008, 2008 R2, and 2012. This version is susceptible to
+            CVE-2018-0886
+        3:
+            Introduced with Windows 8.1 and Server 2012 R2. Adds the errorCode
+            field for better error details on a failure. This version is
+            susceptible to CVE-2018-0886.
+        4:
+            Largely the same as 3, introduced in an older Win 10 build.
+        5:
+            Same as version 2 but with the mitigations for CVE-2018-0886
+            applied.
+        6:
+            Same as version 3 and 4 but with the mitigations for CVE-2018-0886
+            applied.
+
+    If the context proxy is talking to a peer with a higher protocol number it
+    is treated the same as what the client supports.
+
     Optional kwargs supports by CredSSPProxy:
 
         credssp_negotiate_context: Use this contest for the underlying
@@ -222,6 +244,13 @@ class CredSSPProxy(ContextProxy):
         credssp_tls_context: Custom :class:`CredSSPTLSContext` to use for the
             CredSSP exchange. See `spnego.tls` for helper methods to generate
             a custom TLS context.
+
+        credssp_min_protocol: The minimum CredSSP authentication protocol the
+            context will allow. This can control whether the server rejects
+            peers running on a lower protocol version than what is set to
+            enforce a better security baseline. The default is 2 which works
+            against all CredSSP peers. To ensure the mitigations for
+            CVE-2018-0886 is in place set this value to 5 or higher.
     """
 
     def __init__(
@@ -256,6 +285,9 @@ class CredSSPProxy(ContextProxy):
         self._ts_credential: typing.Optional[TSCredentials] = None
         self._complete = False
         self._step_gen: typing.Optional[typing.Generator[bytes, typing.Optional[bytes], None]] = None
+        self._auth_stage = "TLS Handshake"
+        self._min_version: int = kwargs.get("credssp_min_protocol", 2)
+        self._selected_version: typing.Optional[int] = None
 
         self._tls_context: CredSSPTLSContext
         if "credssp_tls_context" in kwargs:
@@ -356,12 +388,17 @@ class CredSSPProxy(ContextProxy):
             if self._auth_context.complete or (out_token and b"NTLMSSP\x00\x03\x00\x00\x00" in out_token):
                 break
 
-        # TODO: Check that version meets minimum requirement
-        version = min(auth_response.version, _CREDSSP_VERSION)
-        log.debug("Negotiated CredSSP version: %d" % version)
+        self._selected_version = min(auth_response.version, _CREDSSP_VERSION)
+        log.debug("Negotiated CredSSP version: %d" % self._selected_version)
+        if self._selected_version < self._min_version:
+            msg = (
+                f"The peer protocol version was {auth_response.version} and did not meet the minimum "
+                f"requirements of {self._min_version}"
+            )
+            raise InvalidTokenError(context_msg=msg)
 
         pub_key_nego_token = NegoData(out_token) if out_token else None
-        nonce = os.urandom(32) if version > 4 else None
+        nonce = os.urandom(32) if self._selected_version > 4 else None
         pub_value = _get_pub_key_auth(public_key, "initiate", nonce=nonce)
         pub_key_request = TSRequest(
             version=_CREDSSP_VERSION,
@@ -398,11 +435,17 @@ class CredSSPProxy(ContextProxy):
         """The acceptor authentication steps of CredSSP."""
         in_token = yield from self._step_tls(in_token)
 
-        # The version to use as the acceptor should be the smaller of the client and _CREDSSP_VERSION.
-        # TODO: Add check that sets minimum client version supported.
         auth_request = TSRequest.unpack(in_token or b"")
-        version = min(auth_request.version, _CREDSSP_VERSION)
-        log.debug("Negotiated CredSSP version: %d" % version)
+
+        # The version to use as the acceptor should be the smaller of the client and _CREDSSP_VERSION.
+        self._selected_version = min(auth_request.version, _CREDSSP_VERSION)
+        log.debug("Negotiated CredSSP version: %d" % self._selected_version)
+        if self._selected_version < self._min_version:
+            msg = (
+                f"The peer protocol version was {auth_request.version} and did not meet the minimum "
+                f"requirements of {self._min_version}"
+            )
+            raise InvalidTokenError(context_msg=msg)
 
         try:
             log.debug("Starting CredSSP authentication phase")
@@ -431,7 +474,7 @@ class CredSSPProxy(ContextProxy):
         except SpnegoError as e:
             # Version 2 and 5 don't support the errorCode field and the initiator won't expect a token back.
             log.warning("Received CredSSP error when accepting credentials: %s", e)
-            if version in [3, 4] or version >= 6:
+            if self._selected_version in [3, 4] or self._selected_version >= 6:
                 error_token = TSRequest(_CREDSSP_VERSION, error_code=e.nt_status)
                 yield from self._yield_ts_request(error_token, "Authentication failure")
 
@@ -450,6 +493,7 @@ class CredSSPProxy(ContextProxy):
         pub_key_response = TSRequest(_CREDSSP_VERSION, nego_tokens=nego_token, pub_key_auth=server_key)
         auth_request = yield from self._yield_ts_request(pub_key_response, "Public key exchange")
 
+        self._auth_stage = "Credential exchange"
         if not auth_request.auth_info:
             raise InvalidTokenError(context_msg="No credential received on CredSSP TSRequest from initiator")
 
@@ -496,6 +540,8 @@ class CredSSPProxy(ContextProxy):
         context_msg: str,
     ) -> typing.Generator[bytes, bytes, TSRequest]:
         """Exchanges a TSRequest between the initiator and acceptor."""
+        self._auth_stage = context_msg
+
         out_request = ts_request.pack()
         log.debug("CredSSP TSRequest output: %s" % to_text(base64.b64encode(out_request)))
         wrapped_response = yield self.wrap(out_request).data
@@ -524,6 +570,12 @@ class CredSSPProxy(ContextProxy):
 
         elif name == "ssl_object":
             return self._tls_object
+
+        elif name == "auth_stage":
+            return self._auth_stage
+
+        elif name == "protocol_version" and self._selected_version is not None:
+            return self._selected_version
 
         else:
             return default

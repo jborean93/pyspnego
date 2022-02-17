@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - TBD
+
+* Added the `auth_stage` extra_info for a CredSSP context to give a human friendly indication of what sub auth stage it is up to.
+* Added the `protocol_version` extra_info for a CredSSP context to return the negotiated CredSSP protocol version.
+* Added the `credssp_min_protocol` keyword argument for a CredSSP context to set a minimum version the caller will accept of the peer.
+  * This can be set to `5+` to ensure the peer supports and applies the mitigations for CVE-2018-0886.
+
+
 ## 0.4.0 - 2022-02-16
 
 ### Features
