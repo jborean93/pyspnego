@@ -6,6 +6,7 @@
 * Added the `protocol_version` extra_info for a CredSSP context to return the negotiated CredSSP protocol version.
 * Added the `credssp_min_protocol` keyword argument for a CredSSP context to set a minimum version the caller will accept of the peer.
   * This can be set to `5+` to ensure the peer supports and applies the mitigations for CVE-2018-0886.
+* Added safeguards when trying to retrieve the completed context attributes of `NegotiateProxy` before any contexts have been set up (https://github.com/jborean93/pyspnego/issues/33)
 
 
 ## 0.4.0 - 2022-02-16
