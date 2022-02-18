@@ -3,6 +3,7 @@
 
 import typing as t
 
+
 class ClientContextAttr:
     delegate: int = ...
     mutual_auth: int = ...
@@ -47,6 +48,9 @@ class ClientContextReq:
     stream: int = ...
     use_session_key: int = ...
     use_supplied_creds: int = ...
+
+class CredentialAttr:
+    kdc_proxy_settings: int = ...
 
 class CredentialUse:
     inbound: int = ...
@@ -296,6 +300,11 @@ def query_context_attributes(
     context: SecurityContext,
     attribute: int,
 ) -> t.Union[bytes, str, SecPkgInfo, SecPkgAttrSizes]: ...
+def set_credentials_attribute(
+    credential: Credential,
+    attribute: int,
+    buffer: bytes,
+) -> None
 def verify_signature(
     context: SecurityContext,
     message: SecBufferDesc,

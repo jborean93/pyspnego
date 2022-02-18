@@ -42,6 +42,7 @@ cdef extern from "Security.h":
     cdef unsigned long SECPKG_ATTR_PACKAGE_INFO
     cdef unsigned long SECPKG_ATTR_SIZES
     cdef unsigned long SECPKG_ATTR_SESSION_KEY
+    cdef unsigned long SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS
 
     cdef unsigned long SECPKG_CRED_INBOUND
     cdef unsigned long SECPKG_CRED_OUTBOUND
@@ -345,6 +346,13 @@ cdef extern from "Security.h":
         PCtxtHandle   phContext,
         unsigned long ulAttribute,
         void          *pBuffer
+    )
+
+    SECURITY_STATUS __stdcall SetCredentialsAttributesW(
+        PCredHandle     phCredential,
+        unsigned long   ulAttribute,
+        void            *pBuffer,
+        unsigned long   cbBuffer
     )
 
     SECURITY_STATUS __stdcall VerifySignature(

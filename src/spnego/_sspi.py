@@ -4,6 +4,7 @@
 import base64
 import io
 import logging
+import os
 import struct
 import typing
 
@@ -34,6 +35,7 @@ try:
     from spnego._sspi_raw import ClientContextReq
     from spnego._sspi_raw import Credential as NativeCredential
     from spnego._sspi_raw import (
+        CredentialAttr,
         CredentialUse,
         SecBuffer,
         SecBufferDesc,
@@ -54,6 +56,7 @@ try:
         initialize_security_context,
         make_signature,
         query_context_attributes,
+        set_credentials_attribute,
         verify_signature,
     )
     from spnego._sspi_raw.sspi import SecPkgAttrSizes
@@ -125,6 +128,34 @@ def _get_sspi_credential(
     raise InvalidCredentialError(context_msg="No applicable credentials available")
 
 
+def _set_credential_proxy(
+    credential: Credential,
+) -> None:
+    # https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcredentials_kdcproxysettingsw
+    # Format of 'hostname:port:path', the port:path can be omitted to use the default of 443:KdcProxy.
+    proxy_server = os.environ.get("KERBEROS_PROXY_SERVER", None)
+    if not proxy_server:
+        return
+
+    force_proxy = os.environ.get("KERBEROS_FORCE_PROXY", None)
+    if force_proxy:
+        force_proxy = force_proxy.lower() in ["y", "1", "yes", "t", "true"]
+
+    b_proxy_server = proxy_server.encode("utf-16-le")
+    proxy_buffer = b"".join(
+        [
+            struct.pack("<I", 1),
+            struct.pack("<I", 1 if force_proxy else 0),  # KDC_PROXY_SETTINGS_FLAGS_FORCEPROXY
+            struct.pack("<H", 16),
+            struct.pack("<H", len(b_proxy_server)),
+            struct.pack("<H", 0),
+            struct.pack("<H", 0),
+            b_proxy_server,
+        ]
+    )
+    set_credentials_attribute(credential, CredentialAttr.kdc_proxy_settings, proxy_buffer)
+
+
 class SSPIProxy(ContextProxy):
     """SSPI proxy class for pure SSPI on Windows.
 
@@ -166,6 +197,7 @@ class SSPIProxy(ContextProxy):
         try:
             principal = self.spn if usage == "accept" else None
             self._credential = _get_sspi_credential(principal, protocol, usage, credentials)
+            _set_credential_proxy(self._credential)
         except NativeError as win_err:
             raise SpnegoError(base_error=win_err, context_msg="Getting SSPI credential") from win_err
 

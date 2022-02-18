@@ -6,6 +6,7 @@ from spnego._sspi_raw.sspi import (
     ClientContextAttr,
     ClientContextReq,
     Credential,
+    CredentialAttr,
     CredentialUse,
     SecBuffer,
     SecBufferDesc,
@@ -27,6 +28,7 @@ from spnego._sspi_raw.sspi import (
     initialize_security_context,
     make_signature,
     query_context_attributes,
+    set_credentials_attribute,
     verify_signature,
 )
 
@@ -34,6 +36,7 @@ __all__ = [
     "ClientContextAttr",
     "ClientContextReq",
     "Credential",
+    "CredentialAttr",
     "CredentialUse",
     "SecBuffer",
     "SecBufferDesc",
@@ -55,5 +58,6 @@ __all__ = [
     "initialize_security_context",
     "make_signature",
     "query_context_attributes",
+    "set_credentials_attribute",
     "verify_signature",
 ]

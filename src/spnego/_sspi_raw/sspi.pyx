@@ -163,6 +163,7 @@ from spnego._sspi_raw.security cimport (
     SECPKG_ATTR_PACKAGE_INFO,
     SECPKG_ATTR_SESSION_KEY,
     SECPKG_ATTR_SIZES,
+    SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS,
     SECPKG_CRED_BOTH,
     SECPKG_CRED_INBOUND,
     SECPKG_CRED_OUTBOUND,
@@ -195,6 +196,7 @@ from spnego._sspi_raw.security cimport (
     SEC_I_COMPLETE_NEEDED as _SEC_I_COMPLETE_NEEDED,
     SEC_I_CONTINUE_NEEDED as _SEC_I_CONTINUE_NEEDED,
     SEC_I_INCOMPLETE_CREDENTIALS as _SEC_I_INCOMPLETE_CREDENTIALS,
+    SetCredentialsAttributesW,
     VerifySignature,
 )
 
@@ -249,6 +251,10 @@ class ClientContextReq:
     stream = ISC_REQ_STREAM
     use_session_key = ISC_REQ_USE_SESSION_KEY
     use_supplied_creds = ISC_REQ_USE_SUPPLIED_CREDS
+
+
+class CredentialAttr:
+    kdc_proxy_settings = SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS
 
 
 class CredentialUse:
@@ -790,6 +796,21 @@ def _query_context_sizes(SecurityContext context not None):
         PyErr_SetFromWindowsErr(res)
 
     return SecPkgAttrSizes(sizes.cbMaxToken, sizes.cbMaxSignature, sizes.cbBlockSize, sizes.cbSecurityTrailer)
+
+
+def set_credentials_attribute(
+    Credential credential not None,
+    attribute,
+    const unsigned char[:] buffer not None,
+):
+    cdef char *buffer_ptr = NULL
+    cdef unsigned long buffer_len = len(buffer)
+    if buffer_len:
+        buffer_ptr = <const char*>&buffer[0]
+
+    res = SetCredentialsAttributesW(&credential.handle, attribute, buffer_ptr, buffer_len)
+    if res != _SEC_E_OK:
+        PyErr_SetFromWindowsErr(res)
 
 
 def verify_signature(SecurityContext context not None, SecBufferDesc message not None, unsigned long seq_no=0):
