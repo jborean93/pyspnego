@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 - TBD
+## 0.5.0 - 2022-02-21
 
 * Added the `auth_stage` extra_info for a CredSSP context to give a human friendly indication of what sub auth stage it is up to.
 * Added the `protocol_version` extra_info for a CredSSP context to return the negotiated CredSSP protocol version.
