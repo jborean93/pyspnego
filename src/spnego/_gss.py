@@ -552,6 +552,13 @@ class GSSAPIProxy(ContextProxy):
         self._context_attr = int(self._context.actual_flags)
 
         if not self._is_wrapped:
+            # When using NTLM through GSSAPI without it being wrapped by SPNEGO
+            # this function needs to be called in order for gss-ntlmssp to add
+            # the MIC. We don't care about the value just that it would be added
+            # if it could.
+            # https://github.com/gssapi/gss-ntlmssp/issues/69
+            if self.protocol == "ntlm" and not self.complete:
+                _ = self._requires_mech_list_mic
             log.debug("GSSAPI step output: %s", base64.b64encode(out_token or b"").decode())
 
         return out_token
