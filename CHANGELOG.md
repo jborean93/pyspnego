@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.1 - TBD
+## 0.5.1 - 2022-03-21
 
 * Call `gss_inquire_sec_context_by_oid(ctx, spnego_req_mechlistMIC_oid)` when using pure NTLM over GSSAPI to ensure the token contains a MIC
 
