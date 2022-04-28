@@ -23,6 +23,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 
 from spnego._ntlm_raw.des import DES
+from spnego._ntlm_raw.md4 import md4
 from spnego._ntlm_raw.messages import (
     FileTime,
     NegotiateFlags,
@@ -337,11 +338,6 @@ def lmowfv1(password: str) -> bytes:
         b_hash.write(des(b_password[start:end], b"KGS!@#$%"))
 
     return b_hash.getvalue()
-
-
-def md4(m: bytes) -> bytes:
-    """Simple wrapper to generate a MD4 checksum."""
-    return hashlib.new("md4", m).digest()
 
 
 def md5(m: bytes) -> bytes:

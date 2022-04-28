@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 - TBD
+
+* Added custom MD4 hashing code for NTLM to use.
+  * Newer Linux distributions ship with OpenSSL 3.x which typically disables MD4 breaking the use of `hashlib.new('md4', b"")`
+  * Using this custom code allows NTLM to continue to work
+  * While it's bad to continue to use older hashing mechanisms in this case there is no valid alternative available
+
+
 ## 0.5.1 - 2022-03-21
 
 * Call `gss_inquire_sec_context_by_oid(ctx, spnego_req_mechlistMIC_oid)` when using pure NTLM over GSSAPI to ensure the token contains a MIC
