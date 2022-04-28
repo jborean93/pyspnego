@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.2 - TBD
+## 0.5.2 - 2022-04-29
 
 * Added custom MD4 hashing code for NTLM to use.
   * Newer Linux distributions ship with OpenSSL 3.x which typically disables MD4 breaking the use of `hashlib.new('md4', b"")`
