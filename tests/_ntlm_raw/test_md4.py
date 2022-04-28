@@ -1,8 +1,20 @@
+import hashlib
+import os
+import random
+
 import pytest
 
 from spnego._ntlm_raw.md4 import md4
 
+HASHLIB_AVAIL = True
+try:
+    hashlib.new("md4")
+except ValueError:
+    HASHLIB_AVAIL = False
 
+
+# The expectations here are based on the MD4 RFC
+# https://datatracker.ietf.org/doc/html/rfc1320#appendix-A.5
 @pytest.mark.parametrize(
     "data, expected",
     [
@@ -39,3 +51,16 @@ from spnego._ntlm_raw.md4 import md4
 def test_md4(data: bytes, expected: bytes) -> None:
     actual = md4(data)
     assert actual == expected
+
+
+# This test will only run on hosts where md4 is still available on hashlib.
+# It's just an extra sanity check to verify our implementation is still good.
+@pytest.mark.skipif(not HASHLIB_AVAIL, reason="hashlib does not support md4")
+def test_md4_to_hashlib() -> None:
+    for idx in range(20):
+        data = os.urandom(random.randint(idx * 10, (idx * 10) + 1024))
+
+        expected = hashlib.new("md4", data).digest()
+        actual = md4(data)
+
+        assert actual == expected
