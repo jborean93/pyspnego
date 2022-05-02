@@ -775,7 +775,7 @@ class FileTime(datetime.datetime):
         """Packs the structure to bytes."""
         # Make sure we are dealing with a timezone aware datetime
         utc_tz = datetime.timezone.utc
-        utc_dt = self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz)
+        utc_dt = typing.cast(datetime.datetime, self.replace(tzinfo=self.tzinfo if self.tzinfo else utc_tz))
 
         # Get the time since UTC EPOCH in microseconds
         td = utc_dt.astimezone(utc_tz) - datetime.datetime(1970, 1, 1, 0, 0, 0, tzinfo=utc_tz)
