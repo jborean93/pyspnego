@@ -16,7 +16,6 @@ from cpython.exc cimport (
 from libc.stdlib cimport (
     calloc,
     free,
-    malloc,
 )
 
 from libc.string cimport (
@@ -406,17 +405,12 @@ cdef class SecurityContext:
 
 cdef class SecBufferDesc:
 
-    def __cinit__(SecBufferDesc self, list buffers not None, unsigned long version=SECBUFFER_VERSION):
-        self._c_value = NativeSecBufferDesc(version, <unsigned long>len(buffers), NULL)
-        self._buffers = buffers
-
-        if buffers:
-            self._c_value.pBuffers = <PSecBuffer>malloc(sizeof(NativeSecBuffer) * len(buffers))
+    def __cinit__(SecBufferDesc self, unsigned long buffer_count, unsigned long version=SECBUFFER_VERSION):
+        self._c_value = NativeSecBufferDesc(version, buffer_count, NULL)
+        if buffer_count > 0:
+            self._c_value.pBuffers = <PSecBuffer>calloc(sizeof(NativeSecBuffer), buffer_count)
             if not self._c_value.pBuffers:
-                raise MemoryError("Cannot malloc SecBufferDesc buffer")
-
-            for idx, buffer in enumerate(buffers):
-                self[idx] = buffer
+                raise MemoryError("Cannot calloc SecBufferDesc buffer")
 
     cdef PSecBufferDesc __c_value__(SecBufferDesc self):
         return &self._c_value
@@ -425,14 +419,13 @@ cdef class SecBufferDesc:
         return self._c_value.cBuffers
 
     def __getitem__(SecBufferDesc self, key):
-        return self._buffers[key]
-
-    def __setitem__(SecBufferDesc self, key, SecBuffer value not None):
-        value.replace_ptr(&self._c_value.pBuffers[key])
+        sec_buffer = SecBuffer()
+        sec_buffer.c_value = &self._c_value.pBuffers[key]
+        return sec_buffer
 
     def __iter__(SecBufferDesc self):
-        for val in self._buffers:
-            yield val
+        for idx in range(self._c_value.cBuffers):
+            yield self[idx]
 
     def __repr__(SecBufferDesc self):
         return "<{0}.{1}(ulVersion={2}, cBuffers={3})>".format(type(self).__module__, type(self).__name__,
@@ -458,45 +451,6 @@ cdef class SecBufferDesc:
 
 cdef class SecBuffer:
 
-    def __cinit__(SecBuffer self, unsigned long buffer_type, bytes buffer=None, unsigned long length=0):
-        if buffer and length:
-            raise ValueError("Only an empty buffer can be created with length")
-
-        self.sys_alloc = 0
-        self._is_owner = 1
-
-        self.c_value = <PSecBuffer>calloc(1, sizeof(NativeSecBuffer))
-        if not self.c_value:
-            raise MemoryError("Cannot malloc SecBuffer buffer")  # pragma: no cover
-
-        self.buffer_type = buffer_type
-        if buffer:
-            self.buffer = buffer
-        elif length:
-            self._alloc_buffer(length)
-
-    cdef replace_ptr(SecBuffer self, PSecBuffer ptr):
-        # Copy the existing C buffer to the new pointer and free the memory this object was managing.
-        memcpy(ptr, self.c_value, sizeof(NativeSecBuffer))
-        free(self.c_value)
-
-        # Make sure that this obj does not try and free the new pointer that was passed in (it is up to the caller to
-        # do that).
-        self._is_owner = 0
-        self.c_value = ptr
-
-    def __len__(SecBuffer self):
-        return self.c_value.cbBuffer if self.c_value else 0
-
-    def __repr__(SecBuffer self):
-        return "<{0}.{1}(cbBuffer={2}, BufferType={3}, pvBuffer={4})>".format(
-            type(self).__module__, type(self).__name__, self.c_value.cbBuffer, self.c_value.BufferType,
-            repr(self.buffer))
-
-    def __str__(SecBuffer self):
-        return "{0}(cbBuffer={1}, BufferType={2}, pvBuffer={3!r})".format(type(self).__name__, self.c_value.cbBuffer,
-            self.c_value.BufferType, self.buffer)
-
     @property
     def buffer_type(SecBuffer self):
         return self.c_value.BufferType
@@ -507,52 +461,40 @@ cdef class SecBuffer:
 
     @property
     def buffer(SecBuffer self):
-        if self.c_value.cbBuffer and self.c_value.pvBuffer:
-            return (<char *>self.c_value.pvBuffer)[:self.c_value.cbBuffer]
-        elif self.c_value.pvBuffer:
-            return b""  # The size was 0 but pvBuffer was not a NULL pointer.
+        if self.c_value.pvBuffer == NULL:
+            return None
         else:
-            return
+            return (<char *>self.c_value.pvBuffer)[:self.c_value.cbBuffer]
 
     @buffer.setter
-    def buffer(SecBuffer self, bytes value):
-        value_len = len(value)
-        self._alloc_buffer(value_len)
-        memcpy(self.c_value.pvBuffer, <char *>value, value_len)
-
-    def _alloc_buffer(SecBuffer self, unsigned long length):
-        self._dealloc_buffer()
-
-        # We store our allocated memory pointer so we know when we free we are freeing what we allocated.
-        self._p_buffer = malloc(length)
-        if not self._p_buffer:
-            raise MemoryError("Cannot malloc SecBuffer buffer")  # pragma: no cover
-
-        self.c_value.pvBuffer = self._p_buffer
-        self.c_value.cbBuffer = length
-
-    def _dealloc_buffer(SecBuffer self):
-        # We do need to check if the actual C struct pvBuffer was allocated by Windows and call FreeContextBuffer on
-        # that.
-        if self.c_value != NULL and self.c_value.pvBuffer != NULL and self.sys_alloc:
-            FreeContextBuffer(self.c_value.pvBuffer)
-
-        if self.c_value:
+    def buffer(SecBuffer self, char[:] value):
+        if value is None or len(value) == 0:
+            self.c_value.cbBuffer = 0
             self.c_value.pvBuffer = NULL
+        else:
+            self.c_value.cbBuffer = <unsigned long>len(value)
+            self.c_value.pvBuffer = &value[0]
 
-        # Because the C struct pvBuffer may have a pointer set by Windows we track our allocated memory using an
-        # internal attribute which we free().
-        if self._p_buffer:
-            free(self._p_buffer)
-        self._p_buffer = NULL
+    def free(SecBuffer self):
+        if self.c_value.pvBuffer != NULL:
+            res = FreeContextBuffer(self.c_value.pvBuffer)
+            if res != _SEC_E_OK:
+                PyErr_SetFromWindowsErr(res)
 
-    def __dealloc__(SecBuffer self):
-        self._dealloc_buffer()
+            self.c_value.pvBuffer = NULL
+            self.c_value.cbBuffer = 0
 
-        if self.c_value != NULL and self._is_owner:
-            free(self.c_value)
+    def __len__(SecBuffer self):
+        return self.c_value.cbBuffer
 
-        self.c_value = NULL
+    def __repr__(SecBuffer self):
+        return "<{0}.{1}(cbBuffer={2}, BufferType={3}, pvBuffer={4})>".format(
+            type(self).__module__, type(self).__name__, self.c_value.cbBuffer, self.c_value.BufferType,
+            repr(self.buffer))
+
+    def __str__(SecBuffer self):
+        return "{0}(cbBuffer={1}, BufferType={2}, pvBuffer={3!r})".format(type(self).__name__, self.c_value.cbBuffer,
+            self.c_value.BufferType, self.buffer)
 
 
 cdef class _AuthIdentityBase:
@@ -628,11 +570,6 @@ def accept_security_context(Credential credential not None, SecurityContext cont
     cdef PSecBufferDesc output = output_buffer.__c_value__() if output_buffer else NULL
     cdef SECURITY_INTEGER expiry
 
-    for buffer in (output_buffer or []):
-        if len((<SecBuffer>buffer)) == 0:
-            context_req |= ISC_REQ_ALLOCATE_MEMORY
-            (<SecBuffer>buffer).sys_alloc = 1
-
     res = AcceptSecurityContext(&credential.handle, input_context, input, context_req, target_data_rep,
         &context.handle, output, &context.context_attr, &expiry)
 
@@ -696,11 +633,6 @@ def initialize_security_context(Credential credential not None, SecurityContext 
     cdef PSecBufferDesc output = output_buffer.__c_value__() if output_buffer else NULL
     cdef SECURITY_INTEGER expiry
 
-    for buffer in (output_buffer or []):
-        if len((<SecBuffer>buffer)) == 0:
-            context_req |= ISC_REQ_ALLOCATE_MEMORY
-            (<SecBuffer>buffer).sys_alloc = 1
-
     res = InitializeSecurityContextW(&credential.handle, input_context, w_target_name.buffer, context_req, 0,
         target_data_rep, input, 0, &context.handle, output, &context.context_attr, &expiry)
 
@@ -752,6 +684,7 @@ def _query_context_names(SecurityContext context not None):
         return u16_to_text(info.sUserName, -1)
     finally:
         FreeContextBuffer(<void*>info.sUserName)
+
 
 def _query_context_package_info(SecurityContext context not None):
     cdef SecPkgContext_PackageInfoW raw_info

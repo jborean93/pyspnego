@@ -29,18 +29,12 @@ cdef class SecurityContext:
 
 cdef class SecBufferDesc:
     cdef NativeSecBufferDesc _c_value
-    cdef list _buffers
 
     cdef PSecBufferDesc __c_value__(SecBufferDesc self)
 
 
 cdef class SecBuffer:
     cdef PSecBuffer c_value
-    cdef object sys_alloc
-    cdef object _is_owner
-    cdef void *_p_buffer
-
-    cdef replace_ptr(SecBuffer self, PSecBuffer ptr)
 
 
 cdef class _AuthIdentityBase:
