@@ -18,7 +18,13 @@ except ImportError:
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_sec_buffer_desc_repr():
-    sec_buffer_desc = sspi.SecBufferDesc([sspi.SecBuffer(1, b"\x00\x01"), sspi.SecBuffer(2, b"\x02\x03")])
+    data1 = bytearray(b"\x01\x02")
+    data2 = bytearray(b"\x03\x04")
+    sec_buffer_desc = sspi.SecBufferDesc(2)
+    sec_buffer_desc[0].buffer_type = 1
+    sec_buffer_desc[0].buffer = data1
+    sec_buffer_desc[1].buffer_type = 2
+    sec_buffer_desc[1].buffer = data2
     actual = repr(sec_buffer_desc)
 
     assert actual == r"<spnego._sspi_raw.sspi.SecBufferDesc(ulVersion=0, cBuffers=2)>"
@@ -26,7 +32,13 @@ def test_sec_buffer_desc_repr():
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_sec_buffer_desc_str():
-    sec_buffer_desc = sspi.SecBufferDesc([sspi.SecBuffer(1, b"\x00\x01"), sspi.SecBuffer(2, b"\x02\x03")])
+    data1 = bytearray(b"\x01\x02")
+    data2 = bytearray(b"\x03\x04")
+    sec_buffer_desc = sspi.SecBufferDesc(2)
+    sec_buffer_desc[0].buffer_type = 1
+    sec_buffer_desc[0].buffer = data1
+    sec_buffer_desc[1].buffer_type = 2
+    sec_buffer_desc[1].buffer = data2
     actual = str(sec_buffer_desc)
 
     assert actual == r"SecBufferDesc(ulVersion=0, cBuffers=2)"
@@ -34,52 +46,57 @@ def test_sec_buffer_desc_str():
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_sec_buffer_desc_version():
-    sec_buffer_desc = sspi.SecBufferDesc([sspi.SecBuffer(1, b"\x00\x01"), sspi.SecBuffer(2, b"\x02\x03")])
+    data1 = bytearray(b"\x01\x02")
+    data2 = bytearray(b"\x03\x04")
+    sec_buffer_desc = sspi.SecBufferDesc(2)
+    sec_buffer_desc[0].buffer_type = 1
+    sec_buffer_desc[0].buffer = data1
+    sec_buffer_desc[1].buffer_type = 2
+    sec_buffer_desc[1].buffer = data2
     assert sec_buffer_desc.version == 0
     sec_buffer_desc.version = 1
     assert sec_buffer_desc.version == 1
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
-def test_sec_buffer_invalid_init():
-    with pytest.raises(ValueError, match="Only an empty buffer can be created with length"):
-        sspi.SecBuffer(1, buffer=b"abc", length=10)
-
-
-@pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 @pytest.mark.parametrize(
     "buffer, expected",
     [
-        (b"abc", 3),
-        (b"\x01\x02\x03\x04\x05", 5),
+        (bytearray(b"abc"), 3),
+        (bytearray(b"\x01\x02\x03\x04\x05"), 5),
     ],
 )
 def test_sec_buffer_length(buffer, expected):
-    assert len(sspi.SecBuffer(1, buffer=buffer)) == expected
+    sec_buffer_desc = sspi.SecBufferDesc(1)
+    sec_buffer = sec_buffer_desc[0]
+    sec_buffer.buffer_type = 1
+    sec_buffer.buffer = buffer
+
+    assert len(sec_buffer) == expected
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_sec_buffer_repr():
-    sec_buffer = sspi.SecBuffer(1, b"\x01\x02\x03\x04")
+    data = bytearray(b"\x01\x02\x03\x04")
+    sec_buffer_desc = sspi.SecBufferDesc(1)
+    sec_buffer = sec_buffer_desc[0]
+    sec_buffer.buffer_type = 1
+    sec_buffer.buffer = data
     actual = repr(sec_buffer)
 
-    if sys.version_info[0] == 2:
-        assert actual == r"<spnego._sspi_raw.sspi.SecBuffer(cbBuffer=4, BufferType=1, pvBuffer='\x01\x02\x03\x04')>"
-
-    else:
-        assert actual == r"<spnego._sspi_raw.sspi.SecBuffer(cbBuffer=4, BufferType=1, pvBuffer=b'\x01\x02\x03\x04')>"
+    assert actual == r"<spnego._sspi_raw.sspi.SecBuffer(cbBuffer=4, BufferType=1, pvBuffer=b'\x01\x02\x03\x04')>"
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_sec_buffer_str():
-    sec_buffer = sspi.SecBuffer(1, b"\x01\x02\x03\x04")
+    data = bytearray(b"\x01\x02\x03\x04")
+    sec_buffer_desc = sspi.SecBufferDesc(1)
+    sec_buffer = sec_buffer_desc[0]
+    sec_buffer.buffer_type = 1
+    sec_buffer.buffer = data
     actual = str(sec_buffer)
 
-    if sys.version_info[0] == 2:
-        assert actual == r"SecBuffer(cbBuffer=4, BufferType=1, pvBuffer='\x01\x02\x03\x04')"
-
-    else:
-        assert actual == r"SecBuffer(cbBuffer=4, BufferType=1, pvBuffer=b'\x01\x02\x03\x04')"
+    assert actual == r"SecBuffer(cbBuffer=4, BufferType=1, pvBuffer=b'\x01\x02\x03\x04')"
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
@@ -138,7 +155,7 @@ def test_win_nt_auth_identity_set_password():
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_accept_security_context_fail():
     with pytest.raises(WinError, match="The handle specified is invalid"):
-        sspi.accept_security_context(sspi.Credential(), sspi.SecurityContext(), sspi.SecBufferDesc([]))
+        sspi.accept_security_context(sspi.Credential(), sspi.SecurityContext(), sspi.SecBufferDesc(0))
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
@@ -150,13 +167,13 @@ def test_acquire_credentials_handle_fail():
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_decrypt_message_fail():
     with pytest.raises(WinError, match="The handle specified is invalid"):
-        sspi.decrypt_message(sspi.SecurityContext(), sspi.SecBufferDesc([]))
+        sspi.decrypt_message(sspi.SecurityContext(), sspi.SecBufferDesc(0))
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_encrypt_message_fail():
     with pytest.raises(WinError, match="The handle specified is invalid"):
-        sspi.encrypt_message(sspi.SecurityContext(), sspi.SecBufferDesc([]))
+        sspi.encrypt_message(sspi.SecurityContext(), sspi.SecBufferDesc(0))
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
@@ -168,7 +185,7 @@ def test_initialize_security_context_fail():
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_make_signature_fail():
     with pytest.raises(WinError, match="The handle specified is invalid"):
-        sspi.make_signature(sspi.SecurityContext(), 0, sspi.SecBufferDesc([]))
+        sspi.make_signature(sspi.SecurityContext(), 0, sspi.SecBufferDesc(0))
 
 
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
@@ -194,4 +211,4 @@ def test_query_context_attributes_invalid_handle(attribute):
 @pytest.mark.skipif(SKIP, reason="Can only test Cython code on Windows with compiled code.")
 def test_verify_signature_fail():
     with pytest.raises(WinError, match="The handle specified is invalid"):
-        sspi.verify_signature(sspi.SecurityContext(), sspi.SecBufferDesc([]))
+        sspi.verify_signature(sspi.SecurityContext(), sspi.SecBufferDesc(0))

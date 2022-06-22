@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3 - TBD
+
+* Fix heap allocation errors when running with heap allocation monitoring on Windows
+
+
 ## 0.5.2 - 2022-04-29
 
 * Added custom MD4 hashing code for NTLM to use.

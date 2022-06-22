@@ -192,7 +192,7 @@ class SecurityContext:
 class SecBufferDesc:
     def __new__(
         cls,
-        buffers: t.List[SecBuffer],
+        buffer_count: int,
         version: int = 0,
     ) -> "SecBufferDesc": ...
     def __len__(self) -> int: ...
@@ -200,11 +200,6 @@ class SecBufferDesc:
         self,
         key: int,
     ) -> SecBuffer: ...
-    def __setitem__(
-        self,
-        key: int,
-        value: SecBuffer,
-    ) -> None: ...
     def __iter__(self) -> t.Iterator[SecBuffer]: ...
     @property
     def version(self) -> int: ...
@@ -215,12 +210,6 @@ class SecBufferDesc:
     ) -> None: ...
 
 class SecBuffer:
-    def __new__(
-        cls,
-        buffer_type: int,
-        buffer: t.Optional[bytes] = None,
-        length: int = 0,
-    ) -> "SecBuffer": ...
     def __len__(self) -> int: ...
     @property
     def buffer_type(self) -> int: ...
@@ -234,8 +223,9 @@ class SecBuffer:
     @buffer.setter
     def buffer(
         self,
-        value: bytes,
+        value: t.Optional[bytearray],
     ) -> None: ...
+    def free(self) -> None: ...
 
 class _AuthIdentityBase: ...
 

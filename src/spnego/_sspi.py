@@ -201,29 +201,51 @@ class SSPIProxy(ContextProxy):
         if not self._is_wrapped:
             log.debug("SSPI step input: %s", base64.b64encode(in_token or b"").decode())
 
-        sec_tokens = []
+        sec_tokens: typing.List[typing.Tuple[int, bytes]] = []
         if in_token:
-            sec_tokens.append(SecBuffer(SecBufferType.token, in_token))
+            in_token = bytearray(in_token)
+            sec_tokens.append((SecBufferType.token, in_token))
 
         if self.channel_bindings:
-            sec_tokens.append(SecBuffer(SecBufferType.channel_bindings, self._get_native_bindings()))
+            sec_tokens.append((SecBufferType.channel_bindings, self._get_native_bindings()))
 
-        in_buffer = SecBufferDesc(sec_tokens) if sec_tokens else None
-        out_buffer = SecBufferDesc([SecBuffer(SecBufferType.token)])
+        in_buffer: typing.Optional[SecBufferDesc] = None
+        if sec_tokens:
+            in_buffer = SecBufferDesc(len(sec_tokens))
+            for idx, sec_token in enumerate(sec_tokens):
+                sec_buffer = in_buffer[idx]
+                sec_buffer.buffer_type = sec_token[0]
+                sec_buffer.buffer = sec_token[1]
+
+        out_buffer = SecBufferDesc(1)
+        out_buffer[0].buffer_type = SecBufferType.token
 
         if self.usage == "initiate":
+            context_req = self._context_req | ClientContextReq.allocate_memory
             res = initialize_security_context(
                 self._credential,
                 self._context,
                 self.spn or "",
-                context_req=self._context_req,
+                context_req=context_req,
                 input_buffer=in_buffer,
                 output_buffer=out_buffer,
             )
         else:
+            context_req = self._context_req | ServerContextReq.allocate_memory
             res = accept_security_context(
-                self._credential, self._context, in_buffer, context_req=self._context_req, output_buffer=out_buffer
+                self._credential,
+                self._context,
+                in_buffer,
+                context_req=context_req,
+                output_buffer=out_buffer,
             )
+
+        out_token: typing.Optional[bytes] = None
+        try:
+            raw_bytes = out_buffer[0].buffer
+            out_token = bytes(raw_bytes) if raw_bytes else None
+        finally:
+            out_buffer[0].free()
 
         self._context_attr = int(self._context.context_attr)
 
@@ -234,9 +256,6 @@ class SSPIProxy(ContextProxy):
             self._block_size = attr_sizes.block_size
             self._max_signature = attr_sizes.max_signature
             self._security_trailer = attr_sizes.security_trailer
-
-        # TODO: Determine if this returns None or an empty byte string.
-        out_token = out_buffer[0].buffer
 
         if not self._is_wrapped:
             log.debug("SSPI step output: %s", base64.b64encode(out_token or b"").decode())
@@ -261,7 +280,12 @@ class SSPIProxy(ContextProxy):
             qop |= SSPIQoP.wrap_no_encrypt
 
         buffers = self._build_iov_list(iov, self._convert_iov_buffer)
-        iov_buffer = SecBufferDesc(buffers)
+        iov_buffer = SecBufferDesc(len(buffers))
+        for idx, buffer in enumerate(buffers):
+            sec_buffer = iov_buffer[idx]
+            sec_buffer.buffer_type = buffer[0]
+            sec_buffer.buffer = buffer[1]
+
         encrypt_message(self._context, iov_buffer, seq_no=self._seq_num, qop=qop)
 
         return IOVWrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypt)
@@ -285,7 +309,12 @@ class SSPIProxy(ContextProxy):
         iov: typing.Iterable[IOV],
     ) -> IOVUnwrapResult:
         buffers = self._build_iov_list(iov, self._convert_iov_buffer)
-        iov_buffer = SecBufferDesc(buffers)
+        iov_buffer = SecBufferDesc(len(buffers))
+        for idx, buffer in enumerate(buffers):
+            sec_buffer = iov_buffer[idx]
+            sec_buffer.buffer_type = buffer[0]
+            sec_buffer.buffer = buffer[1]
+
         qop = decrypt_message(self._context, iov_buffer, seq_no=self._seq_num)
         encrypted = qop & SSPIQoP.wrap_no_encrypt == 0
 
@@ -297,24 +326,26 @@ class SSPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Signing message")
     def sign(self, data: bytes, qop: typing.Optional[int] = None) -> bytes:
-        iov = SecBufferDesc(
-            self._build_iov_list([data, (BufferType.header, self._max_signature)], self._convert_iov_buffer)
-        )
+        data = bytearray(data)
+        signature = bytearray(self._max_signature)
+        iov = SecBufferDesc(2)
+        iov[0].buffer_type = SecBufferType.data
+        iov[0].buffer = data
+        iov[1].buffer_type = SecBufferType.token
+        iov[1].buffer = signature
         make_signature(self._context, qop or 0, iov, self._seq_num)
 
         return iov[1].buffer or b""
 
     @wrap_system_error(NativeError, "Verifying message")
     def verify(self, data: bytes, mic: bytes) -> int:
-        iov = SecBufferDesc(
-            self._build_iov_list(
-                [
-                    data,
-                    (BufferType.header, mic),
-                ],
-                self._convert_iov_buffer,
-            )
-        )
+        data = bytearray(data)
+        mic = bytearray(mic)
+        iov = SecBufferDesc(2)
+        iov[0].buffer_type = SecBufferType.data
+        iov[0].buffer = data
+        iov[1].buffer_type = SecBufferType.token
+        iov[1].buffer = mic
 
         return verify_signature(self._context, iov, self._seq_num)
 
@@ -346,13 +377,13 @@ class SSPIProxy(ContextProxy):
         self.__seq_num += 1
         return num
 
-    def _convert_iov_buffer(self, buffer: IOVBuffer) -> "SecBuffer":
-        kwargs: typing.Dict[str, typing.Any] = {}
+    def _convert_iov_buffer(self, buffer: IOVBuffer) -> typing.Tuple[int, bytearray]:
+        data = bytearray()
 
         if isinstance(buffer.data, bytes):
-            kwargs["buffer"] = buffer.data
+            data = bytearray(buffer.data)
         elif isinstance(buffer.data, int) and not isinstance(buffer.data, bool):
-            kwargs["length"] = buffer.data
+            data = bytearray(buffer.data)
         else:
             auto_alloc_size = {
                 BufferType.header: self._security_trailer,
@@ -369,29 +400,29 @@ class SSPIProxy(ContextProxy):
                 if buffer.type not in auto_alloc_size:
                     raise ValueError("Cannot auto allocate buffer of type %s" % buffer.type)
 
-                kwargs["length"] = auto_alloc_size[buffer.type]
+                data = bytearray(auto_alloc_size[buffer.type])
 
-        return SecBuffer(buffer.type, **kwargs)
+        return (buffer.type, data)
 
-    def _get_native_bindings(self) -> bytes:
+    def _get_native_bindings(self) -> bytearray:
         """Gets the raw byte value of the SEC_CHANNEL_BINDINGS structure."""
-        b_bindings = io.BytesIO()
-        b_bindings_data = io.BytesIO()
+        b_bindings = bytearray()
+        b_bindings_data = bytearray()
 
-        def _pack_binding(name: str) -> None:
+        def _pack_binding(name: str, b_bindings: bytearray, b_bindings_data: bytearray) -> None:
             if name == "application":
                 b_data = getattr(self.channel_bindings, "application_data") or b""
 
             else:
-                b_bindings.write(struct.pack("<I", getattr(self.channel_bindings, "%s_addrtype" % name)))
+                b_bindings += struct.pack("<I", getattr(self.channel_bindings, "%s_addrtype" % name))
                 b_data = getattr(self.channel_bindings, "%s_address" % name) or b""
 
-            b_bindings.write(struct.pack("<I", len(b_data)))
-            b_bindings.write(struct.pack("I", 32 + b_bindings_data.tell()))
-            b_bindings_data.write(b_data)
+            b_bindings += struct.pack("<I", len(b_data))
+            b_bindings += struct.pack("I", 32 + len(b_bindings_data))
+            b_bindings_data += b_data
 
-        _pack_binding("initiator")
-        _pack_binding("acceptor")
-        _pack_binding("application")
+        _pack_binding("initiator", b_bindings, b_bindings_data)
+        _pack_binding("acceptor", b_bindings, b_bindings_data)
+        _pack_binding("application", b_bindings, b_bindings_data)
 
-        return b_bindings.getvalue() + b_bindings_data.getvalue()
+        return b_bindings + b_bindings_data
