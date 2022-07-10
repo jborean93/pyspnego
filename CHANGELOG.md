@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.3 - TBD
+## 0.5.3 - 2022-07-11
 
 * Fix heap allocation errors when running with heap allocation monitoring on Windows
 
