@@ -43,40 +43,23 @@ def test_channel_bindings_unpack():
 def test_channel_bindings_str():
     actual = str(TEST_DATA)
 
-    if sys.version_info[0] == 2:
-        assert (
-            actual == r"GssChannelBindings initiator_addr(AddressType.inet|'\x01\x02\x03\x04') | "
-            r"acceptor_addr(AddressType.unspecified|'\x05\x06\x07\x08') | "
-            r"application_data('caf\xc3\xa9')"
-        )
-
-    else:
-        assert (
-            actual == r"GssChannelBindings initiator_addr(AddressType.inet|b'\x01\x02\x03\x04') | "
-            r"acceptor_addr(AddressType.unspecified|b'\x05\x06\x07\x08') | "
-            r"application_data(b'caf\xc3\xa9')"
-        )
+    assert (
+        actual == r"GssChannelBindings initiator_addr(AddressType.inet|b'\x01\x02\x03\x04') | "
+        r"acceptor_addr(AddressType.unspecified|b'\x05\x06\x07\x08') | "
+        r"application_data(b'caf\xc3\xa9')"
+    )
 
 
 def test_channel_bindings_repr():
     actual = repr(TEST_DATA)
 
-    if sys.version_info[0] == 2:
-        assert (
-            actual == r"spnego.channel_bindings.GssChannelBindings initiator_addrtype=<AddressType.inet: 2>|"
-            r"initiator_address='\x01\x02\x03\x04'|"
-            r"acceptor_addrtype=<AddressType.unspecified: 0>|"
-            r"acceptor_address='\x05\x06\x07\x08'|"
-            r"application_data='caf\xc3\xa9'"
-        )
-    else:
-        assert (
-            actual == r"spnego.channel_bindings.GssChannelBindings initiator_addrtype=<AddressType.inet: 2>|"
-            r"initiator_address=b'\x01\x02\x03\x04'|"
-            r"acceptor_addrtype=<AddressType.unspecified: 0>|"
-            r"acceptor_address=b'\x05\x06\x07\x08'|"
-            r"application_data=b'caf\xc3\xa9'"
-        )
+    assert (
+        actual == r"spnego.channel_bindings.GssChannelBindings initiator_addrtype=<AddressType.inet: 2>|"
+        r"initiator_address=b'\x01\x02\x03\x04'|"
+        r"acceptor_addrtype=<AddressType.unspecified: 0>|"
+        r"acceptor_address=b'\x05\x06\x07\x08'|"
+        r"application_data=b'caf\xc3\xa9'"
+    )
 
 
 def test_channel_bindings_eq():
