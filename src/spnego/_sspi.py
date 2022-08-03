@@ -398,7 +398,9 @@ class SSPIProxy(ContextProxy):
 
             if alloc:
                 if buffer.type not in auto_alloc_size:
-                    raise ValueError("Cannot auto allocate buffer of type %s" % buffer.type)
+                    raise ValueError(
+                        "Cannot auto allocate buffer of type %s.%s" % (type(buffer).__name__, buffer.type.name)
+                    )
 
                 data = bytearray(auto_alloc_size[buffer.type])
 
