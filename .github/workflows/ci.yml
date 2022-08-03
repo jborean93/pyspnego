@@ -104,7 +104,7 @@ jobs:
       matrix:
         os:
         - ubuntu-latest
-        - macOS-10.15
+        - macOS-12
         - windows-latest
         python-version:
         - 3.6
@@ -126,11 +126,11 @@ jobs:
         - os: ubuntu-latest
           gssapi-provider: sspi
 
-        - os: macOS-10.15
+        - os: macOS-12
           python-arch: x86
-        - os: macOS-10.15
+        - os: macOS-12
           gssapi-provider: mit
-        - os: macOS-10.15
+        - os: macOS-12
           gssapi-provider: sspi
 
         - os: windows-latest
