@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 - TBD
+
+* Fix str of enum values when running in Python 3.11 to be consistent with older versions
+* Support `gssapi` on 1.5.x which comes with RHEL 8.
+
+
 ## 0.5.3 - 2022-07-11
 
 * Fix heap allocation errors when running with heap allocation monitoring on Windows
