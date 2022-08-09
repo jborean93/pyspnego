@@ -65,6 +65,10 @@ jobs:
         - version: cp39-win32
         - version: cp310-win_amd64
         - version: cp310-win32
+        - version: cp311-win_amd64
+          prerelease: true
+        - version: cp311-win32
+          prerelease: true
 
     steps:
     - uses: actions/download-artifact@v2
@@ -81,11 +85,12 @@ jobs:
         rm pyspnego-*.tar.gz
 
     - name: build wheel
-      uses: pypa/cibuildwheel@v2.1.1
+      uses: pypa/cibuildwheel@v2.8.1
       env:
         CIBW_ARCHS: all
         CIBW_BUILD: ${{ matrix.version }}
         CIBW_BUILD_VERBOSITY: 1
+        CIBW_PRERELEASE_PYTHONS: ${{ matrix.prerelease || 'false' }}
 
     - uses: actions/upload-artifact@v2
       with:
@@ -112,6 +117,7 @@ jobs:
         - 3.8
         - 3.9
         - '3.10'
+        - '3.11-dev'
         python-arch:
         - x86
         - x64
@@ -132,6 +138,8 @@ jobs:
           gssapi-provider: mit
         - os: macOS-12
           gssapi-provider: sspi
+        - os: macOS-12  # FIXME: Remove once gssapi and krb5 is fixed for this version
+          python-version: '3.11-dev'
 
         - os: windows-latest
           gssapi-provider: mit
@@ -203,6 +211,12 @@ jobs:
       with:
         name: artifact
         path: ./dist
+
+    - name: Remove test 3.11 wheels
+      shell: bash
+      run: |
+        rm -rf ./dist/*-cp311-*.whl
+        ls -al ./dist
 
     - name: Publish
       if: startsWith(github.ref, 'refs/tags/v')

@@ -97,11 +97,13 @@ class GssChannelBindings:
         )
 
     def __str__(self) -> str:
-        return "{0} initiator_addr({1}|{2!r}) | acceptor_addr({3}|{4!r}) | application_data({5!r})".format(
+        return "{0} initiator_addr({1}.{2}|{3!r}) | acceptor_addr({4}.{5}|{6!r}) | application_data({7!r})".format(
             type(self).__name__,
-            str(self.initiator_addrtype),
+            type(self.initiator_addrtype).__name__,
+            self.initiator_addrtype.name,
             self.initiator_address,
-            str(self.acceptor_addrtype),
+            type(self.acceptor_addrtype).__name__,
+            self.acceptor_addrtype.name,
             self.acceptor_address,
             self.application_data,
         )
