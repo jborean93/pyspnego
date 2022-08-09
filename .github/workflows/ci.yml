@@ -24,7 +24,7 @@ on:
   - cron: 0 9 * * *
 
 jobs:
-  build:
+  build_sdist:
     name: build sdist and universal wheel
     runs-on: ubuntu-latest
     steps:
@@ -32,13 +32,10 @@ jobs:
 
     - uses: actions/setup-python@v2
 
-    - name: install build pre-requisites
-      run: pip install Cython setuptools wheel
-
     - name: build sdist and universal wheel
       run: |
-        SPNEGO_FORCE_CYTHONIZE=true python setup.py sdist
-        python setup.py bdist_wheel --universal
+        python -m pip install build
+        python -m build
 
     - uses: actions/upload-artifact@v2
       with:
@@ -48,15 +45,13 @@ jobs:
   build_wheels:
     name: build wheels
     needs:
-    - build
+    - build_sdist
 
-    runs-on: windows-2019
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
         include:
-        - version: cp36-win_amd64
-        - version: cp36-win32
         - version: cp37-win_amd64
         - version: cp37-win32
         - version: cp38-win_amd64
@@ -100,7 +95,7 @@ jobs:
   test:
     name: test
     needs:
-    - build
+    - build_sdist
     - build_wheels
 
     runs-on: ${{ matrix.os }}
@@ -112,7 +107,6 @@ jobs:
         - macOS-12
         - windows-latest
         python-version:
-        - 3.6
         - 3.7
         - 3.8
         - 3.9
@@ -216,7 +210,6 @@ jobs:
       shell: bash
       run: |
         rm -rf ./dist/*-cp311-*.whl
-        ls -al ./dist
 
     - name: Publish
       if: startsWith(github.ref, 'refs/tags/v')

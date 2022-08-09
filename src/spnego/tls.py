@@ -97,6 +97,7 @@ def default_tls_context(
 
     # The minimum_version field requires OpenSSL 1.1.0g or newer, fallback to the deprecated method of setting the
     # OP_NO_* options.
+    # FUTURE: Remove once Python 3.10 is minimum which requires 1.1.1 or newer
     tls_version = getattr(ssl, "TLSVersion", None)
     if hasattr(ctx, "minimum_version") and tls_version:
         setattr(ctx, "minimum_version", tls_version.TLSv1_2)

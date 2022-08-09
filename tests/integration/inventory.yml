@@ -19,8 +19,6 @@ all:
         ansible_connection: psrp
         ansible_port: 5985
         python_interpreters:
-        - C:\Program Files\Python36
-        - C:\Program Files (x86)\Python36-32
         - C:\Program Files\Python37
         - C:\Program Files (x86)\Python37-32
         - C:\Program Files\Python38
@@ -57,7 +55,7 @@ all:
       vars:
         ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no
         python_interpreters:
-        - /usr/bin/python3
+        - /usr/bin/python3.8
         python_venv_path: ~/venv
 
   vars:

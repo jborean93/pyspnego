@@ -16,17 +16,17 @@ source ./build_helpers/lib.sh
 lib::setup::system_requirements
 
 apt-get -y install \
-    cython3 \
     locales \
     python3 \
-    python3-{dev,pip,setuptools,virtualenv,wheel}
+    python3-{dev,pip,venv}
 ln -s /usr/bin/python3 /usr/bin/python
 
 # Ensure locale settings in test work
 sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 dpkg-reconfigure --frontend=noninteractive locales
 
-python setup.py bdist_wheel
+python -m pip install build
+python -m build
 lib::setup::python_requirements
 
 # Ensure we don't pollute the local dir + mypy doesn't like this

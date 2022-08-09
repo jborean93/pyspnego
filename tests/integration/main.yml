@@ -125,12 +125,6 @@
       product_id: '{{ item.product_id }}'
       state: present
     with_items:
-    - url: https://www.python.org/ftp/python/3.6.8/python-3.6.8.exe
-      product_id: '{B56829C6-1C25-469E-B351-1467C6295566}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.6.8/python-3.6.8-amd64.exe
-      product_id: '{E1155302-B578-4D8C-8431-FAE677FBC58C}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
     - url: https://www.python.org/ftp/python/3.7.9/python-3.7.9.exe
       product_id: '{65048DA1-5996-4FF9-B20A-66EB2E68D0A4}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
@@ -143,17 +137,17 @@
     - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
       product_id: '{080E0048-853C-49FB-96ED-30DEF7AB6E34}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.7/python-3.9.7.exe
-      product_id: '{E3343646-507D-4269-BF4C-68D78153FD0D}'
+    - url: https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe
+      product_id: '{E23C472D-F346-4D47-A909-9D48E5D7252F}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.7/python-3.9.7-amd64.exe
-      product_id: '{05903EEF-72A2-4C1A-AD35-41AD6C7094A8}'
+    - url: https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe
+      product_id: '{90A30DAB-6FD8-4CF8-BB8B-C0DB21C69F20}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.10.0/python-3.10.0.exe
-      product_id: '{88B95F8C-ECD7-42F1-A216-0880C9DE2F34}'
+    - url: https://www.python.org/ftp/python/3.10.6/python-3.10.6.exe
+      product_id: '{8B822DC2-4E2B-471A-B26C-6249A722DDB9}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.10.0/python-3.10.0-amd64.exe
-      product_id: '{BB3BA776-4C84-43FB-9CE6-5A37FFC23032}'
+    - url: https://www.python.org/ftp/python/3.10.6/python-3.10.6-amd64.exe
+      product_id: '{C3A057F3-209B-4244-9697-D69031B81AAB}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
   - name: ensure virtualenv package is installed for each Python install
@@ -183,10 +177,31 @@
       src: C:\temp\wheels.zip
       dest: C:\temp\wheels
 
-  - name: install pyspnego wheel into virtualenv
-    win_shell: |
-      &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install --no-index --find-links=C:/temp/wheels --no-deps pyspnego
-      &'{{ python_venv_path }}\{{ item | win_basename }}\Scripts\pip.exe' install pyspnego pytest requests
+  - name: get pyspnego artifact sdist filename
+    win_find:
+      paths: C:\temp\wheels
+      patterns: 'pyspnego-*.tar.gz'
+      use_regex: false
+    register: spnego_sdist_file
+
+  - name: verify sdist was found
+    assert:
+      that:
+      - spnego_sdist_file.files | count == 1
+
+  - name: get pyspnego artifact version
+    set_fact:
+      spnego_version: >-
+        {{ spnego_sdist_file.files[0].filename | regex_replace('pyspnego-(?P<version>.*)\.tar\.gz', '\g<version>') }}
+
+  - name: install pyspnego into virtualenv
+    win_command: >-
+      "{{ python_venv_path }}\{{ item | win_basename }}\Scripts\python.exe" -m pip
+      install
+      pyspnego=={{ spnego_version }}
+      pytest
+      requests
+      --find-links=C:/temp/wheels
     args:
       creates: '{{ python_venv_path }}\{{ item | win_basename }}\Lib\site-packages\spnego'
     with_items: '{{ python_interpreters }}'
@@ -251,8 +266,8 @@
       - dnsmasq
       - epel-release
       - gcc
-      - python3
-      - python3-devel
+      - python38
+      - python38-devel
       - unzip
       - vim
       state: present
@@ -266,8 +281,7 @@
     pip:
       name:
       - virtualenv
-      - wheel
-      executable: /usr/bin/pip3
+      executable: /usr/bin/pip3.8
 
   - name: setup NetworkManager to use dnsmasq
     copy:
@@ -377,27 +391,35 @@
       dest: ~/wheels
     become: no
 
-  - name: find the universal wheel
+  - name: get pyspnego artifact sdist filename
     find:
       paths: ~/wheels
-      patterns: pyspnego-*-py2.py3-none-any.whl
+      patterns: 'pyspnego-*.tar.gz'
       recurse: no
       file_type: file
     become: no
-    register: wheel_artifact
+    register: spnego_sdist_file
+
+  - name: verify sdist was found
+    assert:
+      that:
+      - spnego_sdist_file.files | count == 1
+
+  - name: get pyspnego artifact version
+    set_fact:
+      spnego_version: >-
+        {{ spnego_sdist_file.files[0].path | basename | regex_replace('pyspnego-(?P<version>.*)\.tar\.gz', '\g<version>') }}
 
   - name: create a virtualenv for each Python interpeter
     pip:
       name:
-      - gssapi
-      - krb5
       - pytest
       - pytest-forked
       - requests
-      - wheel
-      - '{{ wheel_artifact.files[0].path }}'
+      - pyspnego[kerberos] == {{ spnego_version }}
       virtualenv: '{{ python_venv_path }}/{{ item | basename }}'
       virtualenv_python: '{{ item }}'
+      extra_args: --find-links file:///{{ spnego_sdist_file.files[0].path | dirname }}
     become: no
     with_items: '{{ python_interpreters }}'
 
