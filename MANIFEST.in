@@ -1,10 +1,11 @@
-include __dont_use_cython__.txt
 include LICENSE
 include CHANGELOG.md
 include requirements-test.txt
 exclude .coverage
 exclude .gitignore
 exclude .pre-commit-config.yaml
-recursive-include src/spnego *.pyx *.pxd *.c
+recursive-include build_helpers *
+recursive-include src/spnego *.pyx *.pxd
+recursive-exclude src/spnego *.c
 recursive-include tests *
 recursive-exclude tests *.pyc

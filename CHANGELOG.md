@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - TBD
+
+* Drop support for Python 3.6 - new minimum is 3.7+
+* Moved setuptools config into `pyproject.toml` and made `Cython` a build requirement for Windows
+  * For most users this is a hidden change
+  * If a tool follows the PEP 517 standard, like pip, this build dependency will work automatically
+  * The pre cythonised files are no longer included in the sdist going forward
+
+
 ## 0.5.4 - 2022-08-11
 
 * Fix str of enum values when running in Python 3.11 to be consistent with older versions

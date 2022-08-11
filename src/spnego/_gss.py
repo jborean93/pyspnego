@@ -142,7 +142,7 @@ def _get_gssapi_credential(
         https://github.com/gssapi/gss-ntlmssp
     """
     supported_cred_types: typing.List[typing.Type[Credential]] = [Password, CredentialCache]
-    if _oid_dotted_form(mech) == GSSMech.kerberos:
+    if mech.dotted_form == GSSMech.kerberos:
         supported_cred_types.insert(0, KerberosCCache)
         supported_cred_types.insert(1, KerberosKeytab)
 
@@ -320,7 +320,7 @@ def _gss_sasl_description(mech: "gssapi.OID") -> typing.Optional[bytes]:
     """Attempts to get the SASL description of the mech specified."""
     try:
         res = _gss_sasl_description.result  # type: ignore
-        return res[_oid_dotted_form(mech)]
+        return res[mech.dotted_form]
 
     except (AttributeError, KeyError):
         res = getattr(_gss_sasl_description, "result", {})
@@ -328,10 +328,10 @@ def _gss_sasl_description(mech: "gssapi.OID") -> typing.Optional[bytes]:
     try:
         sasl_desc = gssapi.raw.inquire_saslname_for_mech(mech).mech_description
     except Exception as e:
-        log.debug("gss_inquire_saslname_for_mech(%s) failed: %s" % (_oid_dotted_form(mech), str(e)))
+        log.debug("gss_inquire_saslname_for_mech(%s) failed: %s" % (mech.dotted_form, str(e)))
         sasl_desc = None
 
-    res[_oid_dotted_form(mech)] = sasl_desc
+    res[mech.dotted_form] = sasl_desc
     _gss_sasl_description.result = res  # type: ignore
     return _gss_sasl_description(mech)
 
@@ -441,15 +441,6 @@ def _gss_acquire_cred_from_ccache(
         return gssapi_creds
 
 
-def _oid_dotted_form(
-    oid: "gssapi.OID",
-) -> str:
-    # gssapi on RHEL 8 comes with 1.5.1 but dotted_form was added in 1.6.0.
-    # Use the fallback by parsing the repr output. Remove once minimum is 1.6.0
-    # https://github.com/jborean93/pyspnego/issues/43
-    return oid.dotted_form if hasattr(oid, "dotted_form") else repr(oid)[5:-1]
-
-
 class GSSAPIProxy(ContextProxy):
     """GSSAPI proxy class for GSSAPI on Linux.
 
@@ -535,7 +526,7 @@ class GSSAPIProxy(ContextProxy):
     def negotiated_protocol(self) -> typing.Optional[str]:
         try:
             # For an acceptor this can be blank until the first token is received
-            oid = _oid_dotted_form(self._context.mech)
+            oid = self._context.mech.dotted_form
         except AttributeError:
             return None
 

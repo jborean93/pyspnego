@@ -1,6 +1,62 @@
 [build-system]
-requires = ["setuptools>=42.0.0", "wheel"]
+requires = [
+    "Cython >= 0.29.29, < 3.0.0; sys_platform == 'win32'",  # 0.29.29 includes fixes for Python 3.11
+    "setuptools >= 61.0.0",  # Support for setuptools config in pyproject.toml
+]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyspnego"
+description = "Windows Negotiate Authentication Client and Server"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE"}
+authors = [
+    { name = "Jordan Borean", email = "jborean93@gmail.com" }
+]
+keywords = ["windows", "spnego", "negotiate", "ntlm", "kerberos", "sspi", "gssapi", "auth"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10"
+]
+dependencies = [
+    "cryptography",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+kerberos = [
+    "gssapi >= 1.6.0; sys_platform != 'win32'",
+    "krb5 >= 0.3.0; sys_platform != 'win32'"
+]
+yaml = ["ruamel.yaml"]
+
+[project.scripts]
+pyspnego-parse = "spnego.__main__:main"
+
+[project.urls]
+homepage = "https://github.com/jborean93/pyspnego"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "spnego._version.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spnego = ["py.types"]
+"spnego._sspi_raw" = ["*.pyi"]
+
+[tool.setuptools.exclude-package-data]
+"spnego._sspi_raw" = ["*.pxd", "*.pyx"]
 
 [tool.black]
 line-length = 120

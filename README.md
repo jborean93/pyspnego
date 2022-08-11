@@ -13,7 +13,7 @@ be used to decode raw NTLM/SPNEGO/Kerberos tokens into a human readable format.
 
 See [How to Install](#how-to-install) for more details
 
-* CPython 3.6+
+* CPython 3.7+
 * [cryptography](https://github.com/pyca/cryptography)
 
 ### Optional Requirements
