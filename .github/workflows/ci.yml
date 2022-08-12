@@ -132,8 +132,6 @@ jobs:
           gssapi-provider: mit
         - os: macOS-12
           gssapi-provider: sspi
-        - os: macOS-12  # FIXME: Remove once gssapi and krb5 is fixed for this version
-          python-version: '3.11-dev'
 
         - os: windows-latest
           gssapi-provider: mit
