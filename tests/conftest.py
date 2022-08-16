@@ -2,7 +2,6 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
-import locale
 import os
 import socket
 
@@ -64,20 +63,6 @@ def ntlm_cred(tmpdir, monkeypatch):
 
         else:
             domain = "Dȫm̈Ąiᴞ"
-
-            # gss-ntlmssp does a string comparison of the user/domain part using the current process locale settings.
-            # To ensure it matches the credentials we specify with the non-ascii chars we need to ensure the locale is
-            # something that can support UTF-8 character comparison. macOS can fail with unknown locale on getlocale(),
-            # just default to env vars if this get fails.
-            try:
-                original_locale = locale.getlocale(locale.LC_CTYPE)
-            except ValueError:
-                original_locale = None
-
-            def cleanup() -> None:
-                locale.setlocale(locale.LC_CTYPE, original_locale)
-
-            locale.setlocale(locale.LC_CTYPE, "en_US.UTF-8")
 
         tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
         with open(tmp_creds, mode="wb") as fd:
