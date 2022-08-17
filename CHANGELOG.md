@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 - TBD
+## 0.6.0 - 2022-08-18
 
 * Drop support for Python 3.6 - new minimum is 3.7+
 * Moved setuptools config into `pyproject.toml` and made `Cython` a build requirement for Windows
