@@ -1,10 +1,9 @@
-black
-cython
+black==22.10.0
 gssapi>=1.5.0 ; sys_platform != 'win32'
 k5test ; sys_platform != 'win32'
 krb5 ; sys_platform != 'win32'
-isort
-mypy==0.971
+isort==5.10.1
+mypy==0.982
 pre-commit
 pytest
 pytest-cov

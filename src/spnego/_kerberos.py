@@ -742,7 +742,7 @@ class _KerberosMsgType(type):
         if msg_type is not None:
             cls.__registry[pvno][msg_type] = cls
 
-    def __call__(  # type: ignore[override]
+    def __call__(
         cls,
         sequence: typing.Dict[int, ASN1Value],
     ) -> "_KerberosMsgType":
