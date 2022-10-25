@@ -191,7 +191,7 @@ class SSPIProxy(ContextProxy):
         package_info = typing.cast(SecPkgInfo, query_context_attributes(self._context, SecPkgAttr.package_info))
         return package_info.name.lower()
 
-    @property  # type: ignore[misc] # mypy does not support decorated property
+    @property
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
         return typing.cast(bytes, query_context_attributes(self._context, SecPkgAttr.session_key))

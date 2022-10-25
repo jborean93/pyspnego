@@ -538,7 +538,7 @@ class GSSAPIProxy(ContextProxy):
             GSSMech.spnego.value: "negotiate",
         }.get(oid, "unknown: %s" % oid)
 
-    @property  # type: ignore
+    @property
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
         return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]

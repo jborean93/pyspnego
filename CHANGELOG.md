@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 - 2022-10-26
+
+* Added Python 3.11 wheel
+
 ## 0.6.0 - 2022-08-18
 
 * Drop support for Python 3.6 - new minimum is 3.7+
