@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 - 2022-10-27
+
+* Fix up sdist and wheels to include `py.typed` type annotation marker
+
 ## 0.6.1 - 2022-10-26
 
 * Added Python 3.11 wheel
