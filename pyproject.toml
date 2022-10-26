@@ -53,7 +53,7 @@ version = {attr = "spnego._version.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-spnego = ["py.types"]
+spnego = ["py.typed"]
 "spnego._sspi_raw" = ["*.pyi"]
 
 [tool.setuptools.exclude-package-data]
