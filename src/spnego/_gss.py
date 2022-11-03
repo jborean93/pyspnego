@@ -556,7 +556,7 @@ class GSSAPIProxy(ContextProxy):
             # MIT krb5 before 1.14.x will raise this error if the context isn't
             # complete. We should only treat it as an error if it happens when
             # the context is complete (last step).
-            # https://github.com/jborean93/pypsrp/issues/162
+            # https://github.com/jborean93/pyspnego/issues/55
             if self._context.complete:
                 raise
 
