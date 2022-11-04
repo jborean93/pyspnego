@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 - TBD
+## 0.6.3 - 2022-11-04
 
 * Ignore `GSS_S_NO_CONTEXT` errors on GSSAPI after stepping through the token exchange before the context is complete
   * This is raised by MIT krb5 before 1.14.x and can be ignored
