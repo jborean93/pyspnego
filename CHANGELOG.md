@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 - TBD
+
+* Ignore `GSS_S_NO_CONTEXT` errors on GSSAPI after stepping through the token exchange before the context is complete
+  * This is raised by MIT krb5 before 1.14.x and can be ignored
+
 ## 0.6.2 - 2022-10-27
 
 * Fix up sdist and wheels to include `py.typed` type annotation marker
