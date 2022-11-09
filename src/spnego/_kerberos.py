@@ -50,9 +50,11 @@ def parse_enum(
 ) -> str:
     """Parses an IntEnum into a human representative object of that enum."""
     enum_name = "UNKNOWN"
+    if isinstance(value, enum.Enum):
+        enum_name = value.name
 
     labels = _enum_labels(value, enum_type)
-    value = int(value) if isinstance(value, int) else value
+    value = value.value if isinstance(value, enum.Enum) else value
 
     for v, name in labels.items():
         if value == v:

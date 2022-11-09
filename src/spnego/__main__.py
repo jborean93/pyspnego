@@ -40,6 +40,20 @@ from spnego._ntlm_raw.messages import (
 )
 from spnego._spnego import InitialContextToken, NegTokenInit, NegTokenResp, unpack_token
 from spnego._text import to_bytes
+from spnego._tls_struct import (
+    TlsCipherSuite,
+    TlsCompressionMethod,
+    TlsContentType,
+    TLSECCurveType,
+    TlsECPointFormat,
+    TlsExtensionType,
+    TlsHandshakeMessageType,
+    TlsProtocolVersion,
+    TLSPskKeyExchangeMode,
+    TlsServerNameType,
+    TlsSignatureScheme,
+    TlsSupportedGroup,
+)
 
 try:
     import argcomplete
@@ -338,6 +352,246 @@ def _parse_spnego_resp(
     return msg
 
 
+def _parse_tls_handshake_client_hello(
+    view: memoryview,
+) -> typing.Dict[str, typing.Any]:
+    protocol_version = TlsProtocolVersion(struct.unpack(">H", view[:2])[0])
+    view = view[2:]
+
+    random = view[:32]
+    view = view[32:]
+
+    session_id_len = struct.unpack("B", view[:1])[0]
+    view = view[1:]
+
+    session_id = view[:session_id_len]
+    view = view[session_id_len:]
+
+    cipher_suites_len = struct.unpack(">H", view[:2])[0]
+    view = view[2:]
+    cipher_suites_view = view[:cipher_suites_len]
+    view = view[cipher_suites_len:]
+
+    cipher_suites = []
+    while cipher_suites_view:
+        cs = TlsCipherSuite(struct.unpack(">H", cipher_suites_view[:2])[0])
+        cipher_suites.append(f"{cs.name} - 0x{cs.value:04X}")
+        cipher_suites_view = cipher_suites_view[2:]
+
+    compression_methods_len = struct.unpack("B", view[:1])[0]
+    view = view[1:]
+    compression_methods_view = view[:compression_methods_len]
+    view = view[compression_methods_len:]
+
+    compression_methods = []
+    while compression_methods_view:
+        cm = TlsCompressionMethod(struct.unpack("B", compression_methods_view[:1])[0])
+        compression_methods.append(parse_enum(cm))
+        compression_methods_view = compression_methods_view[1:]
+
+    extensions_len = struct.unpack(">H", view[:2])[0]
+    view = view[2:]
+    extensions_view = view[:extensions_len]
+    view = view[extensions_len:]
+    extensions = _parse_tls_extensions(extensions_view, True)
+
+    return {
+        "ProtocolVersion": parse_enum(protocol_version),
+        "Random": base64.b16encode(random).decode(),
+        "SessionID": base64.b16encode(session_id).decode(),
+        "CipherSuites": cipher_suites,
+        "CompressionMethods": compression_methods,
+        "Extensions": extensions,
+    }
+
+
+def _parse_tls_handshake_server_hello(
+    view: memoryview,
+) -> typing.Dict[str, typing.Any]:
+    protocol_version = TlsProtocolVersion(struct.unpack(">H", view[:2])[0])
+    view = view[2:]
+
+    random = view[:32]
+    view = view[32:]
+
+    session_id_len = struct.unpack("B", view[:1])[0]
+    view = view[1:]
+
+    session_id = view[:session_id_len]
+    view = view[session_id_len:]
+
+    cipher_suite = TlsCipherSuite(struct.unpack(">H", view[:2])[0])
+    view = view[2:]
+
+    compression_method = TlsCompressionMethod(struct.unpack("B", view[:1])[0])
+    view = view[1:]
+
+    extensions_len = struct.unpack(">H", view[:2])[0]
+    view = view[2:]
+    extensions_view = view[:extensions_len]
+    view = view[extensions_len:]
+    extensions = _parse_tls_extensions(extensions_view, False)
+
+    return {
+        "ProtocolVersion": parse_enum(protocol_version),
+        "Random": base64.b16encode(random).decode(),
+        "SessionID": base64.b16encode(session_id).decode(),
+        "CipherSuite": f"{cipher_suite.name} - 0x{cipher_suite.value:04X}",
+        "CompressionMethod": parse_enum(compression_method),
+        "Extensions": extensions,
+    }
+
+
+def _parse_tls_handshake_server_key_exchange(
+    view: memoryview,
+    protocol_version: TlsProtocolVersion,
+) -> typing.Dict[str, typing.Any]:
+    curve_type = TLSECCurveType(struct.unpack("B", view[:1])[0])
+    view = view[1:]
+
+    curve = TlsSupportedGroup(struct.unpack(">H", view[:2])[0])
+    view = view[2:]
+
+    pubkey_len = struct.unpack("B", view[:1])[0]
+    view = view[1:]
+
+    pubkey = view[:pubkey_len].tobytes()
+    view = view[pubkey_len:]
+
+    signature_algo = None
+    if protocol_version >= TlsProtocolVersion.tls1_2:
+        signature_algo = TlsSignatureScheme(struct.unpack(">H", view[:2])[0])
+        view = view[2:]
+
+    signature_len = struct.unpack(">H", view[:2])[0]
+    view = view[2:]
+
+    signature = view[:signature_len].tobytes()
+
+    return {
+        "CurveType": parse_enum(curve_type),
+        "Curve": parse_enum(curve),
+        "PublicKey": base64.b16encode(pubkey).decode(),
+        "SignatureAlgorithm": parse_enum(signature_algo) if signature_algo else None,
+        "Signature": base64.b16encode(signature).decode(),
+    }
+
+
+def _parse_tls_extensions(
+    view: memoryview,
+    is_client_hello: bool,
+) -> typing.List[typing.Dict[str, typing.Any]]:
+    extensions = []
+
+    while view:
+        ext_type = TlsExtensionType(struct.unpack(">H", view[:2])[0])
+        view = view[2:]
+
+        ext_len = struct.unpack(">H", view[:2])[0]
+        view = view[2:]
+
+        ext_data = view[:ext_len]
+        view = view[ext_len:]
+
+        data: typing.Any = None
+        if ext_type == TlsExtensionType.server_name:
+            data_len = struct.unpack(">H", ext_data[:2])[0]
+            data_view = ext_data[2 : 2 + data_len]
+            data = []
+            while data_view:
+                name_type = TlsServerNameType(struct.unpack("B", data_view[:1])[0])
+                name_len = struct.unpack(">H", data_view[1:3])[0]
+                name = data_view[3 : 3 + name_len].tobytes().decode("utf-8")
+                data.append(
+                    {
+                        "Type": parse_enum(name_type),
+                        "Name": name,
+                    }
+                )
+                data_view = data_view[3 + name_len :]
+
+        elif ext_type == TlsExtensionType.ec_point_formats:
+            data_len = struct.unpack("B", ext_data[:1])[0]
+            data_view = ext_data[1 : 1 + data_len]
+            data = [parse_enum(TlsECPointFormat(b)) for b in list(data_view)]
+
+        elif ext_type == TlsExtensionType.supported_groups:
+            data_len = struct.unpack(">H", ext_data[:2])[0]
+            data_view = ext_data[2 : 2 + data_len]
+            data = []
+            while data_view:
+                data.append(parse_enum(TlsSupportedGroup(struct.unpack(">H", data_view[:2])[0])))
+                data_view = data_view[2:]
+
+        elif ext_type == TlsExtensionType.session_ticket:
+            data = base64.b16encode(ext_data.tobytes()).decode()
+
+        elif ext_type == TlsExtensionType.signature_algorithms:
+            data_len = struct.unpack(">H", ext_data[:2])[0]
+            data_view = ext_data[2 : 2 + data_len]
+            data = []
+            while data_view:
+                data.append(parse_enum(TlsSignatureScheme(struct.unpack(">H", data_view[:2])[0])))
+                data_view = data_view[2:]
+
+        elif ext_type == TlsExtensionType.supported_versions:
+            if is_client_hello:
+                data_len = struct.unpack("B", ext_data[:1])[0]
+                data_view = ext_data[1 : 1 + data_len]
+                data = []
+                while data_view:
+                    data.append(parse_enum(TlsProtocolVersion(struct.unpack(">H", data_view[:2])[0])))
+                    data_view = data_view[2:]
+
+            else:
+                data = parse_enum(TlsProtocolVersion(struct.unpack(">H", ext_data[:2])[0]))
+
+        elif ext_type == TlsExtensionType.psk_key_exchange_modes:
+            data_len = struct.unpack("B", ext_data[:1])[0]
+            data_view = ext_data[1 : 1 + data_len]
+            data = []
+            while data_view:
+                data.append(parse_enum(TLSPskKeyExchangeMode(struct.unpack("B", data_view[:1])[0])))
+                data_view = data_view[1:]
+
+        elif ext_type == TlsExtensionType.key_share:
+            if is_client_hello:
+                data_len = struct.unpack(">H", ext_data[:2])[0]
+                data_view = ext_data[2 : 2 + data_len]
+                data = []
+                while data_view:
+                    key_share_group = TlsSupportedGroup(struct.unpack(">H", data_view[:2])[0])
+                    key_exchange_len = struct.unpack(">H", data_view[2:4])[0]
+                    key_exchange = data_view[4 : 4 + key_exchange_len].tobytes()
+
+                    data.append(
+                        {
+                            "Group": parse_enum(key_share_group),
+                            "Key": base64.b16encode(key_exchange).decode(),
+                        }
+                    )
+                    data_view = data_view[4 + key_exchange_len :]
+            else:
+                key_share_group = TlsSupportedGroup(struct.unpack(">H", ext_data[:2])[0])
+                key_exchange_len = struct.unpack(">H", ext_data[2:4])[0]
+                key_exchange = ext_data[4 : 4 + key_exchange_len].tobytes()
+                data = {
+                    "Group": parse_enum(key_share_group),
+                    "Key": base64.b16encode(key_exchange).decode(),
+                }
+
+        formated_data = {
+            "ExtensionType": parse_enum(ext_type),
+        }
+        if data is not None:
+            formated_data["Data"] = data
+        if data is not None or ext_data:
+            formated_data["RawData"] = base64.b16encode(ext_data).decode()
+        extensions.append(formated_data)
+
+    return extensions
+
+
 def main(args: typing.List[str]) -> None:
     """Main program entry point."""
     parsed_args = parse_args(args)
@@ -363,7 +617,11 @@ def main(args: typing.List[str]) -> None:
         # Input data was a base64 string.
         b_data = base64.b64decode(b_data.strip())
 
-    token_info = parse_token(b_data, secret=parsed_args.secret, encoding=parsed_args.encoding)
+    token_info: typing.Union[typing.List, typing.Dict]
+    if re.match(b"[\x00|\x14|\x15|\x16|\x17]\x03[\x01|\x02|\x03]", b_data):
+        token_info = parse_tls_token(b_data)
+    else:
+        token_info = parse_token(b_data, secret=parsed_args.secret, encoding=parsed_args.encoding)
 
     if parsed_args.output_format == "yaml":
         y = yaml.YAML()  # type: ignore
@@ -506,6 +764,71 @@ def parse_token(
         "Data": data,
         "RawData": base64.b16encode(b_data).decode(),
     }
+
+
+def parse_tls_token(
+    b_data: bytes,
+) -> typing.List[typing.Dict[str, typing.Any]]:
+    """
+    :param b_data: A byte string of the TLS token to parse.
+    :return: A dict containing the parsed TLS token data.
+    """
+    view = memoryview(b_data)
+
+    res = []
+    while view:
+        content_type = TlsContentType(struct.unpack("B", view[:1])[0])
+        protocol_version = TlsProtocolVersion(struct.unpack(">H", view[1:3])[0])
+        token_length = struct.unpack(">H", view[3:5])[0]
+        token_view = view[5 : 5 + token_length]
+
+        data: typing.Optional[typing.List[typing.Dict[str, typing.Any]]] = None
+        if content_type == TlsContentType.handshake:
+            data = []
+
+            while token_view:
+                handshake_type = TlsHandshakeMessageType(struct.unpack("B", token_view[:1])[0])
+                message_len = struct.unpack(">L", b"\x00" + token_view[1:4])[0]
+                handshake_view = token_view[4 : 4 + message_len]
+
+                handshake_data: typing.Optional[typing.Dict[str, typing.Any]] = None
+                if handshake_type == TlsHandshakeMessageType.client_hello:
+                    handshake_data = _parse_tls_handshake_client_hello(handshake_view)
+
+                elif handshake_type == TlsHandshakeMessageType.server_hello:
+                    handshake_data = _parse_tls_handshake_server_hello(handshake_view)
+
+                elif handshake_type == TlsHandshakeMessageType.certificate:
+                    cert_len = struct.unpack(">I", b"\x00" + handshake_view[:3])[0]
+                    handshake_data = {
+                        "Certificate": base64.b16encode(handshake_view[3 : 3 + cert_len].tobytes()).decode(),
+                    }
+
+                elif handshake_type == TlsHandshakeMessageType.server_key_exchange:
+                    handshake_data = _parse_tls_handshake_server_key_exchange(handshake_view, protocol_version)
+
+                formatted_handshake_data: typing.Dict[str, typing.Any] = {
+                    "HandshakeType": parse_enum(handshake_type),
+                }
+                if handshake_data is not None:
+                    formatted_handshake_data["Data"] = handshake_data
+                formatted_handshake_data["RawData"] = base64.b16encode(token_view[: 4 + message_len].tobytes()).decode()
+                data.append(formatted_handshake_data)
+                token_view = token_view[4 + message_len :]
+
+        formatted_data: typing.Dict[str, typing.Any] = {
+            "ContentType": parse_enum(content_type),
+            "ProtocolVersion": parse_enum(protocol_version),
+        }
+        if data is not None:
+            formatted_data["Data"] = data
+
+        formatted_data["RawData"] = base64.b16encode(view[: 5 + token_length].tobytes()).decode()
+
+        res.append(formatted_data)
+        view = view[5 + token_length :]
+
+    return res
 
 
 if __name__ == "__main__":  # pragma: nocover
