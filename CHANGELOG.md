@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 - TBD
+
+* Added support for decoding the following TLS payloads with `python -m spnego --token ...`
+  * Client Hello
+  * Server Hello
+  * Certificate
+  * Server Key Exchange
+
 ## 0.6.3 - 2022-11-04
 
 * Ignore `GSS_S_NO_CONTEXT` errors on GSSAPI after stepping through the token exchange before the context is complete
