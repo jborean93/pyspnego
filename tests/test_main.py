@@ -1032,15 +1032,11 @@ def test_tls13_client_hello(capsys):
     ]
     assert actual["Extensions"][2]["RawData"] is not None
 
-    assert actual["Extensions"][3]["ExtensionType"] == "session_ticket (35)"
-    assert actual["Extensions"][3]["Data"] == ""
-    assert actual["Extensions"][3]["RawData"] == ""
+    assert actual["Extensions"][3] == {"ExtensionType": "session_ticket (35)"}
 
-    assert actual["Extensions"][4]["ExtensionType"] == "encrypt_then_mac (22)"
-    assert "RawData" not in actual["Extensions"][4]
+    assert actual["Extensions"][4] == {"ExtensionType": "encrypt_then_mac (22)"}
 
-    assert actual["Extensions"][5]["ExtensionType"] == "extended_master_secret (23)"
-    assert "RawData" not in actual["Extensions"][5]
+    assert actual["Extensions"][5] == {"ExtensionType": "extended_master_secret (23)"}
 
     assert actual["Extensions"][6]["ExtensionType"] == "signature_algorithms (13)"
     assert actual["Extensions"][6]["Data"] == [
@@ -1142,15 +1138,11 @@ def test_tls12_client_hello(capsys):
     ]
     assert actual["Extensions"][2]["RawData"] is not None
 
-    assert actual["Extensions"][3]["ExtensionType"] == "session_ticket (35)"
-    assert actual["Extensions"][3]["Data"] == ""
-    assert actual["Extensions"][3]["RawData"] == ""
+    assert actual["Extensions"][3] == {"ExtensionType": "session_ticket (35)"}
 
-    assert actual["Extensions"][4]["ExtensionType"] == "encrypt_then_mac (22)"
-    assert "RawData" not in actual["Extensions"][4]
+    assert actual["Extensions"][4] == {"ExtensionType": "encrypt_then_mac (22)"}
 
-    assert actual["Extensions"][5]["ExtensionType"] == "extended_master_secret (23)"
-    assert "RawData" not in actual["Extensions"][5]
+    assert actual["Extensions"][5] == {"ExtensionType": "extended_master_secret (23)"}
 
     assert actual["Extensions"][6]["ExtensionType"] == "signature_algorithms (13)"
     assert actual["Extensions"][6]["Data"] == [
@@ -1230,15 +1222,11 @@ def test_tls11_client_hello(capsys):
     ]
     assert actual["Extensions"][2]["RawData"] is not None
 
-    assert actual["Extensions"][3]["ExtensionType"] == "session_ticket (35)"
-    assert actual["Extensions"][3]["Data"] == ""
-    assert actual["Extensions"][3]["RawData"] == ""
+    assert actual["Extensions"][3] == {"ExtensionType": "session_ticket (35)"}
 
-    assert actual["Extensions"][4]["ExtensionType"] == "encrypt_then_mac (22)"
-    assert "RawData" not in actual["Extensions"][4]
+    assert actual["Extensions"][4] == {"ExtensionType": "encrypt_then_mac (22)"}
 
-    assert actual["Extensions"][5]["ExtensionType"] == "extended_master_secret (23)"
-    assert "RawData" not in actual["Extensions"][5]
+    assert actual["Extensions"][5] == {"ExtensionType": "extended_master_secret (23)"}
 
 
 def test_tls10_client_hello(capsys):
@@ -1297,15 +1285,11 @@ def test_tls10_client_hello(capsys):
     ]
     assert actual["Extensions"][2]["RawData"] is not None
 
-    assert actual["Extensions"][3]["ExtensionType"] == "session_ticket (35)"
-    assert actual["Extensions"][3]["Data"] == ""
-    assert actual["Extensions"][3]["RawData"] == ""
+    assert actual["Extensions"][3] == {"ExtensionType": "session_ticket (35)"}
 
-    assert actual["Extensions"][4]["ExtensionType"] == "encrypt_then_mac (22)"
-    assert "RawData" not in actual["Extensions"][4]
+    assert actual["Extensions"][4] == {"ExtensionType": "encrypt_then_mac (22)"}
 
-    assert actual["Extensions"][5]["ExtensionType"] == "extended_master_secret (23)"
-    assert "RawData" not in actual["Extensions"][5]
+    assert actual["Extensions"][5] == {"ExtensionType": "extended_master_secret (23)"}
 
 
 def test_tls13_server_hello(capsys):
@@ -1371,52 +1355,131 @@ def test_tls12_server_hello(capsys):
     actual = json.loads(actual_out.out)
 
     assert isinstance(actual, list)
-    assert len(actual) == 1
+    assert len(actual) == 4
 
     assert isinstance(actual[0], dict)
     assert actual[0]["ContentType"] == "handshake (22)"
     assert actual[0]["ProtocolVersion"] == "TLS 1.2 (0x0303) (771)"
     assert actual[0]["RawData"] is not None
 
-    actual_handshakes = actual[0]["Data"]
-    assert isinstance(actual_handshakes, list)
-    assert len(actual_handshakes) == 4
-    assert isinstance(actual_handshakes[0], dict)
+    entry1 = actual[0]["Data"]
+    assert isinstance(entry1, list)
+    assert len(entry1) == 1
+    assert isinstance(entry1[0], dict)
 
-    assert actual_handshakes[0]["HandshakeType"] == "server_hello (2)"
-    assert actual_handshakes[0]["RawData"] is not None
+    assert entry1[0]["HandshakeType"] == "server_hello (2)"
+    assert entry1[0]["RawData"] is not None
 
-    actual_hello = actual_handshakes[0]["Data"]
+    actual_hello = entry1[0]["Data"]
     assert actual_hello["ProtocolVersion"] == "TLS 1.2 (0x0303) (771)"
-    assert actual_hello["Random"] == "636B6A8513DE96B369571F60D93D48A4ADFDF0848441BE70444F574E47524401"
-    assert actual_hello["SessionID"] == "0707000045BE84E49B47A9CE6487EC3350ADC04F431B3BEC9E0C3129E37636B1"
-    assert actual_hello["CipherSuite"] == "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 - 0xC030"
+    assert actual_hello["Random"] == "3A1EAF5E3C0B9BD4FE889BAE819C1F392613D5320910907469C7A79158430C40"
+    assert actual_hello["SessionID"] == "394772ADC4255C0B50C4F3892CE8AC4827A63F1FE056E1E60B35306F83B19A27"
+    assert actual_hello["CipherSuite"] == "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 - 0xC02F"
     assert actual_hello["CompressionMethod"] == "none (0)"
-    assert len(actual_hello["Extensions"]) == 2
+    assert len(actual_hello["Extensions"]) == 4
 
-    assert actual_hello["Extensions"][0] == {
-        "ExtensionType": "extended_master_secret (23)",
-    }
+    assert actual_hello["Extensions"][0] == {"ExtensionType": "server_name (0)"}
 
     assert actual_hello["Extensions"][1]["ExtensionType"] == "renegotiation_info (65281)"
     assert actual_hello["Extensions"][1]["RawData"] == "00"
 
-    assert actual_handshakes[1]["HandshakeType"] == "certificate (11)"
-    assert actual_handshakes[1]["RawData"] is not None
-    actual_certificate = actual_handshakes[1]["Data"]
+    assert actual_hello["Extensions"][2]["ExtensionType"] == "ec_point_formats (11)"
+    assert actual_hello["Extensions"][2]["Data"] == [
+        "uncompressed (0)",
+        "ansiX962_compressed_prime (1)",
+        "ansiX962_compressed_char2 (2)",
+    ]
+    assert actual_hello["Extensions"][2]["RawData"] == "03000102"
+
+    assert actual_hello["Extensions"][3]["ExtensionType"] == "application_layer_protocol_negotiation (16)"
+    assert actual_hello["Extensions"][3]["Data"] == [
+        "http/1.1",
+    ]
+    assert actual_hello["Extensions"][3]["RawData"] == "000908687474702F312E31"
+
+    assert isinstance(actual[1], dict)
+    assert actual[1]["ContentType"] == "handshake (22)"
+    assert actual[1]["ProtocolVersion"] == "TLS 1.2 (0x0303) (771)"
+    assert actual[1]["RawData"] is not None
+
+    entry2 = actual[1]["Data"]
+    assert isinstance(entry2, list)
+    assert len(entry2) == 1
+
+    assert isinstance(entry2[0], dict)
+    assert entry2[0]["HandshakeType"] == "certificate (11)"
+    assert entry2[0]["RawData"] is not None
+
+    actual_certificate = entry2[0]["Data"]
     assert actual_certificate["Certificate"] is not None
 
-    assert actual_handshakes[2]["HandshakeType"] == "server_key_exchange (12)"
-    assert actual_handshakes[2]["RawData"] is not None
-    actual_server_key_exch = actual_handshakes[2]["Data"]
+    assert isinstance(actual[2], dict)
+    assert actual[2]["ContentType"] == "handshake (22)"
+    assert actual[2]["ProtocolVersion"] == "TLS 1.2 (0x0303) (771)"
+    assert actual[2]["RawData"] is not None
+
+    entry3 = actual[2]["Data"]
+    assert isinstance(entry3, list)
+    assert len(entry3) == 1
+
+    assert isinstance(entry2[0], dict)
+    assert entry3[0]["HandshakeType"] == "server_key_exchange (12)"
+    assert entry3[0]["RawData"] is not None
+
+    actual_server_key_exch = entry3[0]["Data"]
     assert actual_server_key_exch["CurveType"] == "named_curve (3)"
-    assert actual_server_key_exch["Curve"] == "secp384r1 (24)"
+    assert actual_server_key_exch["Curve"] == "secp256r1 (23)"
     assert actual_server_key_exch["PublicKey"] is not None
-    assert actual_server_key_exch["SignatureAlgorithm"] == "rsa_pss_rsae_sha256 (2052)"
+    assert actual_server_key_exch["SignatureAlgorithm"] == "rsa_pkcs1_sha512 (1537)"
     assert actual_server_key_exch["Signature"] is not None
 
-    assert actual_handshakes[3]["HandshakeType"] == "server_hello_done (14)"
-    assert actual_handshakes[3]["RawData"] is not None
+    assert isinstance(actual[3], dict)
+    assert actual[3]["ContentType"] == "handshake (22)"
+    assert actual[3]["ProtocolVersion"] == "TLS 1.2 (0x0303) (771)"
+    assert actual[3]["RawData"] is not None
+
+    entry4 = actual[3]["Data"]
+    assert isinstance(entry4, list)
+    assert len(entry4) == 2
+
+    assert isinstance(entry4[0], dict)
+    assert entry4[0]["HandshakeType"] == "certificate_request (13)"
+    assert entry4[0]["RawData"] is not None
+
+    actual_cert_req = entry4[0]["Data"]
+    assert actual_cert_req["CertificateTypes"] == [
+        "rsa_sign (1)",
+        "dss_sign (2)",
+        "ecdsa_sign (64)",
+    ]
+    assert actual_cert_req["SignatureAlgorithms"] == [
+        "rsa_pkcs1_sha512 (1537)",
+        "dsa_sha512 (1538)",
+        "ecdsa_secp521r1_sha512 (1539)",
+        "rsa_pkcs1_sha384 (1281)",
+        "dsa_sha384 (1282)",
+        "ecdsa_secp384r1_sha384 (1283)",
+        "rsa_pkcs1_sha256 (1025)",
+        "dsa_sha256 (1026)",
+        "ecdsa_secp256r1_sha256 (1027)",
+        "sha224_rsa (769)",
+        "dsa_sha224 (770)",
+        "sha224_ecdsa (771)",
+        "rsa_pkcs1_sha1 (513)",
+        "dsa_sha1 (514)",
+        "ecdsa_sha1 (515)",
+    ]
+    assert actual_cert_req["CertificateAuthorities"] == [
+        {"OID": "id-at-countryName (2.5.4.6)", "Value": "US"},
+        {"OID": "id-at-stateOrProvinceName (2.5.4.8)", "Value": "California"},
+        {"OID": "id-at-localityName (2.5.4.7)", "Value": "San Francisco"},
+        {"OID": "id-at-organizationName (2.5.4.10)", "Value": "BadSSL"},
+        {"OID": "id-at-commonName (2.5.4.3)", "Value": "BadSSL Client Root Certificate Authority"},
+    ]
+
+    assert isinstance(entry4[1], dict)
+    assert entry4[1]["HandshakeType"] == "server_hello_done (14)"
+    assert entry4[1]["RawData"] is not None
 
 
 def test_tls11_server_hello(capsys):
@@ -1529,3 +1592,30 @@ def test_tls10_server_hello(capsys):
 
     assert actual_handshakes[3]["HandshakeType"] == "server_hello_done (14)"
     assert actual_handshakes[3]["RawData"] is not None
+
+
+def test_tls12_client_key_exchange(capsys):
+    entrypoint.main(["--token", base64.b64encode(get_data("tls1.2_client_key_exchange")).decode()])
+    actual_out = capsys.readouterr()
+
+    assert actual_out.err == ""
+    actual = json.loads(actual_out.out)
+
+    assert isinstance(actual, list)
+    assert len(actual) == 1
+
+    assert isinstance(actual[0], dict)
+    assert actual[0]["ContentType"] == "handshake (22)"
+    assert actual[0]["ProtocolVersion"] == "TLS 1.2 (0x0303) (771)"
+    assert actual[0]["RawData"] is not None
+
+    actual_handshakes = actual[0]["Data"]
+    assert isinstance(actual_handshakes, list)
+    assert len(actual_handshakes) == 1
+    assert isinstance(actual_handshakes[0], dict)
+
+    assert actual_handshakes[0]["HandshakeType"] == "client_key_exchange (16)"
+    assert actual_handshakes[0]["RawData"] is not None
+
+    actual_ckx = actual_handshakes[0]["Data"]
+    assert actual_ckx["PublicKey"] is not None

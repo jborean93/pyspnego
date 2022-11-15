@@ -52,18 +52,30 @@ class TlsContentType(enum.IntEnum):
 
 
 class TlsHandshakeMessageType(enum.IntEnum):
+    hello_request = 0
     client_hello = 1
     server_hello = 2
+    hello_verify_request = 3
     new_session_ticket = 4
     end_of_early_data = 5
+    hello_retry_request = 6
     encrypted_extensions = 8
+    request_connection_id = 9
+    new_connection_id = 10
     certificate = 11
     server_key_exchange = 12
     certificate_request = 13
     server_hello_done = 14
     certificate_verify = 15
+    client_key_exchange = 16
+    client_certificate_request = 17
     finished = 20
+    certificate_url = 21
+    certificate_status = 22
+    supplemental_data = 23
     key_update = 24
+    compressed_certificate = 25
+    ekt_key = 26
     message_hash = 254
 
     @classmethod
@@ -580,16 +592,21 @@ class TlsSupportedGroup(enum.IntEnum):
 
 class TlsSignatureScheme(enum.IntEnum):
     rsa_pkcs1_sha1 = 0x0201
+    dsa_sha1 = 0x0202
     ecdsa_sha1 = 0x0203
     sha224_rsa = 0x0301
+    dsa_sha224 = 0x0302
     sha224_ecdsa = 0x0303
     rsa_pkcs1_sha256 = 0x0401
+    dsa_sha256 = 0x0402
     ecdsa_secp256r1_sha256 = 0x0403
     rsa_pkcs1_sha256_legacy = 0x0420
     rsa_pkcs1_sha384 = 0x0501
+    dsa_sha384 = 0x0502
     ecdsa_secp384r1_sha384 = 0x0503
     rsa_pkcs1_sha384_legacy = 0x0520
     rsa_pkcs1_sha512 = 0x0601
+    dsa_sha512 = 0x0602
     ecdsa_secp521r1_sha512 = 0x0603
     rsa_pkcs1_sha512_legacy = 0x0620
     eccsi_sha256 = 0x0704
@@ -614,14 +631,14 @@ class TlsSignatureScheme(enum.IntEnum):
     rsa_pss_pss_sha512 = 0x080B
     ecdsa_brainpoolP256r1tls13_sha256 = 0x081A
     ecdsa_brainpoolP384r1tls13_sha384 = 0x081B
-    rsa_pkcsecdsa_brainpoolP512r1tls13_sha5121_sha1 = 0x081C
+    ecdsa_brainpoolP512r1tls13_sha512 = 0x081C
 
     @classmethod
     def _missing_(cls, value: object) -> typing.Optional[enum.Enum]:
         return _add_missing_enum_member(cls, value, "Unknown Signature Scheme 0x{0:04X}")
 
 
-class TLSPskKeyExchangeMode(enum.IntEnum):
+class TlsPskKeyExchangeMode(enum.IntEnum):
     psk_ke = 0
     psk_dhe_ke = 1
 
@@ -630,7 +647,7 @@ class TLSPskKeyExchangeMode(enum.IntEnum):
         return _add_missing_enum_member(cls, value, "Unknown PSK Key Exchange Mode 0x{0:02X}")
 
 
-class TLSECCurveType(enum.IntEnum):
+class TlsECCurveType(enum.IntEnum):
     unassigned = 0
     explicit_primve = 1
     explicit_char2 = 2
@@ -639,3 +656,149 @@ class TLSECCurveType(enum.IntEnum):
     @classmethod
     def _missing_(cls, value: object) -> typing.Optional[enum.Enum]:
         return _add_missing_enum_member(cls, value, "Unknown EC Curve Type 0x{0:02X}")
+
+
+class TlsClientCertificateType(enum.IntEnum):
+    rsa_sign = 1
+    dss_sign = 2
+    rsa_fixed_dh = 3
+    dss_fixed_dh = 4
+    rsa_ephemeral_dh = 5
+    dss_ephemeral_dh = 6
+    fortezza_dms = 20
+    ecdsa_sign = 64
+    rsa_fixed_ecdh = 65
+    ecdsa_fixed_ecdh = 66
+    gost_sign256 = 67
+    gost_sign512 = 68
+
+    @classmethod
+    def _missing_(cls, value: object) -> typing.Optional[enum.Enum]:
+        return _add_missing_enum_member(cls, value, "Unknown Client Certificate Type 0x{0:02X}")
+
+
+class DistinguishedNameType(str, enum.Enum):
+    object_class = "2.5.4.0"
+    aliased_entry_name = "2.5.4.1"
+    knowledge_information = "2.5.4.2"
+    common_name = "2.5.4.3"
+    surname = "2.5.4.4"
+    serial_number = "2.5.4.5"
+    country_name = "2.5.4.6"
+    locality_name = "2.5.4.7"
+    state_or_province_name = "2.5.4.8"
+    street_address = "2.5.4.9"
+    organizational_name = "2.5.4.10"
+    organizational_unit_name = "2.5.4.11"
+    id_title = "2.5.4.12"
+    description = "2.5.4.13"
+    search_guide = "2.5.4.14"
+    business_category = "2.5.4.15"
+    postal_address = "2.5.4.16"
+    postal_code = "2.5.4.17"
+    post_office_box = "2.5.4.18"
+    physical_delivery_office_name = "2.5.4.19"
+    telephone_number = "2.5.4.20"
+    telex_number = "2.5.4.21"
+    teletex_terminal_identifier = "2.5.4.22"
+    facsimile_telephone_number = "2.5.4.23"
+    x121_address = "2.5.4.24"
+    international_isdn_number = "2.5.4.25"
+    registered_address = "2.5.4.26"
+    destination_indicator = "2.5.4.27"
+    preferred_delivery_method = "2.5.4.28"
+    presentation_address = "2.5.4.29"
+    supported_application_context = "2.5.4.30"
+    member = "2.5.4.31"
+    owner = "2.5.4.32"
+    role_occupant = "2.5.4.33"
+    see_also = "2.5.4.34"
+    user_password = "2.5.4.35"
+    user_certificate = "2.5.4.36"
+    ca_certificate = "2.5.4.37"
+    authority_revocation_list = "2.5.4.38"
+    certificate_revocation_list = "2.5.4.39"
+    cross_certificate_pair = "2.5.4.40"
+    id_name = "2.5.4.41"
+    given_name = "2.5.4.42"
+    initials = "2.5.4.43"
+    generation_qualifier = "2.5.4.44"
+    unique_identifier = "2.5.4.45"
+    dn_qualifier = "2.5.4.46"
+    enhanced_search_guide = "2.5.4.47"
+    protocol_information = "2.5.4.48"
+    distinguished_name = "2.5.4.49"
+    unique_member = "2.5.4.50"
+    house_identifier = "2.5.4.51"
+    supported_algorithms = "2.5.4.52"
+    delta_revocation_list = "2.5.4.53"
+    attribute_certificate = "2.5.4.58"
+    pseudonym = "2.5.4.65"
+
+    @classmethod
+    def _missing_(cls, value: object) -> typing.Optional[enum.Enum]:
+        new_member = str.__new__(cls)
+        new_member._name_ = f"Unknown DN OID Type {value}"
+        new_member._value_ = str(value)
+        return cls._value2member_map_.setdefault(value, new_member)
+
+    @classmethod
+    def native_labels(cls) -> typing.Dict["DistinguishedNameType", str]:
+        return {
+            DistinguishedNameType.object_class: "id-at-objectClass",
+            DistinguishedNameType.aliased_entry_name: "id-at-aliasedEntryName",
+            DistinguishedNameType.knowledge_information: "id-at-knowldgeinformation",
+            DistinguishedNameType.common_name: "id-at-commonName",
+            DistinguishedNameType.surname: "id-at-surname",
+            DistinguishedNameType.serial_number: "id-at-serialNumber",
+            DistinguishedNameType.country_name: "id-at-countryName",
+            DistinguishedNameType.locality_name: "id-at-localityName",
+            DistinguishedNameType.state_or_province_name: "id-at-stateOrProvinceName",
+            DistinguishedNameType.street_address: "id-at-streetAddress",
+            DistinguishedNameType.organizational_name: "id-at-organizationName",
+            DistinguishedNameType.organizational_unit_name: "id-at-organizationalUnitName",
+            DistinguishedNameType.id_title: "id-at-title",
+            DistinguishedNameType.description: "id-at-description",
+            DistinguishedNameType.search_guide: "id-at-searchGuide",
+            DistinguishedNameType.business_category: "id-at-businessCategory",
+            DistinguishedNameType.postal_address: "id-at-postalAddress",
+            DistinguishedNameType.postal_code: "id-at-postalCode",
+            DistinguishedNameType.post_office_box: "id-at-postOfficeBox",
+            DistinguishedNameType.physical_delivery_office_name: "id-at-physicalDeliveryOfficeName",
+            DistinguishedNameType.telephone_number: "id-at-telephoneNumber",
+            DistinguishedNameType.telex_number: "id-at-telexNumber",
+            DistinguishedNameType.teletex_terminal_identifier: "id-at-teletexTerminalIdentifier",
+            DistinguishedNameType.facsimile_telephone_number: "id-at-facsimileTelephoneNumber",
+            DistinguishedNameType.x121_address: "id-at-x121Address",
+            DistinguishedNameType.international_isdn_number: "id-at-internationalISDNNumber",
+            DistinguishedNameType.registered_address: "id-at-registeredAddress",
+            DistinguishedNameType.destination_indicator: "id-at-destinationIndicator",
+            DistinguishedNameType.preferred_delivery_method: "id-at-preferredDeliveryMethod",
+            DistinguishedNameType.presentation_address: "id-at-presentationAddress",
+            DistinguishedNameType.supported_application_context: "id-at-supportedApplicationContext",
+            DistinguishedNameType.member: "id-at-member",
+            DistinguishedNameType.owner: "id-at-owner",
+            DistinguishedNameType.role_occupant: "id-at-roleOccupant",
+            DistinguishedNameType.see_also: "id-at-seeAlso",
+            DistinguishedNameType.user_password: "id-at-userPassword",
+            DistinguishedNameType.user_certificate: "id-at-userCertificate",
+            DistinguishedNameType.ca_certificate: "id-at-cACertificate",
+            DistinguishedNameType.authority_revocation_list: "id-at-authorityRevocationList",
+            DistinguishedNameType.certificate_revocation_list: "id-at-certificateRevocationList",
+            DistinguishedNameType.cross_certificate_pair: "id-at-crossCertificatePair",
+            DistinguishedNameType.id_name: "id-at-name",
+            DistinguishedNameType.given_name: "id-at-givenName",
+            DistinguishedNameType.initials: "id-at-initials",
+            DistinguishedNameType.generation_qualifier: "id-at-generationQualifier",
+            DistinguishedNameType.unique_identifier: "id-at-uniqueIdentifier",
+            DistinguishedNameType.dn_qualifier: "id-at-dnQualifier",
+            DistinguishedNameType.enhanced_search_guide: "id-at-enhancedSearchGuide",
+            DistinguishedNameType.protocol_information: "id-at-protocolInformation",
+            DistinguishedNameType.distinguished_name: "id-at-distinguishedName",
+            DistinguishedNameType.unique_member: "id-at-uniqueMember",
+            DistinguishedNameType.house_identifier: "id-at-houseIdentifier",
+            DistinguishedNameType.supported_algorithms: "id-at-supportedAlgorithms",
+            DistinguishedNameType.delta_revocation_list: "id-at-deltaRevocationList",
+            DistinguishedNameType.attribute_certificate: "id-at-attributeCertificate",
+            DistinguishedNameType.pseudonym: "id-at-pseudonym",
+        }

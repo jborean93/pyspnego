@@ -130,8 +130,6 @@ jobs:
           gssapi-provider: mit
         - os: macOS-12
           gssapi-provider: sspi
-        - os: macOS-12
-          python-version: '3.11'  # https://github.com/actions/setup-python/issues/531
 
         - os: windows-latest
           gssapi-provider: mit

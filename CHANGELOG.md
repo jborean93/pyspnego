@@ -7,6 +7,8 @@
   * Server Hello
   * Certificate
   * Server Key Exchange
+  * Client Key Exchange
+  * Certificate Request
 
 ## 0.6.3 - 2022-11-04
 
