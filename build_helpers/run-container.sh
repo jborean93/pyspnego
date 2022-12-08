@@ -10,7 +10,7 @@ docker run \
     --volume "$( pwd )":/tmp/build:z \
     --workdir /tmp/build \
     --env GSSAPI_PROVIDER=${GSSAPI_PROVIDER:-mit} \
-    debian:10 /bin/bash -ex -c 'source /dev/stdin' << 'EOF'
+    debian:11 /bin/bash -ex -c 'source /dev/stdin' << 'EOF'
 
 source ./build_helpers/lib.sh
 lib::setup::system_requirements

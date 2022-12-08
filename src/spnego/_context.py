@@ -254,6 +254,8 @@ class ContextProxy(metaclass=abc.ABCMeta):
         if self.protocol not in self.available_protocols(options=options):
             raise ValueError("Protocol %s is not available" % self.protocol)
 
+        self._hostname = hostname
+        self._service = service
         self.spn = None
         if service or hostname:
             self.spn = to_text("%s/%s" % (service if service else "HOST", hostname or "unspecified"))
@@ -390,6 +392,19 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         Returns:
             bytes: The derived session key from the authenticated context.
+        """
+        pass  # pragma: no cover
+
+    @abc.abstractmethod
+    def new_context(self) -> "ContextProxy":
+        """Creates a new security context.
+
+        Creates a new security context based on the current credential and
+        options of the current context. This is useful when needing to set up a
+        new security context without having to retrieve the credentials again.
+
+        Returns:
+            ContextProxy: The new security context.
         """
         pass  # pragma: no cover
 

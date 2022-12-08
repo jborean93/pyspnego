@@ -2,7 +2,6 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import base64
-import io
 import logging
 import struct
 import typing
@@ -35,7 +34,6 @@ try:
     from spnego._sspi_raw import Credential as NativeCredential
     from spnego._sspi_raw import (
         CredentialUse,
-        SecBuffer,
         SecBufferDesc,
         SecBufferType,
         SecPkgAttr,
@@ -163,11 +161,15 @@ class SSPIProxy(ContextProxy):
         self._context = SSPISecContext()
         self.__seq_num = 0
 
-        try:
-            principal = self.spn if usage == "accept" else None
-            self._credential = _get_sspi_credential(principal, protocol, usage, credentials)
-        except NativeError as win_err:
-            raise SpnegoError(base_error=win_err, context_msg="Getting SSPI credential") from win_err
+        sspi_credential = kwargs.get("_sspi_credential", None)
+        if not sspi_credential:
+            try:
+                principal = self.spn if usage == "accept" else None
+                sspi_credential = _get_sspi_credential(principal, protocol, usage, credentials)
+            except NativeError as win_err:
+                raise SpnegoError(base_error=win_err, context_msg="Getting SSPI credential") from win_err
+
+        self._credential = sspi_credential
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
@@ -195,6 +197,18 @@ class SSPIProxy(ContextProxy):
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
         return typing.cast(bytes, query_context_attributes(self._context, SecPkgAttr.session_key))
+
+    def new_context(self) -> "SSPIProxy":
+        return SSPIProxy(
+            hostname=self._hostname,
+            service=self._service,
+            channel_bindings=self.channel_bindings,
+            context_req=self.context_req,
+            usage=self.usage,
+            protocol=self.protocol,
+            options=self.options,
+            _sspi_credential=self._credential,
+        )
 
     @wrap_system_error(NativeError, "Processing security token")
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:

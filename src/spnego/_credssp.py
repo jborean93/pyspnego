@@ -277,8 +277,6 @@ class CredSSPProxy(ContextProxy):
             raise FeatureMissingError(NegotiateOptions.session_key)
 
         self._credentials = credentials
-        self._hostname = hostname
-        self._service = service
         self._options = options & ~NegotiateOptions.wrapping_winrm  # WinRM wrapping won't apply for auth context.
 
         self._auth_context: typing.Optional[ContextProxy] = kwargs.get("credssp_negotiate_context", None)
@@ -336,6 +334,19 @@ class CredSSPProxy(ContextProxy):
     @property
     def session_key(self) -> bytes:
         raise OperationNotAvailableError(context_msg="CredSSP does not have a session key to share")
+
+    def new_context(self) -> "CredSSPProxy":
+        return CredSSPProxy(
+            username=self._credentials,
+            hostname=self._hostname,
+            service=self._service,
+            channel_bindings=self.channel_bindings,
+            context_req=self.context_req,
+            usage=self.usage,
+            protocol=self.protocol,
+            options=self.options,
+            credssp_negotiate_context=self._auth_context.new_context() if self._auth_context else None,
+        )
 
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
         log.debug("CredSSP step input: %s", to_text(base64.b64encode(in_token or b"")))
