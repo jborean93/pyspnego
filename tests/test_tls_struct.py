@@ -21,8 +21,10 @@ import spnego._tls_struct as tls
         (tls.TlsECPointFormat, 3, "Unknown EC Point Format 0x03"),
         (tls.TlsSupportedGroup, 0x1254, "Unknown Supported Group 0x1254"),
         (tls.TlsSignatureScheme, 0x0001, "Unknown Signature Scheme 0x0001"),
-        (tls.TLSPskKeyExchangeMode, 0x44, "Unknown PSK Key Exchange Mode 0x44"),
-        (tls.TLSECCurveType, 0x55, "Unknown EC Curve Type 0x55"),
+        (tls.TlsPskKeyExchangeMode, 0x44, "Unknown PSK Key Exchange Mode 0x44"),
+        (tls.TlsECCurveType, 0x55, "Unknown EC Curve Type 0x55"),
+        (tls.TlsClientCertificateType, 0x70, "Unknown Client Certificate Type 0x70"),
+        (tls.DistinguishedNameType, "1.2.3.4", "Unknown DN OID Type 1.2.3.4"),
     ],
 )
 def test_tls_enum_missing_member(enum_cls, value, expected):
