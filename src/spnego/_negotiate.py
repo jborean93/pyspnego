@@ -30,7 +30,6 @@ from spnego._spnego import (
 from spnego._sspi import SSPIProxy
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import BadMechanismError, InvalidTokenError, NegotiateOptions
-from spnego.iov import IOVBuffer
 
 log = logging.getLogger(__name__)
 
@@ -62,9 +61,10 @@ class NegotiateProxy(ContextProxy):
         )
 
         self._credentials = credentials
-        self._hostname = hostname
-        self._service = service
         self._complete = False
+        self._available_contexts: typing.Optional[typing.Dict[GSSMech, ContextProxy]] = kwargs.get(
+            "_negotiate_contexts", None
+        )
         self._context_list: typing.Dict[GSSMech, typing.Tuple[ContextProxy, typing.Optional[bytes]]] = {}
         self.__chosen_mech: typing.Optional[GSSMech] = None
         self._mech_list: typing.List[str] = []
@@ -116,6 +116,18 @@ class NegotiateProxy(ContextProxy):
     @property
     def session_key(self) -> bytes:
         return self._context.session_key if self._context_list else b""
+
+    def new_context(self) -> "NegotiateProxy":
+        return NegotiateProxy(
+            hostname=self._hostname,
+            service=self._service,
+            channel_bindings=self.channel_bindings,
+            context_req=self.context_req,
+            usage=self.usage,
+            protocol=self.protocol,
+            options=self.options,
+            _negotiate_contexts={m: c[0].new_context() for m, c in self._context_list.items()},
+        )
 
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
         log.debug("SPNEGO step input: %s", base64.b64encode(in_token or b"").decode())
@@ -373,40 +385,51 @@ class NegotiateProxy(ContextProxy):
         mech_types: typing.Optional[typing.List[str]] = None,
     ) -> typing.List[str]:
         """Builds a new context list that are available to the client."""
-        context_kwargs: typing.Dict[str, typing.Any] = {
-            "hostname": self._hostname,
-            "service": self._service,
-            "channel_bindings": self.channel_bindings,
-            "context_req": self.context_req,
-        }
-        all_protocols = self._preferred_mech_list()
+        available_contexts = self._available_contexts or {}
+        last_err = None
+
+        if not available_contexts:
+            context_kwargs: typing.Dict[str, typing.Any] = {
+                "hostname": self._hostname,
+                "service": self._service,
+                "channel_bindings": self.channel_bindings,
+                "context_req": self.context_req,
+            }
+            all_protocols = self._preferred_mech_list()
+
+            for mech in all_protocols:
+                if mech_types and mech.value not in mech_types:
+                    continue
+
+                protocol = mech.name
+                try:
+                    log.debug(f"Attempting to create {protocol} context when building SPNEGO mech list")
+
+                    # Cannot use SSPI's NTLM as we need to reset the crypto state which SSPI does not expose.
+                    options = self.options & ~NegotiateOptions.use_negotiate
+                    if protocol == "ntlm" and "ntlm" in SSPIProxy.available_protocols(options=options):
+                        options |= NegotiateOptions.use_ntlm
+
+                    if self.usage == "accept":
+                        context = spnego.server(protocol=protocol, options=options, **context_kwargs)
+                    else:
+                        context = spnego.client(self._credentials, protocol=protocol, options=options, **context_kwargs)
+
+                    context._is_wrapped = True
+                    available_contexts[mech] = context
+                except Exception as e:
+                    last_err = e
+                    log.debug("Failed to create context for SPNEGO protocol %s: %s", protocol, str(e))
+                    continue
 
         self._context_list = {}
         mech_list = []
-        last_err = None
-        for mech in all_protocols:
-            if mech_types and mech.value not in mech_types:
-                continue
-
-            protocol = mech.name
+        for mech, context in available_contexts.items():
             try:
-                log.debug(f"Attempting to create {protocol} context when building SPNEGO mech list")
-
-                # Cannot use SSPI's NTLM as we need to reset the crypto state which SSPI does not expose.
-                options = self.options & ~NegotiateOptions.use_negotiate
-                if protocol == "ntlm" and "ntlm" in SSPIProxy.available_protocols(options=options):
-                    options |= NegotiateOptions.use_ntlm
-
-                if self.usage == "accept":
-                    context = spnego.server(protocol=protocol, options=options, **context_kwargs)
-                else:
-                    context = spnego.client(self._credentials, protocol=protocol, options=options, **context_kwargs)
-
-                context._is_wrapped = True
                 first_token = context.step() if self.usage == "initiate" else None
             except Exception as e:
                 last_err = e
-                log.debug("Failed to create context for SPNEGO protocol %s: %s", protocol, str(e))
+                log.debug("Failed to create first token for SPNEGO protocol %s: %s", mech.name, str(e))
                 continue
 
             self._context_list[mech] = (context, first_token)

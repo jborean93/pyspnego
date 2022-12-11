@@ -478,11 +478,19 @@ class GSSAPIProxy(ContextProxy):
         }[self.protocol]
         mech = gssapi.OID.from_int_seq(mech_str)
 
-        cred = None
-        try:
-            cred = _get_gssapi_credential(mech, self.usage, credentials=credentials, context_req=context_req)
-        except GSSError as gss_err:
-            raise SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential") from gss_err
+        gssapi_credential = kwargs.get("_gssapi_credential", None)
+        if not gssapi_credential:
+            try:
+                gssapi_credential = _get_gssapi_credential(
+                    mech,
+                    self.usage,
+                    credentials=credentials,
+                    context_req=context_req,
+                )
+            except GSSError as gss_err:
+                raise SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential") from gss_err
+
+        self._credential = gssapi_credential
 
         context_kwargs: typing.Dict[str, typing.Any] = {}
 
@@ -501,7 +509,7 @@ class GSSAPIProxy(ContextProxy):
             context_kwargs["mech"] = mech
             context_kwargs["flags"] = self._context_req
 
-        self._context = gssapi.SecurityContext(creds=cred, usage=self.usage, **context_kwargs)
+        self._context = gssapi.SecurityContext(creds=self._credential, usage=self.usage, **context_kwargs)
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
@@ -542,6 +550,18 @@ class GSSAPIProxy(ContextProxy):
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
         return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
+
+    def new_context(self) -> "GSSAPIProxy":
+        return GSSAPIProxy(
+            hostname=self._hostname,
+            service=self._service,
+            channel_bindings=self.channel_bindings,
+            context_req=self.context_req,
+            usage=self.usage,
+            protocol=self.protocol,
+            options=self.options,
+            _gssapi_credential=self._credential,
+        )
 
     @wrap_system_error(NativeError, "Processing security token")
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:

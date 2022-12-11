@@ -9,6 +9,7 @@
   * Server Key Exchange
   * Client Key Exchange
   * Certificate Request
+* Added the `new_context()` method on the context proxies to provide an easy and efficient way to re-use the context credentials and options for a new context
 
 ## 0.6.3 - 2022-11-04
 

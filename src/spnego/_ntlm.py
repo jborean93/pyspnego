@@ -60,12 +60,10 @@ from spnego.exceptions import (
     ErrorCode,
     InvalidTokenError,
     NegotiateOptions,
-    NoContextError,
     OperationNotAvailableError,
     SpnegoError,
     UnsupportedQop,
 )
-from spnego.iov import IOVBuffer
 
 log = logging.getLogger(__name__)
 
@@ -205,15 +203,18 @@ class _NTLMCredential:
         self,
         credential: typing.Optional[Credential] = None,
     ) -> None:
+        self._raw_username: typing.Optional[str] = None
         self._store: typing.Optional[str]
         if isinstance(credential, Password):
             self._store = "explicit"
+            self._raw_username = credential.username
             self.domain, self.username = split_username(credential.username)
             self.lm_hash = lmowfv1(credential.password)
             self.nt_hash = ntowfv1(credential.password)
 
         elif isinstance(credential, NTLMHash):
             self._store = "explicit"
+            self._raw_username = credential.username
             self.domain, self.username = split_username(credential.username)
             self.lm_hash = base64.b16decode(credential.lm_hash.upper()) if credential.lm_hash else b"\x00" * 16
             self.nt_hash = base64.b16decode(credential.nt_hash.upper()) if credential.nt_hash else b"\x00" * 16
@@ -221,6 +222,7 @@ class _NTLMCredential:
         else:
             domain = username = None
             if isinstance(credential, CredentialCache):
+                self._raw_username = credential.username
                 domain, username = split_username(credential.username)
 
             self._store = _get_credential_file()
@@ -344,6 +346,26 @@ class NTLMProxy(ContextProxy):
     @property
     def session_key(self) -> bytes:
         return self._session_key or b""
+
+    def new_context(self) -> "NTLMProxy":
+        cred: typing.Optional[NTLMHash] = None
+        if self._credential and self.usage == "initiate":
+            cred = NTLMHash(
+                username=self._credential._raw_username or "",
+                lm_hash=base64.b16encode(self._credential.lm_hash).decode(),
+                nt_hash=base64.b16encode(self._credential.nt_hash).decode(),
+            )
+
+        return NTLMProxy(
+            username=cred,
+            hostname=self._hostname,
+            service=self._service,
+            channel_bindings=self.channel_bindings,
+            context_req=self.context_req,
+            usage=self.usage,
+            protocol=self.protocol,
+            options=self.options,
+        )
 
     def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
         if not self._is_wrapped:

@@ -262,6 +262,34 @@ def test_negotiate_with_kerberos(kerb_cred):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+
+    token3 = c.step(token2)
+    assert token3 is None
+
+    # Make sure it reports the right protocol
+    assert c.negotiated_protocol == "kerberos"
+    assert s.negotiated_protocol == "kerberos"
+
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    assert c.context_attr & spnego.ContextReq.mutual_auth
+    assert s.context_attr & spnego.ContextReq.mutual_auth
+
+    _message_test(c, s)
+
 
 @pytest.mark.parametrize(
     "client_opt, server_opt",
@@ -344,6 +372,46 @@ def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkey
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    negotiate = c.step()
+
+    assert isinstance(negotiate, bytes)
+    assert not c.complete
+    assert not s.complete
+
+    challenge = s.step(negotiate)
+
+    assert isinstance(challenge, bytes)
+    assert not c.complete
+    assert not s.complete
+
+    authenticate = c.step(challenge)
+
+    assert isinstance(authenticate, bytes)
+    assert not c.complete
+    assert not s.complete
+
+    mech_list_mic = s.step(authenticate)
+
+    assert isinstance(mech_list_mic, bytes)
+    assert not c.complete
+    assert s.complete
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    mech_list_resp = c.step(mech_list_mic)
+
+    assert mech_list_resp is None
+    assert c.complete
+    assert s.complete
+    assert c.negotiated_protocol == "ntlm"
+    assert s.negotiated_protocol == "ntlm"
+
+    _message_test(c, s)
+
 
 def test_negotiate_with_raw_ntlm(ntlm_cred):
     c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="ntlm")
@@ -377,11 +445,72 @@ def test_negotiate_with_raw_ntlm(ntlm_cred):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    negotiate = c.step()
+    assert negotiate is not None
+    assert negotiate.startswith(b"NTLMSSP\x00\x01")
+    assert not c.complete
+    assert not s.complete
+
+    challenge = s.step(negotiate)
+    assert challenge is not None
+    assert challenge.startswith(b"NTLMSSP\x00\x02")
+    assert not c.complete
+    assert not s.complete
+
+    authenticate = c.step(challenge)
+    assert authenticate is not None
+    assert authenticate.startswith(b"NTLMSSP\x00\x03")
+    assert c.complete
+    assert not s.complete
+
+    final = s.step(authenticate)
+    assert final is None
+    assert c.complete
+    assert s.complete
+
+    _message_test(c, s)
+
 
 def test_negotiate_with_ntlm_hash(ntlm_cred):
     cred = spnego.NTLMHash(username=ntlm_cred[0], nt_hash=ntowfv1(ntlm_cred[1]).hex())
     c = spnego.client(cred, hostname=socket.gethostname())
     s = spnego.server()
+
+    negotiate = c.step()
+    assert negotiate is not None
+    assert b"NTLMSSP\x00\x01" in negotiate
+    assert not c.complete
+    assert not s.complete
+
+    challenge = s.step(negotiate)
+    assert challenge is not None
+    assert b"NTLMSSP\x00\x02" in challenge
+    assert not c.complete
+    assert not s.complete
+
+    authenticate = c.step(challenge)
+    assert authenticate is not None
+    assert b"NTLMSSP\x00\x03" in authenticate
+    assert not c.complete
+    assert not s.complete
+
+    mic = s.step(authenticate)
+    assert mic is not None
+    assert not c.complete
+    assert s.complete
+
+    final = c.step(mic)
+    assert final is None
+    assert c.complete
+    assert s.complete
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
 
     negotiate = c.step()
     assert negotiate is not None
@@ -483,6 +612,16 @@ def test_ntlm_auth(lm_compat_level, ntlm_cred, monkeypatch):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
 
 @pytest.mark.parametrize(
     "client_opt, server_opt",
@@ -573,6 +712,15 @@ def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+    _ntlm_test(c, s, test_session_key=test_session_key)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
 
 @pytest.mark.skipif(
     "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols(),
@@ -585,6 +733,15 @@ def test_gssapi_ntlm_auth_with_hash(ntlm_cred):
 
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    _ntlm_test(c, s, test_session_key=test_session_key)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
     _ntlm_test(c, s, test_session_key=test_session_key)
 
     assert c.client_principal is None
@@ -614,6 +771,15 @@ def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 
     # gss-ntlmssp version on CI may be too old to test the session key
     test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
+    _ntlm_test(c, s, test_session_key=test_session_key)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
     _ntlm_test(c, s, test_session_key=test_session_key)
 
     assert c.client_principal is None
@@ -656,6 +822,16 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
 
 @pytest.mark.skipif(
     "ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Test requires NTLM to be available through SSPI"
@@ -682,6 +858,16 @@ def test_sspi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
 
 def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
     ntlm_hashes = f"{lmowfv1(ntlm_cred[1]).hex()}:{ntowfv1(ntlm_cred[1]).hex()}"
@@ -693,6 +879,15 @@ def test_ntlm_with_explicit_ntlm_hash(ntlm_cred):
     assert c.get_extra_info("invalid") is None
     assert c.get_extra_info("invalid", "default") == "default"
 
+    _ntlm_test(c, s)
+
+    assert c.client_principal is None
+    assert s.client_principal == ntlm_cred[0]
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
     _ntlm_test(c, s)
 
     assert c.client_principal is None
@@ -737,6 +932,34 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
 
     with pytest.raises(SpnegoError, match="Retrieving session key"):
         _ = s.session_key
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
 
     token1 = c.step()
     assert isinstance(token1, bytes)
@@ -824,6 +1047,37 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    assert c.context_attr & spnego.ContextReq.delegate
+    assert s.context_attr & spnego.ContextReq.delegate
+
+    _message_test(c, s)
+
 
 @pytest.mark.parametrize(
     "protocol, set_principal",
@@ -851,6 +1105,34 @@ def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
     assert not c.complete
     assert not s.complete
     assert s.negotiated_protocol is None
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
 
     token1 = c.step()
     assert isinstance(token1, bytes)
@@ -933,6 +1215,34 @@ def test_kerberos_auth_ccache(protocol, explicit_user, kerb_cred, monkeypatch):
 
     _message_test(c, s)
 
+    c = c.new_context()
+    s = s.new_context()
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    _message_test(c, s)
+
 
 @pytest.mark.parametrize(
     "protocol, explicit_user",
@@ -958,6 +1268,34 @@ def test_kerberos_auth_env_cache(protocol, explicit_user, kerb_cred):
     assert not c.complete
     assert not s.complete
     assert s.negotiated_protocol is None
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol is None
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
 
     token1 = c.step()
     assert isinstance(token1, bytes)
@@ -1045,10 +1383,83 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert c.get_extra_info("client_credential") is None
     assert c.negotiated_protocol is None
 
-    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
-    # For NTLM the auth context will be present after the first exchange of NTLM tokens.
     server_tls_token = None
-    while c._auth_context is None:  # type: ignore[attr-defined]
+    while c.get_extra_info("auth_stage") == "TLS Handshake":
+        client_tls_token = c.step(server_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+        server_tls_token = s.step(client_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+    ntlm3_pub_key = c.step(server_tls_token)
+    assert c.get_extra_info("auth_stage") == "Public key exchange"
+    assert s.get_extra_info("auth_stage").startswith("Authentication")
+    assert not c.complete
+    assert not s.complete
+
+    server_pub_key = s.step(ntlm3_pub_key)
+    assert c.get_extra_info("auth_stage") == "Public key exchange"
+    assert s.get_extra_info("auth_stage") == "Public key exchange"
+    assert not c.complete
+    assert not s.complete
+
+    credential = c.step(server_pub_key)
+    assert c.get_extra_info("auth_stage") == "Credential exchange"
+    assert s.get_extra_info("auth_stage") == "Public key exchange"
+    assert c.complete
+    assert not s.complete
+
+    final_token = s.step(credential)
+    assert c.get_extra_info("auth_stage") == "Credential exchange"
+    assert s.get_extra_info("auth_stage") == "Credential exchange"
+    assert final_token is None
+    assert c.complete
+    assert s.complete
+
+    assert c.negotiated_protocol == "ntlm"
+    assert s.negotiated_protocol == "ntlm"
+
+    domain, username = ntlm_cred[0].split("\\")
+
+    assert c.get_extra_info("client_credential") is None
+    client_credential = s.get_extra_info("client_credential")
+    assert isinstance(client_credential, TSPasswordCreds)
+    assert client_credential.username == username
+    assert client_credential.domain_name == domain
+    assert client_credential.password == ntlm_cred[1]
+
+    assert c.get_extra_info("protocol_version") == version
+    assert s.get_extra_info("protocol_version") == version
+
+    _message_test(c, s)
+
+    plaintext = os.urandom(16)
+    c_winrm_result = c.wrap_winrm(plaintext)
+    assert isinstance(c_winrm_result, WinRMWrapResult)
+    assert isinstance(c_winrm_result.header, bytes)
+    assert isinstance(c_winrm_result.data, bytes)
+    assert isinstance(c_winrm_result.padding_length, int)
+
+    s_winrm_result = s.unwrap_winrm(c_winrm_result.header, c_winrm_result.data)
+    assert s_winrm_result == plaintext
+
+    plaintext = os.urandom(16)
+    s_winrm_result = s.wrap_winrm(plaintext)
+    assert isinstance(s_winrm_result, WinRMWrapResult)
+    assert isinstance(s_winrm_result.header, bytes)
+    assert isinstance(s_winrm_result.data, bytes)
+    assert isinstance(s_winrm_result.padding_length, int)
+
+    c_winrm_result = c.unwrap_winrm(s_winrm_result.header, s_winrm_result.data)
+    assert c_winrm_result == plaintext
+
+    c = c.new_context()
+    s = s.new_context()
+
+    server_tls_token = None
+    while c.get_extra_info("auth_stage") == "TLS Handshake":
         client_tls_token = c.step(server_tls_token)
         assert not c.complete
         assert not s.complete
@@ -1161,7 +1572,65 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     assert isinstance(s.get_extra_info("ssl_object"), ssl.SSLObject)
 
     server_token = None
-    while not c_kerb_context.complete:
+    while c.get_extra_info("auth_stage") != "Public key exchange":
+        client_token = c.step(server_token)
+        assert not c.complete
+        assert not s.complete
+
+        server_token = s.step(client_token)
+        assert not c.complete
+        assert not s.complete
+
+    assert s_kerb_context.complete
+
+    credential = c.step(server_token)
+    assert c.complete
+    assert not s.complete
+
+    final_token = s.step(credential)
+    assert final_token is None
+    assert c.complete
+    assert s.complete
+
+    assert c.negotiated_protocol == "kerberos"
+    assert s.negotiated_protocol == "kerberos"
+    assert c_kerb_context.negotiated_protocol == "kerberos"
+    assert s_kerb_context.negotiated_protocol == "kerberos"
+
+    assert s.client_principal == kerb_cred.user_princ
+    assert c.get_extra_info("client_credential") is None
+    client_credential = s.get_extra_info("client_credential")
+    assert isinstance(client_credential, TSPasswordCreds)
+    assert client_credential.username == kerb_cred.user_princ
+    assert client_credential.password == kerb_cred.password("user")
+
+    _message_test(c, s)
+
+    plaintext = os.urandom(16)
+    c_winrm_result = c.wrap_winrm(plaintext)
+    assert isinstance(c_winrm_result, WinRMWrapResult)
+    assert isinstance(c_winrm_result.header, bytes)
+    assert isinstance(c_winrm_result.data, bytes)
+    assert isinstance(c_winrm_result.padding_length, int)
+
+    s_winrm_result = s.unwrap_winrm(c_winrm_result.header, c_winrm_result.data)
+    assert s_winrm_result == plaintext
+
+    plaintext = os.urandom(16)
+    s_winrm_result = s.wrap_winrm(plaintext)
+    assert isinstance(s_winrm_result, WinRMWrapResult)
+    assert isinstance(s_winrm_result.header, bytes)
+    assert isinstance(s_winrm_result.data, bytes)
+    assert isinstance(s_winrm_result.padding_length, int)
+
+    c_winrm_result = c.unwrap_winrm(s_winrm_result.header, s_winrm_result.data)
+    assert c_winrm_result == plaintext
+
+    c = c.new_context()
+    s = s.new_context()
+
+    server_token = None
+    while c.get_extra_info("auth_stage") != "Public key exchange":
         client_token = c.step(server_token)
         assert not c.complete
         assert not s.complete
@@ -1228,10 +1697,57 @@ def test_credssp_multiple_creds(ntlm_cred):
     assert c.negotiated_protocol is None
     assert c.get_extra_info("client_credential") is None
 
-    # The TLS handshake can differ based on the protocol selected, keep on looping until we see the auth_context set up
-    # For NTLM the auth context will be present after the first exchange of NTLM tokens.
     server_tls_token = None
-    while c._auth_context is None:  # type: ignore[attr-defined]
+    while c.get_extra_info("auth_stage") == "TLS Handshake":
+        client_tls_token = c.step(server_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+        server_tls_token = s.step(client_tls_token)
+        assert not c.complete
+        assert not s.complete
+
+    ntlm3_pub_key = c.step(server_tls_token)
+    assert not c.complete
+    assert not s.complete
+
+    server_pub_key = s.step(ntlm3_pub_key)
+    assert not c.complete
+    assert not s.complete
+
+    credential = c.step(server_pub_key)
+    assert c.complete
+    assert not s.complete
+
+    final_token = s.step(credential)
+    assert final_token is None
+    assert c.complete
+    assert s.complete
+
+    assert c.negotiated_protocol == "ntlm"
+    assert s.negotiated_protocol == "ntlm"
+
+    # Matches the principal authenticated with the Negotiate phase - NTLMHash
+    assert s.client_principal == ntlm_cred[0]
+
+    # Matches the Password cred passed in, will not use the NTLMHash details as it wasn't enought for CredSSP
+    client_credential = s.get_extra_info("client_credential")
+    assert isinstance(client_credential, TSPasswordCreds)
+    assert client_credential.username == "delegate"
+    assert client_credential.domain_name == ""
+    assert client_credential.password == "password"
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
+
+    assert c.client_principal is None
+    assert c.negotiated_protocol is None
+    assert c.get_extra_info("client_credential") is None
+
+    server_tls_token = None
+    while c.get_extra_info("auth_stage") == "TLS Handshake":
         client_tls_token = c.step(server_tls_token)
         assert not c.complete
         assert not s.complete
