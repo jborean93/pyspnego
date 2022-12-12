@@ -4,18 +4,11 @@
 import typing
 
 from spnego._context import ContextProxy, ContextReq
-from spnego._credential import (
-    Credential,
-    KerberosKeytab,
-    NTLMHash,
-    Password,
-    unify_credentials,
-)
+from spnego._credential import Credential, NTLMHash, unify_credentials
 from spnego._credssp import CredSSPProxy
 from spnego._gss import GSSAPIProxy
 from spnego._negotiate import NegotiateProxy
 from spnego._ntlm import NTLMProxy
-from spnego._ntlm_raw.crypto import is_ntlm_hash
 from spnego._sspi import SSPIProxy
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import NegotiateOptions
@@ -49,32 +42,12 @@ def _new_context(
     use_specified = options & use_flags != 0
 
     # Filter protocols that aren't compatible with the credentials provided.
-    forwardable = bool(context_req & ContextReq.delegate or context_req & ContextReq.delegate_policy)
-    gssapi_remove = set()
     sspi_remove = set()
     for cred in credentials:
-        # GSSAPI negotiate cannot get both a kerb + NTLM cred separately unless it's an explicit password. If
-        # delegation is requested even explicit password creds cannot be used. The only way forward is to use our
-        # negotiate proxy that wraps GSSAPI using the sub protocol.
-        if (cred.supported_protocols in [["kerberos"], ["ntlm"]]) or (
-            forwardable and isinstance(cred, (Password, KerberosKeytab))
-        ):
-            gssapi_remove.add("negotiate")
-
-        # NTLMHash cannot be used with SSPI and only works on versions of gss-ntlmssp v1.0.0 or newer. The code falls
-        # back to using NTLMProxy if this credential is present.
-        # gss-ntlmssp fix https://github.com/gssapi/gss-ntlmssp/commit/8e99bcbb705742c56320d901c3acbd50df1ee947
-        # but needs more time to filter into distro packages.
+        # NTLMHash cannot be used with SSPI. The code falls back to using NTLMProxy if this credential is present.
         if isinstance(cred, NTLMHash):
-            gssapi_remove.add("negotiate")
-            gssapi_remove.add("ntlm")
             sspi_remove.add("negotiate")
             sspi_remove.add("ntlm")
-
-    if gssapi_remove:
-        for protocol in gssapi_remove:
-            if protocol in gssapi_protocols:
-                gssapi_protocols.remove(protocol)
 
     if sspi_remove:
         for protocol in sspi_remove:
@@ -87,12 +60,6 @@ def _new_context(
     # Negotiate auth is used in the CredSSP authentication process.
     if proto == "credssp":
         proxy = CredSSPProxy
-
-    # If the procotol has been explicitly set to NTLM and an NTLM hash has been provided as the password, do not favour
-    # the platform implementations. Instead, use the Python NTLMProxy implementation, since SSPI/GSSAPI so not allow
-    # authentication using hashes.
-    elif proto == "ntlm" and password is not None and is_ntlm_hash(password):
-        proxy = NTLMProxy
 
     elif options & NegotiateOptions.use_sspi or (not use_specified and proto in sspi_protocols):
         proxy = SSPIProxy

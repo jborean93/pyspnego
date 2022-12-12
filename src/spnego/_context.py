@@ -274,11 +274,6 @@ class ContextProxy(metaclass=abc.ABCMeta):
         # Whether the context is wrapped inside another context - set by NegotiateProxy.
         self._is_wrapped = False
 
-        if options & NegotiateOptions.negotiate_kerberos and (
-            self.protocol == "negotiate" and "kerberos" not in self.available_protocols()
-        ):
-            raise FeatureMissingError(NegotiateOptions.negotiate_kerberos)
-
         if options & NegotiateOptions.wrapping_iov and not self.iov_available():
             raise FeatureMissingError(NegotiateOptions.wrapping_iov)
 

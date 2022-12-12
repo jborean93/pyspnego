@@ -61,24 +61,6 @@ pip install pyspnego[kerberos]
 
 Kerberos also needs to be configured to talk to the domain but that is outside the scope of this page.
 
-While NTLM auth works out of the box, it is recommended to install the
-[gss-ntlmssp](https://github.com/gssapi/gss-ntlmssp) library for full Negotiate support. This can be done with
-
-```bash
-# Debian/Ubuntu
-apt-get install gss-ntlmssp
-
-# Centos/RHEL
-yum install gssntlmssp
-
-# Fedora
-dnf install gssntlmssp
-
-# Arch Linux
-# AUR package https://aur.archlinux.org/packages/gss-ntlmssp/
-```
-
-
 ## How to Use
 
 See [the examples section](docs/examples) for examples on how to use the authentication side of the library.

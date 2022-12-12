@@ -291,43 +291,16 @@ def test_negotiate_with_kerberos(kerb_cred):
     _message_test(c, s)
 
 
-@pytest.mark.parametrize(
-    "client_opt, server_opt",
-    [
-        (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_negotiate),
-        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_negotiate),
-        (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_gssapi),
-        # Cannot seem to force SSPI to wrap NTLM solely in SPNEGO, skip this test for now.
-        # (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_negotiate),
-        (spnego.NegotiateOptions.use_negotiate, spnego.NegotiateOptions.use_sspi),
-    ],
-)
-def test_negotiate_through_python_ntlm(client_opt, server_opt, ntlm_cred, monkeypatch):
-    if client_opt & spnego.NegotiateOptions.use_negotiate and server_opt & spnego.NegotiateOptions.use_negotiate:
-        # Make sure we pretend that the system libraries aren't available
-        def available_protocols(*args, **kwargs):
-            return []
-
-        monkeypatch.setattr(spnego._gss, "_available_protocols", available_protocols)
-        monkeypatch.setattr(spnego._sspi, "_available_protocols", available_protocols)
-
-    elif client_opt & spnego.NegotiateOptions.use_gssapi or server_opt & spnego.NegotiateOptions.use_gssapi:
-        if "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols():
-            pytest.skip("Test requires NTLM to be available through GSSAPI")
-
-    elif client_opt & spnego.NegotiateOptions.use_sspi or server_opt & spnego.NegotiateOptions.use_sspi:
-        if "ntlm" not in spnego._sspi.SSPIProxy.available_protocols():
-            pytest.skip("Test requires NTLM to be available through SSPI")
-
+def test_negotiate_through_python_ntlm(ntlm_cred):
     # Build the initial context and assert the defaults.
     c = spnego.client(
         ntlm_cred[0],
         ntlm_cred[1],
         protocol="negotiate",
-        options=client_opt,
         context_req=spnego.ContextReq.delegate | spnego.ContextReq.default,
+        options=spnego.NegotiateOptions.use_negotiate,
     )
-    s = spnego.server(protocol="negotiate", options=server_opt)
+    s = spnego.server(protocol="negotiate")
 
     assert c.get_extra_info("invalid") is None
     assert c.get_extra_info("invalid", "default") == "default"
@@ -675,120 +648,6 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
 
 
 @pytest.mark.skipif(
-    "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols(),
-    reason="Test requires NTLM to be available through GSSAPI",
-)
-@pytest.mark.parametrize(
-    "client_opt, server_opt, cbt",
-    [
-        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, False),
-        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_gssapi, True),
-        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, False),
-        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_gssapi, True),
-        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, False),
-        (spnego.NegotiateOptions.use_gssapi, spnego.NegotiateOptions.use_ntlm, True),
-    ],
-)
-def test_gssapi_ntlm_auth(client_opt, server_opt, ntlm_cred, cbt):
-    # Build the initial context and assert the defaults.
-    kwargs: typing.Dict[str, typing.Any] = {
-        "protocol": "ntlm",
-    }
-    if cbt:
-        kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
-
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], options=client_opt, **kwargs)
-    s = spnego.server(options=server_opt, **kwargs)
-
-    assert c.get_extra_info("invalid") is None
-    assert c.get_extra_info("invalid", "default") == "default"
-
-    # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
-    _ntlm_test(c, s, test_session_key=test_session_key)
-
-    assert c.client_principal is None
-    assert s.client_principal == ntlm_cred[0]
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-    _ntlm_test(c, s, test_session_key=test_session_key)
-
-    assert c.client_principal is None
-    assert s.client_principal == ntlm_cred[0]
-
-    _message_test(c, s)
-
-
-@pytest.mark.skipif(
-    "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols(),
-    reason="Test requires NTLM to be available through GSSAPI",
-)
-def test_gssapi_ntlm_auth_with_hash(ntlm_cred):
-    cred = spnego.NTLMHash(username=ntlm_cred[0], nt_hash=ntowfv1(ntlm_cred[1]).hex())
-    c = spnego.client(cred, protocol="ntlm")
-    s = spnego.server(protocol="ntlm", options=spnego.NegotiateOptions.use_ntlm)
-
-    # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
-    _ntlm_test(c, s, test_session_key=test_session_key)
-
-    assert c.client_principal is None
-    assert s.client_principal == ntlm_cred[0]
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-    _ntlm_test(c, s, test_session_key=test_session_key)
-
-    assert c.client_principal is None
-    assert s.client_principal == ntlm_cred[0]
-
-    _message_test(c, s)
-
-
-@pytest.mark.skipif(
-    "ntlm" not in spnego._gss.GSSAPIProxy.available_protocols(),
-    reason="Test requires NTLM to be available through GSSAPI",
-)
-@pytest.mark.parametrize("lm_compat_level", [0, 1, 2, 3])
-def test_gssapi_ntlm_lm_compat(lm_compat_level, ntlm_cred, monkeypatch):
-    monkeypatch.setenv("LM_COMPAT_LEVEL", str(lm_compat_level))
-    c = spnego.client(
-        ntlm_cred[0],
-        ntlm_cred[1],
-        hostname=socket.gethostname(),
-        protocol="ntlm",
-        options=spnego.NegotiateOptions.use_ntlm,
-    )
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="ntlm")
-
-    assert c.get_extra_info("invalid") is None
-    assert c.get_extra_info("invalid", "default") == "default"
-
-    # gss-ntlmssp version on CI may be too old to test the session key
-    test_session_key = "ntlm" in spnego._gss.GSSAPIProxy.available_protocols(spnego.NegotiateOptions.session_key)
-    _ntlm_test(c, s, test_session_key=test_session_key)
-
-    assert c.client_principal is None
-    assert s.client_principal == ntlm_cred[0]
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-    _ntlm_test(c, s, test_session_key=test_session_key)
-
-    assert c.client_principal is None
-    assert s.client_principal == ntlm_cred[0]
-
-    _message_test(c, s)
-
-
-@pytest.mark.skipif(
     "ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Test requires NTLM to be available through SSPI"
 )
 @pytest.mark.parametrize(
@@ -925,7 +784,7 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     assert c.get_extra_info("invalid", "default") == "default"
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    assert s.negotiated_protocol == "kerberos"
 
     with pytest.raises(SpnegoError, match="Retrieving session key"):
         _ = c.session_key
@@ -937,7 +796,7 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -965,7 +824,7 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1011,7 +870,7 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
 
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    assert s.negotiated_protocol == "kerberos"
 
     with pytest.raises(SpnegoError, match="Retrieving session key"):
         _ = c.session_key
@@ -1023,7 +882,7 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1054,7 +913,7 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1104,13 +963,19 @@ def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
 
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token1 = c.step()
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1138,7 +1003,10 @@ def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1188,13 +1056,20 @@ def test_kerberos_auth_ccache(protocol, explicit_user, kerb_cred, monkeypatch):
 
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token1 = c.step()
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
+    # assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1222,7 +1097,10 @@ def test_kerberos_auth_ccache(protocol, explicit_user, kerb_cred, monkeypatch):
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1267,13 +1145,19 @@ def test_kerberos_auth_env_cache(protocol, explicit_user, kerb_cred):
 
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token1 = c.step()
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)
@@ -1301,7 +1185,94 @@ def test_kerberos_auth_env_cache(protocol, explicit_user, kerb_cred):
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
-    assert s.negotiated_protocol is None
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    _message_test(c, s)
+
+
+@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
+def test_kerberos_auth_channel_bindings(protocol, kerb_cred):
+    if kerb_cred.provider == "heimdal":
+        pytest.skip("Environment problem with Heimdal - skip")
+
+    cbt = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
+
+    c = spnego.client(
+        kerb_cred.user_princ,
+        kerb_cred.password("user"),
+        hostname=socket.getfqdn(),
+        protocol=protocol,
+        channel_bindings=cbt,
+    )
+    s = spnego.server(protocol=protocol, channel_bindings=cbt)
+
+    assert not c.complete
+    assert not s.complete
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
+    # assert s.negotiated_protocol == "kerberos"
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    if protocol == "negotiate":
+        assert s.negotiated_protocol is None
+    else:
+        assert s.negotiated_protocol == "kerberos"
 
     token2 = s.step(token1)
     assert isinstance(token2, bytes)

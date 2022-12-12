@@ -100,20 +100,6 @@ def test_no_gssapi_library(monkeypatch):
 
 
 @pytest.mark.skipif(not spnego._gss.HAS_GSSAPI, reason="Requires the gssapi library to be installed for testing")
-def test_gssapi_no_kerberos(monkeypatch):
-    def available_protocols(*args, **kwargs):
-        return ["negotiate", "ntlm"]
-
-    monkeypatch.setattr(spnego._gss, "HAS_GSSAPI", True)
-    monkeypatch.setattr(spnego._gss, "_available_protocols", available_protocols)
-
-    with pytest.raises(
-        FeatureMissingError, match="The Python gssapi library is not installed so Kerberos cannot be " "negotiated."
-    ):
-        spnego._gss.GSSAPIProxy(None, None, options=spnego.NegotiateOptions.negotiate_kerberos)
-
-
-@pytest.mark.skipif(not spnego._gss.HAS_GSSAPI, reason="Requires the gssapi library to be installed for testing")
 def test_gssapi_no_valid_acceptor_cred():
     server_creds: typing.List[typing.Tuple[spnego.Credential, str]] = [
         (spnego.KerberosCCache("ccache"), "kerberos"),
