@@ -3,24 +3,30 @@
   gather_facts: no
   tasks:
   - name: get network connection for private adapter
-    win_shell: |
-      foreach ($instance in (Get-CimInstance -ClassName Win32_NetworkAdapter -Filter "Netenabled='True'")) {
-          $instance_config = Get-CimInstance -ClassName WIn32_NetworkAdapterConfiguration -Filter "Index = '$($instance.Index)'"
-          if ($instance_config.IPAddress -contains "{{ansible_host}}") {
-              $instance.NetConnectionID
-          }
-      }
-    changed_when: no
+    ansible.windows.win_powershell:
+      parameters:
+        IPAddress: '{{ ansible_host }}'
+      script: |
+        param($IPAddress)
+
+        $Ansible.Changed = $false
+
+        foreach ($instance in (Get-CimInstance -ClassName Win32_NetworkAdapter -Filter "Netenabled='True'")) {
+            $config = Get-CimInstance -ClassName WIn32_NetworkAdapterConfiguration -Filter "Index = '$($instance.Index)'"
+            if ($config.IPAddress -contains $IPAddress) {
+                $instance.NetConnectionID
+            }
+        }
     register: network_connection_name_raw
 
   - name: fail if we didn't get a network connection name
     fail:
       msg: Failed to get the Windows network connection name
-    when: network_connection_name_raw.stdout_lines | count != 1
+    when: network_connection_name_raw.output | count != 1
 
   - name: set fact of network connection name
     set_fact:
-      network_connection_name: '{{ network_connection_name_raw.stdout | trim }}'
+      network_connection_name: '{{ network_connection_name_raw.output[0] }}'
 
 - name: create Domain Controller
   hosts: win_controller
@@ -52,11 +58,6 @@
       groups:
       - Domain Admins
       state: present
-    register: domain_user_result
-    # ADWS may not be online after first reboot, need to keep on retrying
-    retries: 30
-    delay: 15
-    until: domain_user_result is successful
 
   - name: test out domain user that was created
     win_whoami:
@@ -86,18 +87,22 @@
     register: domain_join_result
 
   - name: trust hosts for delegation in AD
-    win_shell: |
-      $computerName = '{{ inventory_hostname }}'
-      $actual = (Get-ADComputer -Identity $computerName -Property TrustedForDelegation).TrustedForDelegation
-      if ($actual) {
-          $false
-      } else {
-          Set-ADComputer -Identity $computerName -TrustedForDelegation $true
-          $true
-      }
+    ansible.windows.win_powershell:
+      parameters:
+        ComputerName: '{{ inventory_hostname }}'
+      script: |
+        param($ComputerName)
+
+        $ErrorActionPreference = 'Stop'
+        $Ansible.Changed = $false
+
+
+        $actual = (Get-ADComputer -Identity $ComputerName -Property TrustedForDelegation).TrustedForDelegation
+        if (-not $actual) {
+            Set-ADComputer -Identity $ComputerName -TrustedForDelegation $true
+            $Ansible.Changed = $true
+        }
     when: inventory_hostname == 'SERVER2022'  # We only want to have this hosted with delegation for testing
-    register: delegate_actual
-    changed_when: delegate_actual.stdout | trim | bool
     delegate_to: '{{ groups["win_controller"][0] }}'
 
   - name: reboot host to finalise domain join
@@ -113,6 +118,19 @@
     vars:
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
+
+# Use the following to get a snaphot of programs installed and their product_ids
+# 'SOFTWARE', 'SOFTWARE\Wow6432Node' | ForEach-Object {
+#       $getParams = @{
+#           Path = "HKLM:\$_\Microsoft\Windows\CurrentVersion\Uninstall\*"
+#           Name = 'DisplayName'
+#           ErrorAction = 'SilentlyContinue'
+#       }
+#       Get-ItemProperty @getParams | Select-Object -Property @(
+#           @{ N = 'Name'; E = { $_.DisplayName } },
+#           @{ N = 'AppId'; E = { $_.PSChildName } }
+#       )
+#   } | Where-Object { $_.Name -like 'Python * Standard Library *' }
 
 - name: set up Python interpreters on test Windows host
   hosts: SERVER2012R2
@@ -143,11 +161,17 @@
     - url: https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe
       product_id: '{90A30DAB-6FD8-4CF8-BB8B-C0DB21C69F20}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.10.6/python-3.10.6.exe
-      product_id: '{8B822DC2-4E2B-471A-B26C-6249A722DDB9}'
+    - url: https://www.python.org/ftp/python/3.10.9/python-3.10.9.exe
+      product_id: '{335CD0FB-50DC-44D2-80E3-39749356F8D6}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.10.6/python-3.10.6-amd64.exe
-      product_id: '{C3A057F3-209B-4244-9697-D69031B81AAB}'
+    - url: https://www.python.org/ftp/python/3.10.9/python-3.10.9-amd64.exe
+      product_id: '{0CBB496F-1D15-42F1-AA45-C01C95196EC8}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.11.1/python-3.11.1.exe
+      product_id: '{E5CB3216-2C88-4E4B-ADCA-56E9BAEE7404}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.11.1/python-3.11.1-amd64.exe
+      product_id: '{21EEFB31-6A96-4CAE-9A3B-B7FD6374C155}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
   - name: ensure virtualenv package is installed for each Python install
@@ -220,28 +244,28 @@
   gather_facts: no
   tasks:
   - name: set WinRM Cbt value to Strict
-    win_shell: |
-      $val = (Get-Item -LiteralPath WSMan:\localhost\Service\Auth\CbtHardeningLevel).Value
-      if ($val -eq 'Strict') {
-          $false
-      } else {
-          Set-Item -LiteralPath WSMan:\localhost\Service\Auth\CbtHardeningLevel -Value Strict
-          $true
-      }
-    register: cbt_res
-    changed_when: cbt_res.stdout | trim | bool
+    ansible.windows.win_powershell:
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $Ansible.Changed = $false
+
+        $val = (Get-Item -LiteralPath WSMan:\localhost\Service\Auth\CbtHardeningLevel).Value
+        if ($val -ne 'Strict') {
+            Set-Item -LiteralPath WSMan:\localhost\Service\Auth\CbtHardeningLevel -Value Strict
+            $Ansible.Changed = $true
+        }
 
   - name: enable WSMan CredSSP Server
-    win_shell: |
-      $val = (Get-Item -LiteralPath WSMan:\localhost\Service\Auth\CredSSP).Value
-      if ($val -eq 'true') {
-          $false
-      } else {
-          $null = Enable-WSManCredSSP -Role Server
-          $true
-      }
-    register: credssp_res
-    changed_when: credssp_res.stdout | trim | bool
+    ansible.windows.win_powershell:
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $Ansible.Changed = $false
+
+        $val = (Get-Item -LiteralPath WSMan:\localhost\Service\Auth\CredSSP).Value
+        if ($val -ne 'true') {
+            $null = Enable-WSManCredSSP -Role Server
+            $Ansible.Changed = $true
+        }
 
   - name: allow SMB traffic in
     win_firewall_rule:

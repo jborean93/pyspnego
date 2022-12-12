@@ -17,7 +17,7 @@ WinError = exceptions.WinError
     [
         (
             exceptions.NegotiateOptions.negotiate_kerberos,
-            "The Python gssapi library is not installed so Kerberos cannot " "be negotiated.",
+            "The Python gssapi library is not installed so Kerberos cannot be negotiated.",
         ),
         (
             exceptions.NegotiateOptions.wrapping_iov,
@@ -26,7 +26,7 @@ WinError = exceptions.WinError
         ),
         (
             exceptions.NegotiateOptions.wrapping_winrm,
-            "The system is missing the GSSAPI IOV extension headers required " "for WinRM encryption with Kerberos.",
+            "The system is missing the GSSAPI IOV extension headers required for WinRM encryption with Kerberos.",
         ),
         (exceptions.NegotiateOptions.session_key, "The protocol selected does not support getting the session key."),
     ],
