@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 - TBD
+## 0.7.0 - 2022-12-19
 
 * Added support for decoding the following TLS payloads with `python -m spnego --token ...`
   * Client Hello
