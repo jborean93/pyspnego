@@ -9,6 +9,7 @@ import os
 import pytest
 import re
 import requests
+import sansldap
 import socket
 import spnego
 import spnego.channel_bindings
@@ -33,6 +34,8 @@ USERNAME = '{{ domain_upn }}'
 PASSWORD = '{{ domain_password }}'
 HOSTNAME = socket.gethostname()
 HOST_FQDN = '%s.{{ domain_name }}' % HOSTNAME
+WIN_DC = '{{ groups['win_controller'][0] | lower }}.{{ domain_name | lower }}'
+WIN_DC_IP = socket.gethostbyname(WIN_DC)
 WIN_SERVER_UNTRUSTED = '{{ groups["win_children"][0] }}.{{ domain_name }}'  # Not trusted for delegation in AD
 WIN_SERVER_TRUSTED = '{{ groups["win_children"][1] }}.{{ domain_name }}'  # Trusted for delegation in AD
 WIN_SERVER_TRUSTED_IP = socket.gethostbyname(WIN_SERVER_TRUSTED)
@@ -840,3 +843,72 @@ def test_smb_auth():
 
     finally:
         s.close()
+
+
+@pytest.mark.parametrize('protocol', ["kerberos", "negotiate", "negotiate-ntlm", "ntlm"])
+def test_ldap_no_integrity(protocol: str) -> None:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_default_certs()
+
+    # Connecting over LDAPS will allow us to test out no_integrity works as
+    # MS LDAP doesn't allow integrity/confidentiality over an existing LDAPS
+    # connection.
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0) as sock:
+        sock.settimeout(10)
+
+        with context.wrap_socket(sock, server_hostname=WIN_DC) as ssock:
+            ssock.connect((WIN_DC, 636))
+
+            auth_kwargs = {
+                "service": "ldap",
+                "context_req": spnego.ContextReq.mutual_auth | spnego.ContextReq.no_integrity,
+            }
+            if protocol == "negotiate-ntlm":
+                auth_kwargs["hostname"] = WIN_DC_IP
+                auth_kwargs["protocol"] = "negotiate"
+            else:
+                auth_kwargs["hostname"] = WIN_DC
+                auth_kwargs["protocol"] = protocol
+
+            if os.name != 'nt' or IS_SYSTEM:
+                c = spnego.client(
+                    USERNAME,
+                    PASSWORD,
+                    **auth_kwargs,
+                )
+
+            else:
+                c = spnego.client(**auth_kwargs)
+
+            ldap = sansldap.LDAPClient()
+
+            in_token = None
+            while not c.complete:
+                token = c.step(in_token=in_token)
+                if not token:
+                    break
+
+                ldap.bind_sasl("GSS-SPNEGO", cred=token)
+                ssock.write(ldap.data_to_send())
+
+                msg = ldap.receive(ssock.recv(4096))[0]
+                assert isinstance(msg, sansldap.BindResponse)
+                if msg.result.result_code not in [
+                    sansldap.LDAPResultCode.SUCCESS,
+                    sansldap.LDAPResultCode.SASL_BIND_IN_PROGRESS
+                ]:
+                    raise Exception(f"Failed to bind: {msg.result.diagnostics_message}")
+
+                in_token = msg.server_sasl_creds
+
+            if msg.result.result_code != sansldap.LDAPResultCode.SUCCESS:
+                raise Exception(f"Failed to bind {msg.result.result_code.name}: {msg.result.diagnostics_message}")
+
+            # LDAP Whoami
+            ldap.extended_request("1.3.6.1.4.1.4203.1.11.3")
+            ssock.write(ldap.data_to_send())
+
+            msg = ldap.receive(ssock.recv(4096))[0]
+            assert isinstance(msg, sansldap.ExtendedResponse)
+            assert msg.value.startswith(b"u:SPNEGO\\")

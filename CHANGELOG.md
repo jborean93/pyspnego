@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 - TBD
+
+* Added the `spnego.ContextReq.no_integrity` flag to disable integrity/confidentiality on Kerberos/Negotiate contexts
+  * This is used by authentication contexts that need to disable integrity/confidentiality explicitly
+  * An example would be the LDAP SASL `GSS-SPNEGO` where the context flags control the SSF flags
+* Added optional kwargs to `step()` on a security context `channel_bindings`
+  * This can be used to supply the channel bindings when performing a context step rather than when creating the context
+
 ## 0.7.0 - 2022-12-19
 
 * Added support for decoding the following TLS payloads with `python -m spnego --token ...`

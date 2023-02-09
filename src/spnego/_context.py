@@ -127,6 +127,10 @@ class ContextReq(enum.IntFlag):
     # Requires newer python-gssapi version to support https://github.com/pythongssapi/python-gssapi/pull/218
     delegate_policy = 0x00080000
 
+    # Special flag that disables integrity/confidentiality on Kerberos/Negotiate
+    # This should not be set with integrity or confidentiality.
+    no_integrity = 0x10000000
+
     # mutual_auth | replay_detect | sequence_detect | confidentiality | integrity
     default = 0x00000002 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020
 
@@ -404,7 +408,12 @@ class ContextProxy(metaclass=abc.ABCMeta):
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
+    def step(
+        self,
+        in_token: typing.Optional[bytes] = None,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> typing.Optional[bytes]:
         """Performs a negotiation step.
 
         This method performs a negotiation step and processes/generates a token. This token should be then sent to the
@@ -420,6 +429,8 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         Args:
             in_token: The input token to process (or None to process no input token).
+            channel_bindings: Optional channel bindings ot use in this step. Will take priority over channel bindings
+                set in the context if both are specified.
 
         Returns:
             Optional[bytes]: The output token (or None if no output token is generated.

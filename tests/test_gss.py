@@ -11,7 +11,7 @@ import pytest
 import spnego
 import spnego._gss
 import spnego.iov
-from spnego.exceptions import FeatureMissingError, InvalidCredentialError
+from spnego.exceptions import InvalidCredentialError, NoContextError
 
 
 def test_gss_sasl_description_fail(mocker, monkeypatch):
@@ -58,6 +58,62 @@ def test_build_iov_list(kerb_cred):
     assert actual[3] == (spnego.iov.BufferType.header, True, None)
     assert actual[4] == (spnego.iov.BufferType.stream, False, None)
     assert actual[5] == (spnego.iov.BufferType.data, False, b"\x02")
+
+
+def test_gssapi_wrap_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        c.wrap(b"data")
+
+
+def test_gssapi_wrap_iov_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        c.wrap_iov([])
+
+
+def test_gssapi_wrap_winrm_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        c.wrap_winrm(b"data")
+
+
+def test_gssapi_unwrap_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        c.unwrap(b"data")
+
+
+def test_gssapi_unwrap_iov_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        c.unwrap_iov([])
+
+
+def test_gssapi_unwrap_winrm_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        c.unwrap_winrm(b"header", b"data")
+
+
+def test_gssapi_sign_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot sign until context has been established"):
+        c.sign(b"data")
+
+
+def test_gssapi_verify_no_context(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot verify until context has been established"):
+        c.verify(b"data", b"mic")
 
 
 def test_build_iov_list_invalid_tuple(kerb_cred):

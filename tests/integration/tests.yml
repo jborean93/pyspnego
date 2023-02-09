@@ -5,6 +5,13 @@
   - windows
 
   tasks:
+  - name: template out tests
+    win_template:
+      src: test_integration.py.tmpl
+      dest: C:\temp\test_integration.py
+      block_start_string: '{!!'
+      block_end_string: '!!}'
+
   - name: run integration tests as a normal user account
     win_command: '"{{ python_venv_path }}\{{ item | win_basename }}\Scripts\python.exe" -m pytest C:\temp\test_integration.py -v'
     with_items: '{{ python_interpreters }}'
@@ -28,6 +35,13 @@
   - linux
 
   tasks:
+  - name: template out tests
+    template:
+      src: test_integration.py.tmpl
+      dest: ~/test_integration.py
+      block_start_string: '{!!'
+      block_end_string: '!!}'
+
   - name: run integration tests
     command: '"{{ python_venv_path }}/{{ item | basename }}/bin/python" -m pytest ~/test_integration.py -v --forked'
     with_items: '{{ python_interpreters }}'

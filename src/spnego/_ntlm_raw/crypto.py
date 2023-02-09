@@ -506,7 +506,7 @@ def sealkey(flags: int, session_key: bytes, usage: str) -> bytes:
         return session_key
 
 
-def signkey(flags: int, session_key: bytes, usage: str) -> typing.Optional[bytes]:
+def signkey(flags: int, session_key: bytes, usage: str) -> bytes:
     """NTLM SIGNKEY function.
 
     The MS-NLMP `SIGNKEY`_ function used to generate the signing keys for a security context.
@@ -543,7 +543,7 @@ def signkey(flags: int, session_key: bytes, usage: str) -> typing.Optional[bytes
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/524cdccb-563e-4793-92b0-7bc321fce096
     """
     if flags & NegotiateFlags.extended_session_security == 0:
-        return None
+        return b""
 
     direction = b"client-to-server" if usage == "initiate" else b"server-to-client"
 
