@@ -348,7 +348,12 @@ class CredSSPProxy(ContextProxy):
             credssp_negotiate_context=self._auth_context.new_context() if self._auth_context else None,
         )
 
-    def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
+    def step(
+        self,
+        in_token: typing.Optional[bytes] = None,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> typing.Optional[bytes]:
         log.debug("CredSSP step input: %s", to_text(base64.b64encode(in_token or b"")))
 
         if self._step_gen is None:

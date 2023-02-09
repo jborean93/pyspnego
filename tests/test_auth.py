@@ -5,6 +5,7 @@
 import os
 import socket
 import ssl
+import sys
 import typing
 
 import pytest
@@ -142,26 +143,31 @@ def _message_test(client: spnego.ContextProxy, server: spnego.ContextProxy) -> N
     assert c_iov_unwrap_res.buffers[1].data == plaintext
 
 
-def _ntlm_test(client: spnego.ContextProxy, server: spnego.ContextProxy, test_session_key: bool = True) -> None:
+def _ntlm_test(
+    client: spnego.ContextProxy,
+    server: spnego.ContextProxy,
+    test_session_key: bool = True,
+    channel_bindings: typing.Optional[spnego.channel_bindings.GssChannelBindings] = None,
+) -> None:
     assert not client.complete
     assert not server.complete
 
     # Build negotiate msg
-    negotiate = client.step()
+    negotiate = client.step(channel_bindings=channel_bindings)
 
     assert isinstance(negotiate, bytes)
     assert not client.complete
     assert not server.complete
 
     # Process negotiate msg
-    challenge = server.step(negotiate)
+    challenge = server.step(negotiate, channel_bindings=channel_bindings)
 
     assert isinstance(challenge, bytes)
     assert not client.complete
     assert not server.complete
 
     # Process challenge and build authenticate
-    authenticate = client.step(challenge)
+    authenticate = client.step(challenge, channel_bindings=channel_bindings)
 
     assert isinstance(authenticate, bytes)
     if test_session_key:
@@ -171,7 +177,7 @@ def _ntlm_test(client: spnego.ContextProxy, server: spnego.ContextProxy, test_se
     assert not server.complete
 
     # Process authenticate
-    auth_response = server.step(authenticate)
+    auth_response = server.step(authenticate, channel_bindings=channel_bindings)
 
     assert auth_response is None
     if test_session_key:
@@ -226,8 +232,8 @@ def test_no_valid_credential_available_multiple_available_protocol():
 
 
 def test_negotiate_with_kerberos(kerb_cred):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     c = spnego.client(
         kerb_cred.user_princ, None, hostname=socket.getfqdn(), options=spnego.NegotiateOptions.use_negotiate
@@ -259,6 +265,76 @@ def test_negotiate_with_kerberos(kerb_cred):
 
     assert c.context_attr & spnego.ContextReq.mutual_auth
     assert s.context_attr & spnego.ContextReq.mutual_auth
+
+    _message_test(c, s)
+
+    c = c.new_context()
+    s = s.new_context()
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+
+    token3 = c.step(token2)
+    assert token3 is None
+
+    # Make sure it reports the right protocol
+    assert c.negotiated_protocol == "kerberos"
+    assert s.negotiated_protocol == "kerberos"
+
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    assert c.context_attr & spnego.ContextReq.mutual_auth
+    assert s.context_attr & spnego.ContextReq.mutual_auth
+
+    _message_test(c, s)
+
+
+def test_negotiate_with_kerberos_no_integrity(kerb_cred):
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
+
+    c = spnego.client(
+        kerb_cred.user_princ,
+        None,
+        hostname=socket.getfqdn(),
+        options=spnego.NegotiateOptions.use_negotiate,
+        context_req=spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect | spnego.ContextReq.no_integrity,
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
+
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+
+    token3 = c.step(token2)
+    assert token3 is None
+
+    # Make sure it reports the right protocol
+    assert c.negotiated_protocol == "kerberos"
+    assert s.negotiated_protocol == "kerberos"
+
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    assert c.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
+    assert s.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
 
     _message_test(c, s)
 
@@ -651,30 +727,54 @@ def test_sspi_ntlm_auth_no_sign_or_seal(client_opt, server_opt, ntlm_cred):
     "ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Test requires NTLM to be available through SSPI"
 )
 @pytest.mark.parametrize(
-    "client_opt, server_opt, cbt",
+    "client_opt, server_opt, cbt, cbt_with_step",
     [
-        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, False),
-        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, True),
-        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, False),
-        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, True),
-        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, False),
-        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, False, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, True, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_sspi, True, True),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, False, False),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, True, False),
+        (spnego.NegotiateOptions.use_ntlm, spnego.NegotiateOptions.use_sspi, True, True),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, False, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True, False),
+        (spnego.NegotiateOptions.use_sspi, spnego.NegotiateOptions.use_ntlm, True, True),
     ],
 )
-def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
+def test_sspi_ntlm_auth(client_opt, server_opt, cbt, cbt_with_step, ntlm_cred):
     # Build the initial context and assert the defaults.
-    kwargs: typing.Dict[str, typing.Any] = {
-        "protocol": "ntlm",
-    }
+    step_kwargs: typing.Dict[str, typing.Any] = {}
+    client_kwargs: typing.Dict[str, typing.Any] = {}
+    server_kwargs: typing.Dict[str, typing.Any] = {}
+
     if cbt:
-        kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
-    c = spnego.client(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), options=client_opt, **kwargs)
-    s = spnego.server(options=server_opt, **kwargs)
+        bindings = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
+        if cbt_with_step:
+            step_kwargs["channel_bindings"] = bindings
+            client_kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(
+                application_data=b"test_data:\x00\x02"
+            )
+            server_kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(
+                application_data=b"test_data:\x00\x03"
+            )
+        else:
+            client_kwargs["channel_bindings"] = bindings
+            server_kwargs["channel_bindings"] = bindings
+
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        hostname=socket.gethostname(),
+        options=client_opt,
+        protocol="ntlm",
+        **client_kwargs,
+    )
+    s = spnego.server(options=server_opt, protocol="ntlm", **server_kwargs)
 
     assert c.get_extra_info("invalid") is None
     assert c.get_extra_info("invalid", "default") == "default"
 
-    _ntlm_test(c, s)
+    _ntlm_test(c, s, **step_kwargs)
 
     assert c.client_principal is None
     assert s.client_principal == ntlm_cred[0]
@@ -684,7 +784,7 @@ def test_sspi_ntlm_auth(client_opt, server_opt, cbt, ntlm_cred):
     c = c.new_context()
     s = s.new_context()
 
-    _ntlm_test(c, s)
+    _ntlm_test(c, s, **step_kwargs)
 
     assert c.client_principal is None
     assert s.client_principal == ntlm_cred[0]
@@ -767,9 +867,8 @@ def test_ntlm_with_unsupported_credential():
 
 @pytest.mark.parametrize("explicit_user", [False, True])
 def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
-    explicit_user = True
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     username = None
     if explicit_user:
@@ -846,13 +945,100 @@ def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
     _message_test(c, s)
 
 
+@pytest.mark.parametrize("explicit_user", [False, True])
+def test_gssapi_kerberos_auth_no_integrity(explicit_user, kerb_cred):
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
+
+    username = None
+    if explicit_user:
+        username = kerb_cred.user_princ
+
+    c = spnego.client(
+        username,
+        None,
+        hostname=kerb_cred.hostname,
+        protocol="kerberos",
+        options=spnego.NegotiateOptions.use_gssapi,
+        context_req=spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect | spnego.ContextReq.no_integrity,
+    )
+    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="kerberos")
+
+    assert c.get_extra_info("invalid") is None
+    assert c.get_extra_info("invalid", "default") == "default"
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = c.session_key
+
+    with pytest.raises(SpnegoError, match="Retrieving session key"):
+        _ = s.session_key
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    assert c.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
+    assert s.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
+
+    c = c.new_context()
+    s = s.new_context()
+
+    token1 = c.step()
+    assert isinstance(token1, bytes)
+    assert not c.complete
+    assert not s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token2 = s.step(token1)
+    assert isinstance(token2, bytes)
+    assert not c.complete
+    assert s.complete
+    assert s.negotiated_protocol == "kerberos"
+
+    token3 = c.step(token2)
+    assert token3 is None
+    assert c.complete
+    assert s.complete
+    assert isinstance(c.session_key, bytes)
+    assert isinstance(s.session_key, bytes)
+    assert c.session_key == s.session_key
+
+    assert c.client_principal is None
+    assert s.client_principal == kerb_cred.user_princ
+
+    print(c.context_attr)
+    print(s.context_attr)
+
+
 @pytest.mark.parametrize("acquire_cred_from", [False, True])
 def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkeypatch):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     if not acquire_cred_from:
-        monkeypatch.delattr("gssapi.raw.acquire_cred_from")
+        monkeypatch.delattr("gssapi.raw.acquire_cred_from", raising=False)
 
     context_req = spnego.ContextReq.default | spnego.ContextReq.delegate
     c = spnego.client(
@@ -948,8 +1134,8 @@ def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkey
     ],
 )
 def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     kerb_cred.extract_keytab(kerb_cred.user_princ, kerb_cred.client_keytab)
     if set_principal:
@@ -1038,8 +1224,8 @@ def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
     ],
 )
 def test_kerberos_auth_ccache(protocol, explicit_user, kerb_cred, monkeypatch):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     # Verified we are actually using our explicit CCache
     monkeypatch.setenv("KRB5CCNAME", "missing")
@@ -1132,8 +1318,8 @@ def test_kerberos_auth_ccache(protocol, explicit_user, kerb_cred, monkeypatch):
     ],
 )
 def test_kerberos_auth_env_cache(protocol, explicit_user, kerb_cred):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     context_req = spnego.ContextReq.default
     cred = None
@@ -1210,21 +1396,46 @@ def test_kerberos_auth_env_cache(protocol, explicit_user, kerb_cred):
     _message_test(c, s)
 
 
-@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
-def test_kerberos_auth_channel_bindings(protocol, kerb_cred):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+@pytest.mark.parametrize(
+    "protocol, with_step",
+    [
+        ("kerberos", False),
+        ("kerberos", True),
+        ("negotiate", False),
+        ("negotiate", True),
+    ],
+)
+def test_kerberos_auth_channel_bindings(protocol, with_step, kerb_cred):
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     cbt = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
+
+    step_kwargs: typing.Dict[str, typing.Any] = {}
+    client_kwargs: typing.Dict[str, typing.Any] = {}
+    server_kwargs: typing.Dict[str, typing.Any] = {}
+    if with_step:
+        step_kwargs["channel_bindings"] = cbt
+
+        # Use a fake value to ensure step takes priority.
+        client_kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(
+            application_data=b"test_data:\x00\x02"
+        )
+        server_kwargs["channel_bindings"] = spnego.channel_bindings.GssChannelBindings(
+            application_data=b"test_data:\x00\x03"
+        )
+    else:
+        client_kwargs["channel_bindings"] = cbt
+        server_kwargs["channel_bindings"] = cbt
 
     c = spnego.client(
         kerb_cred.user_princ,
         kerb_cred.password("user"),
         hostname=socket.getfqdn(),
         protocol=protocol,
-        channel_bindings=cbt,
+        **client_kwargs,
     )
-    s = spnego.server(protocol=protocol, channel_bindings=cbt)
+    s = spnego.server(protocol=protocol, **server_kwargs)
 
     assert not c.complete
     assert not s.complete
@@ -1233,7 +1444,7 @@ def test_kerberos_auth_channel_bindings(protocol, kerb_cred):
     else:
         assert s.negotiated_protocol == "kerberos"
 
-    token1 = c.step()
+    token1 = c.step(**step_kwargs)
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
@@ -1243,13 +1454,13 @@ def test_kerberos_auth_channel_bindings(protocol, kerb_cred):
         assert s.negotiated_protocol == "kerberos"
     # assert s.negotiated_protocol == "kerberos"
 
-    token2 = s.step(token1)
+    token2 = s.step(token1, **step_kwargs)
     assert isinstance(token2, bytes)
     assert not c.complete
     assert s.complete
     assert s.negotiated_protocol == "kerberos"
 
-    token3 = c.step(token2)
+    token3 = c.step(token2, **step_kwargs)
     assert token3 is None
     assert c.complete
     assert s.complete
@@ -1265,7 +1476,7 @@ def test_kerberos_auth_channel_bindings(protocol, kerb_cred):
     c = c.new_context()
     s = s.new_context()
 
-    token1 = c.step()
+    token1 = c.step(**step_kwargs)
     assert isinstance(token1, bytes)
     assert not c.complete
     assert not s.complete
@@ -1274,13 +1485,13 @@ def test_kerberos_auth_channel_bindings(protocol, kerb_cred):
     else:
         assert s.negotiated_protocol == "kerberos"
 
-    token2 = s.step(token1)
+    token2 = s.step(token1, **step_kwargs)
     assert isinstance(token2, bytes)
     assert not c.complete
     assert s.complete
     assert s.negotiated_protocol == "kerberos"
 
-    token3 = c.step(token2)
+    token3 = c.step(token2, **step_kwargs)
     assert token3 is None
     assert c.complete
     assert s.complete
@@ -1504,8 +1715,8 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
 
 @pytest.mark.parametrize("restrict_tlsv12", [False, True])
 def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
-    if kerb_cred.provider == "heimdal":
-        pytest.skip("Environment problem with Heimdal - skip")
+    if sys.platform == "darwin":
+        pytest.skip("Environment problem with GSS.Framework - skip")
 
     c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol="kerberos")
     s_kerb_context = spnego.server(protocol="kerberos")

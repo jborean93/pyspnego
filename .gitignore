@@ -124,6 +124,7 @@ ENV/
 
 # Integration test files
 tests/integration/artifact.zip
+tests/integration/cert_setup
 tests/integration/*.keytab
 tests/integration/.vagrant
 tests/integration/*.swp

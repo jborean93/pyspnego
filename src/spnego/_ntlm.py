@@ -60,6 +60,7 @@ from spnego.exceptions import (
     ErrorCode,
     InvalidTokenError,
     NegotiateOptions,
+    NoContextError,
     OperationNotAvailableError,
     SpnegoError,
     UnsupportedQop,
@@ -367,11 +368,19 @@ class NTLMProxy(ContextProxy):
             options=self.options,
         )
 
-    def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
+    def step(
+        self,
+        in_token: typing.Optional[bytes] = None,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> typing.Optional[bytes]:
         if not self._is_wrapped:
             log.debug("NTLM step input: %s", base64.b64encode(in_token or b"").decode())
 
-        out_token = getattr(self, "_step_%s" % self.usage)(in_token=in_token)
+        out_token = getattr(self, "_step_%s" % self.usage)(
+            in_token=in_token,
+            channel_bindings=channel_bindings,
+        )
 
         if not self._is_wrapped:
             log.debug("NTLM step output: %s", base64.b64encode(out_token or b"").decode())
@@ -398,7 +407,12 @@ class NTLMProxy(ContextProxy):
 
         return out_token
 
-    def _step_initiate(self, in_token: typing.Optional[bytes] = None) -> bytes:
+    def _step_initiate(
+        self,
+        in_token: typing.Optional[bytes] = None,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> bytes:
         if not self._temp_negotiate:
             self._temp_negotiate = Negotiate(self._context_req)
             return self._temp_negotiate.pack()
@@ -417,7 +431,11 @@ class NTLMProxy(ContextProxy):
             auth_kwargs["version"] = Version.get_current()
             auth_kwargs["workstation"] = _get_workstation()
 
-        nt_challenge, lm_challenge, key_exchange_key = self._compute_response(challenge, credential)
+        nt_challenge, lm_challenge, key_exchange_key = self._compute_response(
+            challenge,
+            credential,
+            channel_bindings=channel_bindings or self.channel_bindings,
+        )
 
         if challenge.flags & NegotiateFlags.key_exch:
             # This is only documented on the server side for MS-NLMP but is also valid for the client. The actual
@@ -446,12 +464,20 @@ class NTLMProxy(ContextProxy):
 
         return authenticate.pack()
 
-    def _step_accept(self, in_token: bytes) -> typing.Optional[bytes]:
+    def _step_accept(
+        self,
+        in_token: bytes,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> typing.Optional[bytes]:
         if not self._temp_negotiate:
             return self._step_accept_negotiate(in_token)
 
         else:
-            self._step_accept_authenticate(in_token)
+            self._step_accept_authenticate(
+                in_token,
+                channel_bindings=channel_bindings or self.channel_bindings,
+            )
             return None
 
     def _step_accept_negotiate(self, token: bytes) -> bytes:
@@ -496,7 +522,7 @@ class NTLMProxy(ContextProxy):
 
         return challenge.pack()
 
-    def _step_accept_authenticate(self, token: bytes) -> None:
+    def _step_accept_authenticate(self, token: bytes, channel_bindings: typing.Optional[GssChannelBindings]) -> None:
         """Process the Authenticate message from the initiator."""
         negotiate = typing.cast(Negotiate, self._temp_negotiate)
         challenge = typing.cast(Challenge, self._temp_challenge)
@@ -527,14 +553,14 @@ class NTLMProxy(ContextProxy):
                 nt_hash, server_challenge, client_challenge, time, target_info
             )
 
-            if self.channel_bindings:
+            if channel_bindings:
                 if AvId.channel_bindings not in target_info:
                     raise BadBindingsError(
                         context_msg="Acceptor bindings specified but not present in initiator " "response"
                     )
 
                 expected_bindings = target_info[AvId.channel_bindings]
-                actual_bindings = md5(self.channel_bindings.pack())
+                actual_bindings = md5(channel_bindings.pack())
                 if expected_bindings not in [actual_bindings, b"\x00" * 16]:
                     raise BadBindingsError(context_msg="Acceptor bindings do not match initiator bindings")
 
@@ -597,8 +623,15 @@ class NTLMProxy(ContextProxy):
         if self.context_attr & ContextReq.integrity == 0 and self.context_attr & ContextReq.confidentiality == 0:
             raise OperationNotAvailableError(context_msg="NTLM wrap without integrity or confidentiality")
 
+        if not self._handle_out or self._sign_key_out is None:
+            raise NoContextError(context_msg="Cannot wrap until context has been established")
+
         msg, signature = seal(
-            self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out, data  # type: ignore[arg-type]
+            self._context_attr,
+            self._handle_out,
+            self._sign_key_out,
+            self._seq_num_out,
+            data,
         )
 
         return WrapResult(data=signature + msg, encrypted=True)
@@ -619,8 +652,11 @@ class NTLMProxy(ContextProxy):
         return WinRMWrapResult(header=enc_data[:16], data=enc_data[16:], padding_length=0)
 
     def unwrap(self, data: bytes) -> UnwrapResult:
+        if not self._handle_in:
+            raise NoContextError(context_msg="Cannot unwrap until context has been established")
+
         signature = data[:16]
-        msg = self._handle_in.update(data[16:])  # type: ignore[union-attr]
+        msg = self._handle_in.update(data[16:])
         self.verify(msg, signature)
 
         return UnwrapResult(data=msg, encrypted=True, qop=0)
@@ -632,7 +668,10 @@ class NTLMProxy(ContextProxy):
         raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
 
     def unwrap_winrm(self, header: bytes, data: bytes) -> bytes:
-        msg = self._handle_in.update(data)  # type: ignore[union-attr]
+        if not self._handle_in:
+            raise NoContextError(context_msg="Cannot unwrap until context has been established")
+
+        msg = self._handle_in.update(data)
         self.verify(msg, header)
 
         return msg
@@ -641,13 +680,27 @@ class NTLMProxy(ContextProxy):
         if qop:
             raise UnsupportedQop(context_msg="Unsupported QoP value %s specified for NTLM" % qop)
 
+        if not self._handle_out or self._sign_key_out is None:
+            raise NoContextError(context_msg="Cannot sign until context has been established")
+
         return sign(
-            self._context_attr, self._handle_out, self._sign_key_out, self._seq_num_out, data  # type: ignore[arg-type]
+            self._context_attr,
+            self._handle_out,
+            self._sign_key_out,
+            self._seq_num_out,
+            data,
         )
 
     def verify(self, data: bytes, mic: bytes) -> int:
+        if not self._handle_in or self._sign_key_in is None:
+            raise NoContextError(context_msg="Cannot verify until context has been established")
+
         expected_sig = sign(
-            self._context_attr, self._handle_in, self._sign_key_in, self._seq_num_in, data  # type: ignore[arg-type]
+            self._context_attr,
+            self._handle_in,
+            self._sign_key_in,
+            self._seq_num_in,
+            data,
         )
 
         if expected_sig != mic:
@@ -707,6 +760,7 @@ class NTLMProxy(ContextProxy):
         self,
         challenge: Challenge,
         credential: _NTLMCredential,
+        channel_bindings: typing.Optional[GssChannelBindings],
     ) -> typing.Tuple[bytes, bytes, bytes]:
         """Compute the NT and LM responses and the key exchange key."""
         client_challenge = os.urandom(8)
@@ -723,8 +777,8 @@ class NTLMProxy(ContextProxy):
 
             # The docs seem to indicate that a 0'd bindings hash means to ignore it but that does not seem to be the
             # case. Instead only add the bindings if they have been specified by the caller.
-            if self.channel_bindings:
-                target_info[AvId.channel_bindings] = md5(self.channel_bindings.pack())
+            if channel_bindings:
+                target_info[AvId.channel_bindings] = md5(channel_bindings.pack())
             target_info[AvId.target_name] = self.spn or ""
 
             if self._mic_required:

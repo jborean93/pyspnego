@@ -1,3 +1,25 @@
+- name: setup local configuration and scratch information
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+  - name: create cert output folder
+    file:
+      path: '{{ playbook_dir }}/cert_setup'
+      state: directory
+
+  - name: create generate_cert script
+    template:
+      src: generate_cert.sh.tmpl
+      dest: '{{ playbook_dir }}/cert_setup/generate_cert.sh'
+      mode: '700'
+
+  - name: generate CA and LDAPS certificates
+    shell: ./generate_cert.sh password
+    args:
+      creates: '{{ playbook_dir }}/cert_setup/complete.txt'
+      chdir: '{{ playbook_dir }}/cert_setup'
+
 - name: get network adapter for each Windows host
   hosts: windows
   gather_facts: no
@@ -27,6 +49,18 @@
   - name: set fact of network connection name
     set_fact:
       network_connection_name: '{{ network_connection_name_raw.output[0] }}'
+
+  - name: copy CA certificate
+    win_copy:
+      src: '{{ playbook_dir }}/cert_setup/ca.pem'
+      dest: C:\Windows\TEMP\ca.pem
+
+  - name: import CA certificate to trusted root CA
+    win_certificate_store:
+      path: C:\Windows\TEMP\ca.pem
+      state: present
+      store_location: LocalMachine
+      store_name: Root
 
 - name: create Domain Controller
   hosts: win_controller
@@ -66,6 +100,36 @@
     become: yes
     become_method: runas
     vars:
+      ansible_become_user: '{{ domain_upn }}'
+      ansible_become_pass: '{{ domain_password }}'
+
+  - name: copy LDAPS certificate
+    win_copy:
+      src: '{{ playbook_dir }}/cert_setup/DC01.pfx'
+      dest: C:\Windows\TEMP\ldaps.pfx
+
+  - name: import LDAPS certificate
+    win_certificate_store:
+      path: C:\Windows\TEMP\ldaps.pfx
+      password: password
+      key_exportable: no
+      key_storage: machine
+      state: present
+      store_type: service
+      store_location: NTDS
+      store_name: My
+    register: ldaps_cert_info
+
+  - name: register LDAPS certificate
+    ansible.windows.win_powershell:
+      script: |
+        $dse = [adsi]'LDAP://localhost/rootDSE'
+        [void]$dse.Properties['renewServerCertificate'].Add(1)
+        $dse.CommitChanges()
+    when: ldaps_cert_info is changed
+    vars:
+      ansible_become: yes
+      ansible_become_method: runas
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
 
@@ -225,6 +289,7 @@
       pyspnego=={{ spnego_version }}
       pytest
       requests
+      https://github.com/jborean93/sansldap/archive/174408ab40e42f9a2d34bc493027e43cc5d31715.zip
       --find-links=C:/temp/wheels
     args:
       creates: '{{ python_venv_path }}\{{ item | win_basename }}\Lib\site-packages\spnego'
@@ -403,6 +468,16 @@
     become: no
     when: krb_provider == 'Heimdal'
 
+  - name: copy across CA cert
+    copy:
+      src: cert_setup/ca.pem
+      dest: /etc/pki/ca-trust/source/anchors/pyspnego.pem
+    register: ca_cert_copy
+
+  - name: register CA cert
+    command: update-ca-trust
+    when: ca_cert_copy is changed
+
   - name: ensure wheel dir exists
     file:
       path: ~/wheels
@@ -440,6 +515,7 @@
       - pytest
       - pytest-forked
       - requests
+      - https://github.com/jborean93/sansldap/archive/174408ab40e42f9a2d34bc493027e43cc5d31715.zip
       - pyspnego[kerberos] == {{ spnego_version }}
       virtualenv: '{{ python_venv_path }}/{{ item | basename }}'
       virtualenv_python: '{{ item }}'

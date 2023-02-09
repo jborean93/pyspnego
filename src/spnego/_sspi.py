@@ -211,7 +211,12 @@ class SSPIProxy(ContextProxy):
         )
 
     @wrap_system_error(NativeError, "Processing security token")
-    def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
+    def step(
+        self,
+        in_token: typing.Optional[bytes] = None,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> typing.Optional[bytes]:
         if not self._is_wrapped:
             log.debug("SSPI step input: %s", base64.b64encode(in_token or b"").decode())
 
@@ -220,8 +225,11 @@ class SSPIProxy(ContextProxy):
             in_token = bytearray(in_token)
             sec_tokens.append((SecBufferType.token, in_token))
 
-        if self.channel_bindings:
-            sec_tokens.append((SecBufferType.channel_bindings, self._get_native_bindings()))
+        if not channel_bindings:
+            channel_bindings = self.channel_bindings
+
+        if channel_bindings:
+            sec_tokens.append((SecBufferType.channel_bindings, self._get_native_bindings(channel_bindings)))
 
         in_buffer: typing.Optional[SecBufferDesc] = None
         if sec_tokens:
@@ -379,6 +387,9 @@ class SSPIProxy(ContextProxy):
             (ContextReq.integrity, "integrity"),
             (ContextReq.identify, "identify"),
         ]
+        if self.usage == "initiate":
+            attr_map.append((ContextReq.no_integrity, "no_integrity"))
+
         attrs = []
         for spnego_flag, gssapi_name in attr_map:
             attrs.append((spnego_flag, getattr(sspi_req, gssapi_name)))
@@ -420,18 +431,18 @@ class SSPIProxy(ContextProxy):
 
         return (buffer.type, data)
 
-    def _get_native_bindings(self) -> bytearray:
+    def _get_native_bindings(self, channel_bindings: GssChannelBindings) -> bytearray:
         """Gets the raw byte value of the SEC_CHANNEL_BINDINGS structure."""
         b_bindings = bytearray()
         b_bindings_data = bytearray()
 
         def _pack_binding(name: str, b_bindings: bytearray, b_bindings_data: bytearray) -> None:
             if name == "application":
-                b_data = getattr(self.channel_bindings, "application_data") or b""
+                b_data = getattr(channel_bindings, "application_data") or b""
 
             else:
-                b_bindings += struct.pack("<I", getattr(self.channel_bindings, "%s_addrtype" % name))
-                b_data = getattr(self.channel_bindings, "%s_address" % name) or b""
+                b_bindings += struct.pack("<I", getattr(channel_bindings, "%s_addrtype" % name))
+                b_data = getattr(channel_bindings, "%s_address" % name) or b""
 
             b_bindings += struct.pack("<I", len(b_data))
             b_bindings += struct.pack("I", 32 + len(b_bindings_data))

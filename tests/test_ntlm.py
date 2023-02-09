@@ -29,6 +29,7 @@ from spnego.exceptions import (
     BadMICError,
     FeatureMissingError,
     InvalidTokenError,
+    NoContextError,
     OperationNotAvailableError,
     SpnegoError,
     UnsupportedQop,
@@ -208,6 +209,32 @@ def test_ntlm_wrap_no_sign_or_seal():
         n.wrap(b"data")
 
 
+def test_ntlm_wrap_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        n.wrap(b"data")
+
+
+def test_ntlm_wrap_winrm_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        n.wrap_winrm(b"data")
+
+
+def test_ntlm_unwrap_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        n.unwrap(b"data")
+
+
+def test_ntlm_unwrap_winrm_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        n.unwrap_winrm(b"header", b"data")
+
+
 def test_ntlm_wrap_iov_fail():
     n = ntlm.NTLMProxy("user", "pass")
     with pytest.raises(OperationNotAvailableError, match="NTLM does not offer IOV wrapping"):
@@ -224,6 +251,18 @@ def test_ntlm_sign_qop_invalid():
     n = ntlm.NTLMProxy("user", "pass")
     with pytest.raises(UnsupportedQop, match="Unsupported QoP value 1 specified for NTLM"):
         n.sign(b"data", qop=1)
+
+
+def test_ntlm_sign_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(NoContextError, match="Cannot sign until context has been established"):
+        n.sign(b"data")
+
+
+def test_ntlm_verify_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(NoContextError, match="Cannot verify until context has been established"):
+        n.verify(b"data", b"mic")
 
 
 def test_ntlm_no_encoding_flags():

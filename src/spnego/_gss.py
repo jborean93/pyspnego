@@ -30,7 +30,12 @@ from spnego._credential import (
 from spnego._text import to_bytes, to_text
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import GSSError as NativeError
-from spnego.exceptions import InvalidCredentialError, NegotiateOptions, SpnegoError
+from spnego.exceptions import (
+    InvalidCredentialError,
+    NegotiateOptions,
+    NoContextError,
+    SpnegoError,
+)
 from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
 
 log = logging.getLogger(__name__)
@@ -42,7 +47,7 @@ try:
     import krb5
     from gssapi.raw import ChannelBindings, GSSError
     from gssapi.raw import exceptions as gss_errors
-    from gssapi.raw import inquire_sec_context_by_oid
+    from gssapi.raw import inquire_sec_context_by_oid, set_cred_option
 except ImportError as e:
     GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False
@@ -61,6 +66,8 @@ except ImportError as err:
     log.debug("Python gssapi IOV extension not available: %s" % str(GSSAPI_IOV_IMP_ERR[1]))
 
 _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
+
+_GSS_KRB5_CRED_NO_CI_FLAGS_X = "1.2.752.43.13.29"
 
 
 def _create_iov_result(iov: "GSSIOV") -> typing.Tuple[IOVResBuffer, ...]:
@@ -314,13 +321,13 @@ class GSSAPIProxy(ContextProxy):
             credentials, hostname, service, channel_bindings, context_req, usage, protocol, options
         )
 
-        mech = gssapi.OID.from_int_seq(GSSMech.kerberos.value)
+        self._mech = gssapi.OID.from_int_seq(GSSMech.kerberos.value)
 
         gssapi_credential = kwargs.get("_gssapi_credential", None)
         if not gssapi_credential:
             try:
                 gssapi_credential = _get_gssapi_credential(
-                    mech,
+                    self._mech,
                     self.usage,
                     credentials=credentials,
                     context_req=context_req,
@@ -328,26 +335,17 @@ class GSSAPIProxy(ContextProxy):
             except GSSError as gss_err:
                 raise SpnegoError(base_error=gss_err, context_msg="Getting GSSAPI credential") from gss_err
 
-        self._credential = gssapi_credential
+        if context_req & ContextReq.no_integrity and self.usage == "initiate":
+            if gssapi_credential is None:
+                gssapi_credential = gssapi.Credentials(usage=self.usage, mechs=[self._mech])
 
-        context_kwargs: typing.Dict[str, typing.Any] = {}
-
-        if self.channel_bindings:
-            context_kwargs["channel_bindings"] = ChannelBindings(
-                initiator_address_type=self.channel_bindings.initiator_addrtype,
-                initiator_address=self.channel_bindings.initiator_address,
-                acceptor_address_type=self.channel_bindings.acceptor_addrtype,
-                acceptor_address=self.channel_bindings.acceptor_address,
-                application_data=self.channel_bindings.application_data,
+            set_cred_option(
+                gssapi.OID.from_int_seq(_GSS_KRB5_CRED_NO_CI_FLAGS_X),
+                gssapi_credential,
             )
 
-        if self.usage == "initiate":
-            spn = "%s@%s" % (service if service else "host", hostname or "unspecified")
-            context_kwargs["name"] = gssapi.Name(spn, name_type=gssapi.NameType.hostbased_service)
-            context_kwargs["mech"] = mech
-            context_kwargs["flags"] = self._context_req
-
-        self._context = gssapi.SecurityContext(creds=self._credential, usage=self.usage, **context_kwargs)
+        self._credential = gssapi_credential
+        self._context: typing.Optional[gssapi.SecurityContext] = None
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
@@ -365,11 +363,14 @@ class GSSAPIProxy(ContextProxy):
     @property
     def client_principal(self) -> typing.Optional[str]:
         # Looks like a bug in python-gssapi where the value still has the terminating null char.
-        return to_text(self._context.initiator_name).rstrip("\x00") if self.usage == "accept" else None
+        if self._context and self.usage == "accept":
+            return to_text(self._context.initiator_name).rstrip("\x00")
+        else:
+            return None
 
     @property
     def complete(self) -> bool:
-        return self._context.complete
+        return self._context is not None and self._context.complete
 
     @property
     def negotiated_protocol(self) -> typing.Optional[str]:
@@ -378,7 +379,10 @@ class GSSAPIProxy(ContextProxy):
     @property
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
-        return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
+        if self._context:
+            return inquire_sec_context_by_oid(self._context, gssapi.OID.from_int_seq(_GSS_C_INQ_SSPI_SESSION_KEY))[0]
+        else:
+            raise NoContextError(context_msg="Retrieving session key failed as no context was initialized")
 
     def new_context(self) -> "GSSAPIProxy":
         return GSSAPIProxy(
@@ -393,9 +397,35 @@ class GSSAPIProxy(ContextProxy):
         )
 
     @wrap_system_error(NativeError, "Processing security token")
-    def step(self, in_token: typing.Optional[bytes] = None) -> typing.Optional[bytes]:
+    def step(
+        self,
+        in_token: typing.Optional[bytes] = None,
+        *,
+        channel_bindings: typing.Optional[GssChannelBindings] = None,
+    ) -> typing.Optional[bytes]:
         if not self._is_wrapped:
             log.debug("GSSAPI step input: %s", base64.b64encode(in_token or b"").decode())
+
+        if not self._context:
+            context_kwargs: typing.Dict[str, typing.Any] = {}
+
+            channel_bindings = channel_bindings or self.channel_bindings
+            if channel_bindings:
+                context_kwargs["channel_bindings"] = ChannelBindings(
+                    initiator_address_type=channel_bindings.initiator_addrtype,
+                    initiator_address=channel_bindings.initiator_address,
+                    acceptor_address_type=channel_bindings.acceptor_addrtype,
+                    acceptor_address=channel_bindings.acceptor_address,
+                    application_data=channel_bindings.application_data,
+                )
+
+            if self.usage == "initiate":
+                spn = "%s@%s" % (self._service or "host", self._hostname or "unspecified")
+                context_kwargs["name"] = gssapi.Name(spn, name_type=gssapi.NameType.hostbased_service)
+                context_kwargs["mech"] = self._mech
+                context_kwargs["flags"] = self._context_req
+
+            self._context = gssapi.SecurityContext(creds=self._credential, usage=self.usage, **context_kwargs)
 
         out_token = self._context.step(in_token)
 
@@ -416,6 +446,8 @@ class GSSAPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Wrapping data")
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot wrap until context has been established")
         res = gssapi.raw.wrap(self._context, data, confidential=encrypt, qop=qop)
 
         return WrapResult(data=res.message, encrypted=res.encrypted)
@@ -427,6 +459,9 @@ class GSSAPIProxy(ContextProxy):
         encrypt: bool = True,
         qop: typing.Optional[int] = None,
     ) -> IOVWrapResult:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot wrap until context has been established")
+
         buffers = self._build_iov_list(iov, self._convert_iov_buffer)
         iov_buffer = GSSIOV(*buffers, std_layout=False)
         encrypted = wrap_iov(self._context, iov_buffer, confidential=encrypt, qop=qop)
@@ -443,6 +478,9 @@ class GSSAPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Unwrapping data")
     def unwrap(self, data: bytes) -> UnwrapResult:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot unwrap until context has been established")
+
         res = gssapi.raw.unwrap(self._context, data)
 
         return UnwrapResult(data=res.message, encrypted=res.encrypted, qop=res.qop)
@@ -452,6 +490,9 @@ class GSSAPIProxy(ContextProxy):
         self,
         iov: typing.Iterable[IOV],
     ) -> IOVUnwrapResult:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot unwrap until context has been established")
+
         buffers = self._build_iov_list(iov, self._convert_iov_buffer)
         iov_buffer = GSSIOV(*buffers, std_layout=False)
         res = unwrap_iov(self._context, iov_buffer)
@@ -467,6 +508,9 @@ class GSSAPIProxy(ContextProxy):
         # description which differs between the 2 implemtations. It's not perfect but I don't know of another way to
         # achieve this until more time has passed.
         # https://github.com/heimdal/heimdal/issues/739
+        if not self._context:
+            raise NoContextError(context_msg="Cannot unwrap until context has been established")
+
         sasl_desc = _gss_sasl_description(self._context.mech)
 
         # https://github.com/krb5/krb5/blob/f2e28f13156785851819fc74cae52100e0521690/src/lib/gssapi/krb5/gssapi_krb5.c#L686
@@ -479,10 +523,16 @@ class GSSAPIProxy(ContextProxy):
 
     @wrap_system_error(NativeError, "Signing message")
     def sign(self, data: bytes, qop: typing.Optional[int] = None) -> bytes:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot sign until context has been established")
+
         return gssapi.raw.get_mic(self._context, data, qop=qop)
 
     @wrap_system_error(NativeError, "Verifying message")
     def verify(self, data: bytes, mic: bytes) -> int:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot verify until context has been established")
+
         return gssapi.raw.verify_mic(self._context, data, mic)
 
     @property
