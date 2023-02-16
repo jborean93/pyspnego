@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 - TBD
+## 0.8.0 - 2023-02-17
 
 * Added the `spnego.ContextReq.no_integrity` flag to disable integrity/confidentiality on Kerberos/Negotiate contexts
   * This is used by authentication contexts that need to disable integrity/confidentiality explicitly
