@@ -62,16 +62,22 @@ from spnego._tls_struct import (
     TlsSupportedGroup,
 )
 
+HAS_ARGCOMPLETE = False
 try:
     import argcomplete
-except ImportError:  # pragma: nocover
-    argcomplete = None
 
-yaml: typing.Optional[typing.Any]
+    HAS_ARGCOMPLETE = True
+except ImportError:  # pragma: nocover
+    pass
+
+
+HAS_YAML = False
 try:
     from ruamel import yaml
+
+    HAS_YAML = True
 except ImportError:  # pragma: nocover
-    yaml = None
+    pass
 
 
 def _parse_ntlm_version(
@@ -700,8 +706,8 @@ def main(args: typing.List[str]) -> None:
     else:
         token_info = parse_token(b_data, secret=parsed_args.secret, encoding=parsed_args.encoding)
 
-    if parsed_args.output_format == "yaml":
-        y = yaml.YAML()  # type: ignore
+    if parsed_args.output_format == "yaml" and HAS_YAML:
+        y = yaml.YAML()
         y.default_flow_style = False
         y.dump(token_info, sys.stdout)
     else:
@@ -755,12 +761,12 @@ def parse_args(args: typing.List[str]) -> argparse.Namespace:
         "tokens to generate the session key.",
     )
 
-    if argcomplete:
+    if HAS_ARGCOMPLETE:
         argcomplete.autocomplete(parser)
 
     parsed_args = parser.parse_args(args)
 
-    if parsed_args.output_format == "yaml" and not yaml:
+    if parsed_args.output_format == "yaml" and not HAS_YAML:
         raise ValueError("Cannot output as yaml as ruamel.yaml is not installed.")
 
     return parsed_args
