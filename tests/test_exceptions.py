@@ -21,8 +21,8 @@ WinError = exceptions.WinError
         ),
         (
             exceptions.NegotiateOptions.wrapping_iov,
-            "The system is missing the GSSAPI IOV extension headers or NTLM or "
-            "CredSSP is being requested, cannot utilize wrap_iov and unwrap_iov",
+            "The system is missing the GSSAPI IOV extension headers or CredSSP is being requested, "
+            "cannot utilize wrap_iov and unwrap_iov",
         ),
         (
             exceptions.NegotiateOptions.wrapping_winrm,

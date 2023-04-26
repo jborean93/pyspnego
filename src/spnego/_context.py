@@ -2,6 +2,7 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import abc
+import dataclasses
 import enum
 import typing
 import warnings
@@ -112,6 +113,27 @@ class IOVUnwrapResult(typing.NamedTuple):
     qop: int  #: The Quality of Protection used for the encrypted buffers.
 
 
+@dataclasses.dataclass(frozen=True)
+class SecPkgContextSizes:
+    """Sizes of important structures used for messages.
+
+    This dataclass exposes the sizes of important structures used in message
+    support functions like wrap, wrap_iov, sign, etc. Use
+    :meth:`ContextReq.query_message_sizes` to retrieve this value for an
+    authenticated context.
+
+    Currently only ``header`` is exposed but other sizes may be added in the
+    future if needed.
+
+    Attributes:
+        header: The size of the header/signature of a wrapped token. This
+            corresponds to cbSecurityTrailer in SecPkgContext_Sizes in SSPI and
+            the size of the allocated GSS_IOV_BUFFER_TYPE_HEADER IOV buffer.
+    """
+
+    header: int
+
+
 class ContextReq(enum.IntFlag):
     none = 0x00000000
 
@@ -123,6 +145,7 @@ class ContextReq(enum.IntFlag):
     confidentiality = 0x00000010
     integrity = 0x00000020
     # anonymous = 0x00000040  # TODO: Add support for anonymous auth.
+    dce_style = 0x00001000
     identify = 0x00002000
     # Requires newer python-gssapi version to support https://github.com/pythongssapi/python-gssapi/pull/218
     delegate_policy = 0x00080000
@@ -404,6 +427,22 @@ class ContextProxy(metaclass=abc.ABCMeta):
 
         Returns:
             ContextProxy: The new security context.
+        """
+        pass  # pragma: no cover
+
+    @abc.abstractmethod
+    def query_message_sizes(self) -> SecPkgContextSizes:
+        """Gets the important structure sizes for message functions.
+
+        Will get the important sizes for the various message functions used by
+        the current authentication context. This must only be called once the
+        context has been authenticated.
+
+        Returns:
+            SecPkgContextSizes: The sizes for the current context.
+
+        Raises:
+            NoContextError: The security context is not ready to be queried.
         """
         pass  # pragma: no cover
 

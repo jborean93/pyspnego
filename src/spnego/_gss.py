@@ -14,6 +14,7 @@ from spnego._context import (
     GSSMech,
     IOVUnwrapResult,
     IOVWrapResult,
+    SecPkgContextSizes,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
@@ -59,7 +60,7 @@ GSSAPI_IOV_IMP_ERR = None
 try:
     from gssapi.raw import IOV as GSSIOV
     from gssapi.raw import IOVBuffer as GSSIOVBuffer
-    from gssapi.raw import IOVBufferType, unwrap_iov, wrap_iov
+    from gssapi.raw import IOVBufferType, unwrap_iov, wrap_iov, wrap_iov_length
 except ImportError as err:
     GSSAPI_IOV_IMP_ERR = sys.exc_info()
     HAS_IOV = False
@@ -444,6 +445,19 @@ class GSSAPIProxy(ContextProxy):
 
         return out_token
 
+    @wrap_system_error(NativeError, "Getting context sizes")
+    def query_message_sizes(self) -> SecPkgContextSizes:
+        if not self._context:
+            raise NoContextError(context_msg="Cannot get message sizes until context has been established")
+
+        iov = GSSIOV(
+            IOVBufferType.header,
+            b"",
+            std_layout=False,
+        )
+        wrap_iov_length(self._context, iov)
+        return SecPkgContextSizes(header=len(iov[0].value or b""))
+
     @wrap_system_error(NativeError, "Wrapping data")
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
         if not self._context:
@@ -544,6 +558,7 @@ class GSSAPIProxy(ContextProxy):
             (ContextReq.sequence_detect, "out_of_sequence_detection"),
             (ContextReq.confidentiality, "confidentiality"),
             (ContextReq.integrity, "integrity"),
+            (ContextReq.dce_style, "dce_style"),
             # Only present when the DCE extensions are installed.
             (ContextReq.identify, "identify"),
             # Only present with newer versions of python-gssapi https://github.com/pythongssapi/python-gssapi/pull/218.
@@ -571,4 +586,11 @@ class GSSAPIProxy(ContextProxy):
             auto_alloc = [BufferType.header, BufferType.padding, BufferType.trailer]
             buffer_alloc = buffer.type in auto_alloc
 
-        return GSSIOVBuffer(IOVBufferType(buffer.type), buffer_alloc, buffer_data)
+        buffer_type = buffer.type
+        if buffer.type == BufferType.data_readonly:
+            # GSSAPI doesn't have the SSPI equivalent of SECBUFFER_READONLY.
+            # the GSS_IOV_BUFFER_TYPE_EMPTY seems to produce the same behaviour
+            # so that's going to be used instead.
+            buffer_type = BufferType.empty
+
+        return GSSIOVBuffer(IOVBufferType(buffer_type), buffer_alloc, buffer_data)

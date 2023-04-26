@@ -13,6 +13,7 @@ from spnego._context import (
     ContextReq,
     IOVUnwrapResult,
     IOVWrapResult,
+    SecPkgContextSizes,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
@@ -65,6 +66,7 @@ from spnego.exceptions import (
     SpnegoError,
     UnsupportedQop,
 )
+from spnego.iov import BufferType, IOVResBuffer
 
 log = logging.getLogger(__name__)
 
@@ -326,7 +328,7 @@ class NTLMProxy(ContextProxy):
 
     @classmethod
     def iov_available(cls) -> bool:
-        return False
+        return True
 
     @property
     def client_principal(self) -> typing.Optional[str]:
@@ -392,6 +394,9 @@ class NTLMProxy(ContextProxy):
 
             in_usage = "accept" if self.usage == "initiate" else "initiate"
             session_key = self._session_key or b""
+            # if tmp_key := os.environ.get("TESTING", None):
+            #     session_key = self._session_key = base64.b16decode(tmp_key)
+
             self._sign_key_out = signkey(self._context_attr, session_key, self.usage)
             self._sign_key_in = signkey(self._context_attr, session_key, in_usage)
 
@@ -616,6 +621,12 @@ class NTLMProxy(ContextProxy):
         self._context_attr = auth.flags
         self._complete = True
 
+    def query_message_sizes(self) -> SecPkgContextSizes:
+        if not self.complete:
+            raise NoContextError(context_msg="Cannot get message sizes until context has been established")
+
+        return SecPkgContextSizes(header=16)
+
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
         if qop:
             raise UnsupportedQop(context_msg="Unsupported QoP value %s specified for NTLM" % qop)
@@ -642,10 +653,73 @@ class NTLMProxy(ContextProxy):
         encrypt: bool = True,
         qop: typing.Optional[int] = None,
     ) -> IOVWrapResult:
-        # While this technically works on SSPI by passing multiple data buffers we can achieve the same thing with
-        # wrap. Because this context proxy is meant to replicate gss-ntlmssp which doesn't support IOV in NTLM we just
-        # fail here.
-        raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
+        if qop:
+            raise UnsupportedQop(context_msg="Unsupported QoP value %s specified for NTLM" % qop)
+
+        if self.context_attr & ContextReq.integrity == 0 and self.context_attr & ContextReq.confidentiality == 0:
+            raise OperationNotAvailableError(context_msg="NTLM wrap without integrity or confidentiality")
+
+        if not self._handle_out or self._sign_key_out is None:
+            raise NoContextError(context_msg="Cannot wrap until context has been established")
+
+        header_idx = -1
+        data_idx = -1
+        signature_input = []
+        buffers = self._build_iov_list(iov, lambda b: b)
+        res: typing.List[IOVResBuffer] = []
+
+        for idx, buffer in enumerate(buffers):
+            data: bytes
+            if buffer.type == BufferType.header:
+                if header_idx != -1:
+                    raise InvalidTokenError(context_msg="wrap_iov must only be used with 1 header IOV buffer.")
+                header_idx = idx
+                data = b""
+
+            elif buffer.type == BufferType.data:
+                if data_idx != -1:
+                    raise InvalidTokenError(context_msg="wrap_iov must only be used with 1 data IOV buffer.")
+
+                if not isinstance(buffer.data, bytes):
+                    raise InvalidTokenError(context_msg=f"wrap_iov IOV data buffer at [{idx}] must be bytes")
+
+                data_idx = idx
+                data = buffer.data
+                signature_input.append(data)
+
+            elif buffer.type in [BufferType.sign_only, BufferType.data_readonly]:
+                if not isinstance(buffer.data, bytes):
+                    raise InvalidTokenError(
+                        context_msg=f"wrap_iov IOV {buffer.type.name} buffer at [{idx}] must be bytes"
+                    )
+
+                data = buffer.data
+                signature_input.append(data)
+
+            else:
+                raise InvalidTokenError(context_msg=f"wrap_iov unsupported IOV buffer type {buffer.type.name}")
+
+            res.append(IOVResBuffer(buffer.type, data))
+
+        if header_idx == -1:
+            raise InvalidTokenError(context_msg="wrap_iov no IOV header buffer present")
+
+        if data_idx == -1:
+            raise InvalidTokenError(context_msg="wrap_iov no IOV data buffer present")
+
+        enc_msg, signature = seal(
+            self._context_attr,
+            self._handle_out,
+            self._sign_key_out,
+            self._seq_num_out,
+            res[data_idx][1] or b"",
+            to_sign=b"".join(signature_input),
+        )
+
+        res[header_idx] = IOVResBuffer(BufferType.header, signature)
+        res[data_idx] = IOVResBuffer(BufferType.data, enc_msg)
+
+        return IOVWrapResult(tuple(res), encrypted=True)
 
     def wrap_winrm(self, data: bytes) -> WinRMWrapResult:
         enc_data = self.wrap(data).data
@@ -665,7 +739,84 @@ class NTLMProxy(ContextProxy):
         self,
         iov: typing.Iterable[IOV],
     ) -> IOVUnwrapResult:
-        raise OperationNotAvailableError(context_msg="NTLM does not offer IOV wrapping")
+        if self.context_attr & ContextReq.integrity == 0 and self.context_attr & ContextReq.confidentiality == 0:
+            raise OperationNotAvailableError(context_msg="NTLM unwrap without integrity or confidentiality")
+
+        if not self._handle_in or self._sign_key_in is None:
+            raise NoContextError(context_msg="Cannot unwrap until context has been established")
+
+        buffers = self._build_iov_list(iov, lambda b: b)
+
+        # Check if it's a stream + data set of buffers and just call unwrap.
+        if (
+            len(buffers) == 2
+            and buffers[0].type == BufferType.stream
+            and buffers[1].type == BufferType.data
+            and isinstance(buffers[0].data, bytes)
+        ):
+            unwrap_res = self.unwrap(buffers[0].data)
+
+            return IOVUnwrapResult(
+                (
+                    IOVResBuffer(BufferType.stream, buffers[0].data),
+                    IOVResBuffer(BufferType.data, unwrap_res.data),
+                ),
+                encrypted=unwrap_res.encrypted,
+                qop=unwrap_res.qop,
+            )
+
+        header_idx = -1
+        data_idx = -1
+        data_sig_idx = -1
+        signature_input: typing.List[bytes] = []
+
+        res: typing.List[IOVResBuffer] = []
+
+        for idx, buffer in enumerate(buffers):
+            data: bytes
+
+            if not isinstance(buffer.data, bytes):
+                raise InvalidTokenError(
+                    context_msg=f"unwrap_iov IOV {buffer.type.name} buffer at [{idx}] must be bytes"
+                )
+
+            data = buffer.data
+
+            if buffer.type == BufferType.header:
+                if header_idx != -1:
+                    raise InvalidTokenError(context_msg="unwrap_iov must only be used with 1 header IOV buffer.")
+
+                header_idx = idx
+
+            elif buffer.type == BufferType.data:
+                if data_idx != -1:
+                    raise InvalidTokenError(context_msg="unwrap_iov must only be used with 1 data IOV buffer.")
+
+                data_idx = idx
+                data_sig_idx = len(signature_input)
+                signature_input.append(b"")  # Replaced after decryption
+
+            elif buffer.type in [BufferType.sign_only, BufferType.data_readonly]:
+                signature_input.append(data)
+
+            else:
+                raise InvalidTokenError(context_msg=f"unwrap_iov unsupported IOV buffer type {buffer.type.name}")
+
+            res.append(IOVResBuffer(buffer.type, data))
+
+        if header_idx == -1:
+            raise InvalidTokenError(context_msg="unwrap_iov no IOV header buffer present")
+
+        if data_idx == -1:
+            raise InvalidTokenError(context_msg="unwrap_iov no IOV data buffer present")
+
+        dec = self._handle_in.update(res[data_idx].data or b"")
+        res[data_idx] = IOVResBuffer(BufferType.data, dec)
+        signature_input[data_sig_idx] = dec
+
+        self.verify(b"".join(signature_input), res[header_idx].data or b"")
+
+        return IOVUnwrapResult(tuple(res), encrypted=True, qop=0)
 
     def unwrap_winrm(self, header: bytes, data: bytes) -> bytes:
         if not self._handle_in:

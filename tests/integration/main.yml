@@ -355,8 +355,8 @@
       - dnsmasq
       - epel-release
       - gcc
-      - python38
-      - python38-devel
+      - python39
+      - python3-devel
       - unzip
       - vim
       state: present
@@ -370,7 +370,7 @@
     pip:
       name:
       - virtualenv
-      executable: /usr/bin/pip3.8
+      executable: /usr/bin/pip3.9
 
   - name: setup NetworkManager to use dnsmasq
     copy:

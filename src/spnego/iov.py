@@ -19,8 +19,13 @@ class BufferType(enum.IntEnum):
     trailer = 7  # SECBUFFER_STREAM_HEADER | GSS_IOV_BUFFER_TYPE_TRAILER
     padding = 9  # SECBUFFER_PADDING | GSS_IOV_BUFFER_TYPE_PADDING
     stream = 10  # SECBUFFER_STREAM | GSS_IOV_BUFFER_TYPE_STREAM
-    sign_only = 11  # SECBUFFER_MECHLIST | GSS_IOV_BUFFER_TYPE_SIGN_ONLY
+    sign_only = 11  # (SECBUFFER_DATA | SECBUFFER_READONLY_WITH_CHECKSUM) | GSS_IOV_BUFFER_TYPE_SIGN_ONLY
     mic_token = 12  # SECBUFFER_MECHLIST_SIGNATURE | GSS_IOV_BUFFER_TYPE_MIC_TOKEN
+
+    # This doesn't have an equivalent in GSSAPI but is mapped internally to
+    # the SSPI data + readonly buffer. Luckily GSSAPI seems to treat an empty
+    # buffer as the same as SSPI so that will be used there.
+    data_readonly = 4096  # (SECBUFFER_DATA | SECBUFFER_READONLY) | GSS_IOV_BUFFER_TYPE_EMPTY
 
 
 class IOVBuffer(typing.NamedTuple):

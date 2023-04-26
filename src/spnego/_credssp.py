@@ -19,6 +19,7 @@ from spnego._context import (
     ContextReq,
     IOVUnwrapResult,
     IOVWrapResult,
+    SecPkgContextSizes,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
@@ -40,6 +41,7 @@ from spnego.exceptions import (
     InvalidTokenError,
     NativeError,
     NegotiateOptions,
+    NoContextError,
     OperationNotAvailableError,
     SpnegoError,
 )
@@ -595,6 +597,15 @@ class CredSSPProxy(ContextProxy):
 
         else:
             return default
+
+    def query_message_sizes(self) -> SecPkgContextSizes:
+        if not self._tls_object or not self.complete:
+            raise NoContextError(context_msg="Cannot get message sizes until context has been established")
+
+        cipher_negotiated, tls_protocol, _ = self._tls_object.cipher()  # type: ignore[misc]
+        trailer_length = _tls_trailer_length(0, tls_protocol, cipher_negotiated)
+
+        return SecPkgContextSizes(header=trailer_length)
 
     @_wrap_ssl_error("Invalid TLS state when wrapping data")
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
