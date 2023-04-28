@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 - TBD
+## 0.9.0 - 2023-04-29
 
 * Added the `spnego.ContextReq.dce_style` flag to enable DCE authentication mode
   * This is used in protocols like RPC/DCE
