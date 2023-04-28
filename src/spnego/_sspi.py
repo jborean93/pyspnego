@@ -12,6 +12,7 @@ from spnego._context import (
     ContextReq,
     IOVUnwrapResult,
     IOVWrapResult,
+    SecPkgContextSizes,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
@@ -21,7 +22,12 @@ from spnego._context import (
 from spnego._credential import Credential, CredentialCache, Password, unify_credentials
 from spnego._text import to_text
 from spnego.channel_bindings import GssChannelBindings
-from spnego.exceptions import InvalidCredentialError, NegotiateOptions, SpnegoError
+from spnego.exceptions import (
+    InvalidCredentialError,
+    NegotiateOptions,
+    NoContextError,
+    SpnegoError,
+)
 from spnego.exceptions import WinError as NativeError
 from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
 
@@ -73,7 +79,13 @@ def _create_iov_result(iov: "SecBufferDesc") -> typing.Tuple[IOVResBuffer, ...]:
     """Converts SSPI IOV buffer to generic IOVBuffer result."""
     buffers = []
     for i in iov:
-        buffer_entry = IOVResBuffer(type=BufferType(i.buffer_type), data=i.buffer)
+        buffer_type = i.buffer_type
+        if i.buffer_type & SecBufferType.readonly_with_checksum:
+            buffer_type = BufferType.sign_only
+        elif i.buffer_type & SecBufferType.readonly:
+            buffer_type = BufferType.data_readonly
+
+        buffer_entry = IOVResBuffer(type=BufferType(buffer_type), data=i.buffer)
         buffers.append(buffer_entry)
 
     return tuple(buffers)
@@ -284,6 +296,12 @@ class SSPIProxy(ContextProxy):
 
         return out_token
 
+    def query_message_sizes(self) -> SecPkgContextSizes:
+        if not self._security_trailer:
+            raise NoContextError(context_msg="Cannot get message sizes until context has been established")
+
+        return SecPkgContextSizes(header=self._security_trailer)
+
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
         res = self.wrap_iov([BufferType.header, data, BufferType.padding], encrypt=encrypt, qop=qop)
         return WrapResult(data=b"".join([r.data for r in res.buffers if r.data]), encrypted=res.encrypted)
@@ -385,6 +403,7 @@ class SSPIProxy(ContextProxy):
             (ContextReq.sequence_detect, "sequence_detect"),
             (ContextReq.confidentiality, "confidentiality"),
             (ContextReq.integrity, "integrity"),
+            (ContextReq.dce_style, "use_dce_style"),
             (ContextReq.identify, "identify"),
         ]
         if self.usage == "initiate":
@@ -429,7 +448,15 @@ class SSPIProxy(ContextProxy):
 
                 data = bytearray(auto_alloc_size[buffer.type])
 
-        return (buffer.type, data)
+        # This buffer types need manual mapping from the generic value to the
+        # one understood by SSPI.
+        buffer_type = int(buffer.type)
+        if buffer_type == BufferType.sign_only:
+            buffer_type = SecBufferType.data | SecBufferType.readonly_with_checksum
+        elif buffer_type == BufferType.data_readonly:
+            buffer_type = SecBufferType.data | SecBufferType.readonly
+
+        return (buffer_type, data)
 
     def _get_native_bindings(self, channel_bindings: GssChannelBindings) -> bytearray:
         """Gets the raw byte value of the SEC_CHANNEL_BINDINGS structure."""

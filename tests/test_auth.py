@@ -1615,6 +1615,9 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
     assert c.get_extra_info("protocol_version") == version
     assert s.get_extra_info("protocol_version") == version
 
+    assert isinstance(c.query_message_sizes().header, int)
+    assert isinstance(s.query_message_sizes().header, int)
+
     _message_test(c, s)
 
     plaintext = os.urandom(16)

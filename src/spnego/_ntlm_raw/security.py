@@ -9,7 +9,15 @@ from spnego._ntlm_raw.messages import NegotiateFlags
 from spnego.exceptions import OperationNotAvailableError
 
 
-def seal(flags: int, handle: RC4Handle, signing_key: bytes, seq_num: int, b_data: bytes) -> typing.Tuple[bytes, bytes]:
+def seal(
+    flags: int,
+    handle: RC4Handle,
+    signing_key: bytes,
+    seq_num: int,
+    b_data: bytes,
+    *,
+    to_sign: typing.Optional[bytes] = None,
+) -> typing.Tuple[bytes, bytes]:
     """Create a sealed NTLM message.
 
     Creates a sealed NTLM message as documented at `NTLM Message Confidentiality`_.
@@ -28,7 +36,7 @@ def seal(flags: int, handle: RC4Handle, signing_key: bytes, seq_num: int, b_data
         https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/115f9c7d-bc30-4262-ae96-254555c14ea6
     """
     seal_msg = rc4(handle, b_data)
-    signature = sign(flags, handle, signing_key, seq_num, b_data)
+    signature = sign(flags, handle, signing_key, seq_num, to_sign if to_sign else b_data)
     return seal_msg, signature
 
 

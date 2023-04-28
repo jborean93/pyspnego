@@ -7,6 +7,7 @@ import socket
 
 import pytest
 
+import spnego
 import spnego._credssp as credssp
 from spnego._credssp_structures import NegoData, TSRequest
 from spnego.exceptions import (
@@ -14,6 +15,7 @@ from spnego.exceptions import (
     FeatureMissingError,
     InvalidTokenError,
     NegotiateOptions,
+    NoContextError,
     OperationNotAvailableError,
     SpnegoError,
 )
@@ -66,6 +68,15 @@ def test_credssp_no_iov():
     assert not credssp.CredSSPProxy("username", "password").iov_available()
 
 
+def test_credssp_iov_not_available():
+    expected = (
+        "The system is missing the GSSAPI IOV extension headers or CredSSP is being requested, "
+        "cannot utilize wrap_iov and unwrap_iov"
+    )
+    with pytest.raises(FeatureMissingError, match=re.escape(expected)):
+        credssp.CredSSPProxy("username", "password", options=spnego.NegotiateOptions.wrapping_iov)
+
+
 def test_credssp_no_session_key():
     with pytest.raises(FeatureMissingError, match="The protocol selected does not support getting the session key"):
         credssp.CredSSPProxy("user", "password", options=NegotiateOptions.session_key)
@@ -101,6 +112,11 @@ def test_credssp_verify_fail():
 def test_credssp_wrap_no_context():
     with pytest.raises(SpnegoError, match="Invalid TLS state when wrapping data"):
         credssp.CredSSPProxy("username", "password").wrap(b"data")
+
+
+def test_credssp_query_message_sizes_fail():
+    with pytest.raises(NoContextError, match="Cannot get message sizes until context has been established"):
+        credssp.CredSSPProxy("username", "password").query_message_sizes()
 
 
 def test_credssp_invalid_handshake(ntlm_cred):

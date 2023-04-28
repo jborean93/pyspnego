@@ -36,16 +36,16 @@ all:
       children:
         linux_children:
           hosts:
-            CENTOS8-MIT:
+            ROCKY9-MIT:
               ansible_host: 192.168.65.13
-              vagrant_box: centos/stream8
+              vagrant_box: generic/rocky9
               krb_packages:
               - krb5-devel
               - krb5-workstation
               krb_provider: MIT
-            CENTOS8-HEIMDAL:
+            ROCKY9-HEIMDAL:
               ansible_host: 192.168.65.14
-              vagrant_box: centos/stream8
+              vagrant_box: generic/rocky9
               krb_packages:
               - heimdal-devel
               - heimdal-libs
@@ -56,7 +56,7 @@ all:
       vars:
         ansible_ssh_common_args: -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no
         python_interpreters:
-        - /usr/bin/python3.8
+        - /usr/bin/python3.9
         python_venv_path: ~/venv
 
   vars:

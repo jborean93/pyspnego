@@ -12,6 +12,7 @@ import pytest
 import spnego
 import spnego._ntlm as ntlm
 import spnego.channel_bindings
+import spnego.iov
 from spnego._credential import CredentialCache
 from spnego._ntlm_raw.messages import (
     Authenticate,
@@ -27,7 +28,6 @@ from spnego._text import to_bytes, to_text
 from spnego.exceptions import (
     BadBindingsError,
     BadMICError,
-    FeatureMissingError,
     InvalidTokenError,
     NoContextError,
     OperationNotAvailableError,
@@ -175,7 +175,7 @@ def test_context_no_store(usage):
 
 
 def test_iov_available():
-    assert ntlm.NTLMProxy.iov_available() is False
+    assert ntlm.NTLMProxy.iov_available() is True
 
 
 def test_ntlm_invalid_usage():
@@ -188,13 +188,10 @@ def test_ntlm_invalid_protocol():
         ntlm.NTLMProxy("user", "pass", protocol="fake")
 
 
-def test_ntlm_iov_not_available():
-    expected = (
-        "The system is missing the GSSAPI IOV extension headers or NTLM or CredSSP is being requested, "
-        "cannot utilize wrap_iov and unwrap_iov"
-    )
-    with pytest.raises(FeatureMissingError, match=re.escape(expected)):
-        ntlm.NTLMProxy("user", "pass", options=spnego.NegotiateOptions.wrapping_iov)
+def test_ntlm_query_message_sizes_fail():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(NoContextError, match="Cannot get message sizes until context has been established"):
+        n.query_message_sizes()
 
 
 def test_ntlm_wrap_qop_invalid():
@@ -235,16 +232,162 @@ def test_ntlm_unwrap_winrm_no_context():
         n.unwrap_winrm(b"header", b"data")
 
 
-def test_ntlm_wrap_iov_fail():
+def test_ntlm_wrap_iov_with_qop_fail():
     n = ntlm.NTLMProxy("user", "pass")
-    with pytest.raises(OperationNotAvailableError, match="NTLM does not offer IOV wrapping"):
+    with pytest.raises(UnsupportedQop, match="Unsupported QoP value 1 specified for NTLM"):
+        n.wrap_iov([], qop=1)
+
+
+def test_ntlm_wrap_iov_no_sign_or_seal():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(OperationNotAvailableError, match="NTLM wrap without integrity or confidentiality"):
         n.wrap_iov([])
 
 
-def test_ntlm_unwrap_iov_fail():
+def test_ntlm_wrap_iov_no_context():
     n = ntlm.NTLMProxy("user", "pass")
-    with pytest.raises(OperationNotAvailableError, match="NTLM does not offer IOV wrapping"):
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        n.wrap_iov([])
+
+
+def test_ntlm_wrap_iov_no_header():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov no IOV header buffer present"):
+        n.wrap_iov([b""])
+
+
+def test_ntlm_wrap_iov_no_data():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov no IOV data buffer present"):
+        n.wrap_iov([spnego.iov.BufferType.header])
+
+
+def test_ntlm_wrap_iov_multiple_header():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov must only be used with 1 header IOV buffer"):
+        n.wrap_iov([spnego.iov.BufferType.header, b"", spnego.iov.BufferType.header])
+
+
+def test_ntlm_wrap_iov_multiple_data():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov must only be used with 1 data IOV buffer"):
+        n.wrap_iov([spnego.iov.BufferType.header, b"", b""])
+
+
+def test_ntlm_wrap_iov_invalid_type():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov unsupported IOV buffer type padding"):
+        n.wrap_iov([spnego.iov.BufferType.header, b"", spnego.iov.BufferType.padding])
+
+
+def test_ntlm_wrap_iov_data_not_bytes():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov IOV data buffer at \\[1\\] must be bytes"):
+        n.wrap_iov([spnego.iov.BufferType.header, (spnego.iov.BufferType.data, 1)])
+
+
+def test_ntlm_wrap_iov_signonly_not_bytes():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_out = n._handle_out = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="wrap_iov IOV sign_only buffer at \\[1\\] must be bytes"):
+        n.wrap_iov([spnego.iov.BufferType.header, (spnego.iov.BufferType.sign_only, 1)])
+
+
+def test_ntlm_unwrap_iov_no_sign_or_seal():
+    n = ntlm.NTLMProxy("user", "pass")
+    with pytest.raises(OperationNotAvailableError, match="NTLM unwrap without integrity or confidentiality"):
         n.unwrap_iov([])
+
+
+def test_ntlm_unwrap_iov_no_context():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        n.unwrap_iov([])
+
+
+def test_ntlm_unwrap_iov_no_header():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov no IOV header buffer present"):
+        n.unwrap_iov([b""])
+
+
+def test_ntlm_unwrap_iov_no_data():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov no IOV data buffer present"):
+        n.unwrap_iov([(spnego.iov.BufferType.header, b"")])
+
+
+def test_ntlm_unwrap_iov_multiple_header():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov must only be used with 1 header IOV buffer"):
+        n.unwrap_iov([(spnego.iov.BufferType.header, b""), b"", (spnego.iov.BufferType.header, b"")])
+
+
+def test_ntlm_unwrap_iov_multiple_data():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov must only be used with 1 data IOV buffer"):
+        n.unwrap_iov([(spnego.iov.BufferType.header, b""), b"", b""])
+
+
+def test_ntlm_unwrap_iov_invalid_type():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov unsupported IOV buffer type padding"):
+        n.unwrap_iov([(spnego.iov.BufferType.header, b""), b"", (spnego.iov.BufferType.padding, b"")])
+
+
+def test_ntlm_unwrap_iov_data_not_bytes():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov IOV data buffer at \\[1\\] must be bytes"):
+        n.unwrap_iov([(spnego.iov.BufferType.header, b""), (spnego.iov.BufferType.data, 1)])
+
+
+def test_ntlm_unwrap_iov_data_readonly_not_bytes():
+    n = ntlm.NTLMProxy("user", "pass")
+    n._context_attr = spnego.ContextReq.confidentiality | spnego.ContextReq.integrity
+    n._sign_key_in = n._handle_in = 1  # type: ignore
+
+    with pytest.raises(InvalidTokenError, match="unwrap_iov IOV data_readonly buffer at \\[1\\] must be bytes"):
+        n.unwrap_iov([(spnego.iov.BufferType.header, b""), (spnego.iov.BufferType.data_readonly, 1)])
 
 
 def test_ntlm_sign_qop_invalid():
@@ -637,3 +780,131 @@ def test_ntlm_anon_response(ntlm_cred):
 
     with pytest.raises(OperationNotAvailableError, match="Anonymous user authentication not implemented"):
         s.step(anon_auth)
+
+
+def test_ntlm_iov_wrapping(ntlm_cred):
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        hostname=socket.gethostname(),
+        protocol="ntlm",
+        options=spnego.NegotiateOptions.use_ntlm,
+    )
+    s = spnego.server(protocol="ntlm")
+
+    s.step(c.step(s.step(c.step())))
+
+    res1 = c.wrap_iov(
+        [
+            (spnego.iov.BufferType.sign_only, b"sign 1"),
+            b"data",
+            (spnego.iov.BufferType.data_readonly, b"sign 2"),
+            spnego.iov.BufferType.header,
+        ]
+    )
+    assert isinstance(res1, spnego.IOVWrapResult)
+    assert res1.encrypted
+    assert len(res1.buffers) == 4
+    assert res1.buffers[0].data == b"sign 1"
+    assert res1.buffers[1].data != b"data"
+    assert res1.buffers[2].data == b"sign 2"
+    assert len(res1.buffers[3].data or b"") == 16
+
+    res2 = s.unwrap_iov(res1.buffers)
+    assert isinstance(res2, spnego.IOVUnwrapResult)
+    assert res2.encrypted
+    assert res2.qop == 0
+    assert len(res2.buffers) == 4
+    assert res2.buffers[0].data == b"sign 1"
+    assert res2.buffers[1].data == b"data"
+    assert res2.buffers[2].data == b"sign 2"
+    assert res2.buffers[3].data == res1.buffers[3].data
+
+    res3 = s.wrap_iov(
+        [
+            (spnego.iov.BufferType.sign_only, b"sign 1"),
+            b"data",
+            (spnego.iov.BufferType.data_readonly, b"sign 2"),
+            spnego.iov.BufferType.header,
+        ]
+    )
+    assert isinstance(res3, spnego.IOVWrapResult)
+    assert res3.encrypted
+    assert len(res3.buffers) == 4
+    assert res3.buffers[0].data == b"sign 1"
+    assert res3.buffers[1].data != b"data"
+    assert res3.buffers[2].data == b"sign 2"
+    assert len(res3.buffers[3].data or b"") == 16
+
+    res4 = c.unwrap_iov(res3.buffers)
+    assert isinstance(res4, spnego.IOVUnwrapResult)
+    assert res4.encrypted
+    assert res4.qop == 0
+    assert len(res4.buffers) == 4
+    assert res4.buffers[0].data == b"sign 1"
+    assert res4.buffers[1].data == b"data"
+    assert res4.buffers[2].data == b"sign 2"
+    assert res4.buffers[3].data == res3.buffers[3].data
+
+
+def test_ntlm_iov_unwrapping_as_stream(ntlm_cred):
+    c = spnego.client(
+        ntlm_cred[0],
+        ntlm_cred[1],
+        hostname=socket.gethostname(),
+        protocol="ntlm",
+        options=spnego.NegotiateOptions.use_ntlm,
+    )
+    s = spnego.server(protocol="ntlm")
+
+    s.step(c.step(s.step(c.step())))
+
+    res1 = c.wrap_iov(
+        [
+            b"data",
+            spnego.iov.BufferType.header,
+        ]
+    )
+    assert isinstance(res1, spnego.IOVWrapResult)
+    assert res1.encrypted
+    assert len(res1.buffers) == 2
+    assert res1.buffers[0].data != b"data"
+    assert len(res1.buffers[1].data or b"") == 16
+
+    msg = (res1.buffers[1].data or b"") + (res1.buffers[0].data or b"")
+    res2 = s.unwrap_iov(
+        [
+            (spnego.iov.BufferType.stream, msg),
+            spnego.iov.BufferType.data,
+        ]
+    )
+    assert isinstance(res2, spnego.IOVUnwrapResult)
+    assert res2.encrypted
+    assert res2.qop == 0
+    assert len(res2.buffers) == 2
+    assert res2.buffers[1].data == b"data"
+
+    res3 = s.wrap_iov(
+        [
+            spnego.iov.BufferType.header,
+            b"data",
+        ]
+    )
+    assert isinstance(res3, spnego.IOVWrapResult)
+    assert res3.encrypted
+    assert len(res3.buffers) == 2
+    assert len(res3.buffers[0].data or b"") == 16
+    assert res3.buffers[1].data != b"data"
+
+    msg = (res3.buffers[0].data or b"") + (res3.buffers[1].data or b"")
+    res4 = c.unwrap_iov(
+        [
+            (spnego.iov.BufferType.stream, msg),
+            spnego.iov.BufferType.data,
+        ]
+    )
+    assert isinstance(res4, spnego.IOVUnwrapResult)
+    assert res4.encrypted
+    assert res4.qop == 0
+    assert len(res4.buffers) == 2
+    assert res4.buffers[1].data == b"data"

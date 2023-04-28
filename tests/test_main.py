@@ -116,7 +116,7 @@ def test_parse_output_yaml(capsys):
 
 
 def test_parse_output_yaml_not_installed(monkeypatch):
-    monkeypatch.setattr(entrypoint, "yaml", None)
+    monkeypatch.setattr(entrypoint, "HAS_YAML", False)
 
     with pytest.raises(ValueError, match="Cannot output as yaml as ruamel.yaml is not installed"):
         entrypoint.main(

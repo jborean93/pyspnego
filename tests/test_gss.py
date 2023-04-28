@@ -60,6 +60,13 @@ def test_build_iov_list(kerb_cred):
     assert actual[5] == (spnego.iov.BufferType.data, False, b"\x02")
 
 
+def test_gssapi_query_message_sizes_fail(kerb_cred):
+    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+
+    with pytest.raises(NoContextError, match="Cannot get message sizes until context has been established"):
+        c.query_message_sizes()
+
+
 def test_gssapi_wrap_no_context(kerb_cred):
     c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
 

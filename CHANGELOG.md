@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.9.0 - TBD
+
+* Added the `spnego.ContextReq.dce_style` flag to enable DCE authentication mode
+  * This is used in protocols like RPC/DCE
+* The value for `spnego.iov.BufferType.sign_only` on SSPI has changed from representing `SECBUFFER_MECHLIST` to `SECBUFFER_READONLY_WITH_CHECKSUM`
+  * This is to better match what `sign_only` means when using it with GSSAPI
+  * It is needed to support RPC encryption and signature headers on SSPI
+  * The use of `SECBUFFER_MECHLIST` is not seen in any examples in the wild and is most likely an internal flag
+* Added the IOV buffer type `spnego.iov.BufferType.data_readonly`
+  * For SSPI this corresponds to `SECBUFFER_DATA | SECBUFFER_READONLY`
+  * For GSSAPI this corresponds to `GSS_IOV_BUFFER_TYPE_EMPTY`
+  * As GSSAPI has no actual equivalent to this the empty buffer type is used which in testing results in compatible buffers
+  * This is used for DCE/RPC wrapping when the PDU header and sec trailer are not signed but are included in the wrap_iov buffers.
+* Added limited support for `wrap_iov` and `unwrap_iov` in the Python NTLM context provider.
+  * This currently only supports `spnego.iov.BufferType.header`, `spnego.iov.BufferType.data`, `spnego.iov.BufferType.sign_only`, `spnego.iov.BufferType.data_readonly`, and `spnego.iov.BufferType.stream`
+  * `header`
+    * `wrap_iov`: Used to place the resulting signature in the buffer
+    * `unwrap_iov`: Used as the signature source for validation
+  * `data`
+    * `wrap_iov`: Data to be encrypted/sealed
+    * `unwrap_iov`: Data to be decrypted/unsealed
+  * `sign_only`
+    * `wrap_iov`: Data to be included in the signature/header generation
+    * `unwrap_iov`: Data to be included in the signature/header verification
+  * `data_readonly` is treated the same as `sign_only`
+  * `stream`
+    * `wrap_iov`: Not supported
+    * `unwrap_iov`: Contains the full value to decrypt with the headers in the beginning, must be coupled with a subsequent data buffer of the type `data` to place the decrypted value into
+  * The behaviour used here is modelled as closely as possible to how `SSPI` works but not all the permutations have been tested.
+  * The header/signature will be generated from the `data`, `sign_only`, `data_readonly` values concat together in the order they are provided.
+* Added the `query_message_sizes()` function on a context to retrieve the important message sizes
+  * Currently this only contains the size of the message `header`, also known as the signature or security trailer
+
 ## 0.8.0 - 2023-02-17
 
 * Added the `spnego.ContextReq.no_integrity` flag to disable integrity/confidentiality on Kerberos/Negotiate contexts

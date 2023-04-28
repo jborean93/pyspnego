@@ -1,8 +1,11 @@
 # Copyright: (c) 2020, Jordan Borean (@jborean93) <jborean93@gmail.com>
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
+from __future__ import annotations
+
 import base64
 import collections
+import dataclasses
 import getpass
 import io
 import os
@@ -20,6 +23,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import typing as t
 import uuid
 import warnings
 
@@ -46,6 +50,11 @@ if os.name == 'nt':
     current_user = getpass.getuser()
     IS_SYSTEM = current_user == '%s$' % HOSTNAME
 
+BIND_TIME_FEATURE_NEGOTIATION = (uuid.UUID("6cb71c2c-9812-4540-0300-000000000000"), 1, 0)
+EMP = (uuid.UUID("e1af8308-5d1f-11c9-91a4-08002b14a0fa"), 3, 0)
+ISD_KEY = (uuid.UUID("b9785960-524f-11df-8b6d-83dcded72085"), 1, 0)
+NDR = (uuid.UUID("8a885d04-1ceb-11c9-9fe8-08002b104860"), 2, 0)
+NDR64 = (uuid.UUID("71710533-beba-4937-8319-b5dbef9ccc36"), 1, 0)
 
 SMBHeader = collections.namedtuple('SMBHeader', ['status', 'command', 'session_id', 'data'])
 SMBNegotiateResponse = collections.namedtuple('SMBNegotiateResponse', ['dialect', 'buffer'])
@@ -131,6 +140,193 @@ class HTTPWinRMAuth(requests.auth.AuthBase):
             out_token = self.context.step(base64.b64decode(in_token))
 
         return response
+
+
+@dataclasses.dataclass(frozen=True)
+class SecTrailer:
+    type: int
+    level: int
+    pad_length: int
+    context_id: int
+    data: bytes
+
+
+@dataclasses.dataclass(frozen=True)
+class Tower:
+    service: t.Tuple[uuid.UUID, int, int]
+    data_rep: t.Tuple[uuid.UUID, int, int]
+    protocol: int
+    port: int
+    addr: int
+
+
+@dataclasses.dataclass
+class GetKeyRequest:
+    opnum: int = dataclasses.field(init=False, repr=False, default=0)
+
+    target_sd: bytes
+    root_key_id: t.Optional[uuid.UUID]
+    l0_key_id: int
+    l1_key_id: int
+    l2_key_id: int
+
+    # MS-GKDI 3.1.4.1 GetKey (Opnum 0)
+    # https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/4cac87a3-521e-4918-a272-240f8fabed39
+    # HRESULT GetKey(
+    #     [in] handle_t hBinding,
+    #     [in] ULONG cbTargetSD,
+    #     [in] [size_is(cbTargetSD)] [ref] char* pbTargetSD,
+    #     [in] [unique] GUID* pRootKeyID,
+    #     [in] LONG L0KeyID,
+    #     [in] LONG L1KeyID,
+    #     [in] LONG L2KeyID,
+    #     [out] unsigned long* pcbOut,
+    #     [out] [size_is(, *pcbOut)] byte** ppbOut);
+
+    def pack(self) -> bytes:
+        # Strictly speaking it is only 4 bytes but NDR64 needs 8 byte alignment
+        # on the field after.
+        target_sd_len = len(self.target_sd).to_bytes(8, byteorder="little")
+        root_key_id = b"\x00" * 8
+        if self.root_key_id:
+            root_key_id = b"\x00\x00\x02\x00\x00\x00\x00\x00" + self.root_key_id.bytes_le
+
+        return b"".join(
+            [
+                # cbTargetSD
+                target_sd_len,
+                # pbTargetSD - pointer header includes the length + padding
+                target_sd_len,
+                self.target_sd,
+                b"\x00" * (-len(self.target_sd) % 8),
+                # pRootKeyID
+                root_key_id,
+                # L0KeyID
+                self.l0_key_id.to_bytes(4, byteorder="little", signed=True),
+                # L1KeyID
+                self.l1_key_id.to_bytes(4, byteorder="little", signed=True),
+                # L2KeyID
+                self.l2_key_id.to_bytes(4, byteorder="little", signed=True),
+            ]
+        )
+
+    @classmethod
+    def unpack_response(
+        cls,
+        data: t.Union[bytes, bytearray, memoryview],
+    ) -> GroupKeyEnvelope:
+        view = memoryview(data)
+
+        hresult = struct.unpack("<I", view[-4:].tobytes())[0]
+        view = view[:-4]
+        if hresult != 0:
+            raise Exception(f"GetKey failed 0x{hresult:08X}")
+
+        key_length = struct.unpack("<I", view[:4])[0]
+        view = view[8:]  # Skip padding as well
+        # Skip the referent id and double up on pointer size
+        key = view[16 : 16 + key_length].tobytes()
+        assert len(key) == key_length
+        # print(f"GetKey Response: {base64.b16encode(data).decode()}")
+
+        return GroupKeyEnvelope.unpack(key)
+
+
+@dataclasses.dataclass(frozen=True)
+class GroupKeyEnvelope:
+    # https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-GKDI/%5bMS-GKDI%5d.pdf
+    # 2.2.4 Group Key Envelope
+    version: int
+    flags: int
+    l0: int
+    l1: int
+    l2: int
+    root_key_identifier: uuid.UUID
+    kdf_algorithm: str
+    kdf_parameters: bytes
+    secret_algorithm: str
+    secret_parameters: bytes
+    private_key_length: int
+    public_key_length: int
+    domain_name: str
+    forest_name: str
+    l1_key: bytes
+    l2_key: bytes
+
+    @property
+    def is_public_key(self) -> bool:
+        return bool(self.flags & 1)
+
+    @classmethod
+    def unpack(
+        cls,
+        data: t.Union[bytes, bytearray, memoryview],
+    ) -> GroupKeyEnvelope:
+        view = memoryview(data)
+
+        version = struct.unpack("<I", view[:4])[0]
+
+        assert view[4:8].tobytes() == b"\x4B\x44\x53\x4B"
+
+        flags = struct.unpack("<I", view[8:12])[0]
+        l0_index = struct.unpack("<I", view[12:16])[0]
+        l1_index = struct.unpack("<I", view[16:20])[0]
+        l2_index = struct.unpack("<I", view[20:24])[0]
+        root_key_identifier = uuid.UUID(bytes_le=view[24:40].tobytes())
+        kdf_algo_len = struct.unpack("<I", view[40:44])[0]
+        kdf_para_len = struct.unpack("<I", view[44:48])[0]
+        sec_algo_len = struct.unpack("<I", view[48:52])[0]
+        sec_para_len = struct.unpack("<I", view[52:56])[0]
+        priv_key_len = struct.unpack("<I", view[56:60])[0]
+        publ_key_len = struct.unpack("<I", view[60:64])[0]
+        l1_key_len = struct.unpack("<I", view[64:68])[0]
+        l2_key_len = struct.unpack("<I", view[68:72])[0]
+        domain_len = struct.unpack("<I", view[72:76])[0]
+        forest_len = struct.unpack("<I", view[76:80])[0]
+        view = view[80:]
+
+        kdf_algo = view[: kdf_algo_len - 2].tobytes().decode("utf-16-le")
+        view = view[kdf_algo_len:]
+
+        kdf_param = view[:kdf_para_len].tobytes()
+        view = view[kdf_para_len:]
+
+        secret_algo = view[: sec_algo_len - 2].tobytes().decode("utf-16-le")
+        view = view[sec_algo_len:]
+
+        secret_param = view[:sec_para_len].tobytes()
+        view = view[sec_para_len:]
+
+        domain = view[: domain_len - 2].tobytes().decode("utf-16-le")
+        view = view[domain_len:]
+
+        forest = view[: forest_len - 2].tobytes().decode("utf-16-le")
+        view = view[forest_len:]
+
+        l1_key = view[:l1_key_len].tobytes()
+        view = view[l1_key_len:]
+
+        l2_key = view[:l2_key_len].tobytes()
+        view = view[l2_key_len:]
+
+        return GroupKeyEnvelope(
+            version=version,
+            flags=flags,
+            l0=l0_index,
+            l1=l1_index,
+            l2=l2_index,
+            root_key_identifier=root_key_identifier,
+            kdf_algorithm=kdf_algo,
+            kdf_parameters=kdf_param,
+            secret_algorithm=secret_algo,
+            secret_parameters=secret_param,
+            private_key_length=priv_key_len,
+            public_key_length=publ_key_len,
+            domain_name=domain,
+            forest_name=forest,
+            l1_key=l1_key,
+            l2_key=l2_key,
+        )
 
 
 def get_cbt_data(server):
@@ -483,6 +679,570 @@ def wsman_envelope(action, http, selector_set=None, option_set=None, body=None):
             content += unwrapped_data
 
     return ET.fromstring(content)
+
+
+def create_pdu(
+    packet_type: int,
+    packet_flags: int,
+    call_id: int,
+    header_data: bytes,
+    *,
+    stub_data: t.Optional[bytes] = None,
+    sec_trailer: t.Optional[SecTrailer] = None,
+) -> bytes:
+    # https://pubs.opengroup.org/onlinepubs/9629399/toc.pdf
+    # 12.6.3 Connection-oriented PDU Data Types - PDU Header
+    data = bytearray()
+    data += struct.pack("B", 5)  # Version
+    data += struct.pack("B", 0)  # Version minor
+    data += struct.pack("B", packet_type)
+    data += struct.pack("B", packet_flags)
+    data += b"\x10\x00\x00\x00"  # Data Representation
+    data += b"\x00\x00"  # Fragment length - set at the end below
+    data += struct.pack("<H", len(sec_trailer.data) if sec_trailer else 0)
+    data += struct.pack("<I", call_id)
+    data += header_data
+    data += stub_data or b""
+
+    if sec_trailer:
+        data += struct.pack("B", sec_trailer.type)
+        data += struct.pack("B", sec_trailer.level)
+        data += struct.pack("B", sec_trailer.pad_length)
+        data += struct.pack("B", 0)  # Auth Rsrvd
+        data += struct.pack("<I", sec_trailer.context_id)
+        data += sec_trailer.data
+
+    memoryview(data)[8:10] = struct.pack("<H", len(data))
+
+    return bytes(data)
+
+
+def create_bind(
+    service: t.Tuple[uuid.UUID, int, int],
+    syntaxes: t.List[bytes],
+    auth_data: t.Optional[bytes] = None,
+    sign_header: bool = False,
+    auth_level: int = 6,
+    auth_type: int = 9,
+) -> bytes:
+    context_header = b"\x00\x00\x01\x00"
+    context_header += service[0].bytes_le
+    context_header += struct.pack("<H", service[1])
+    context_header += struct.pack("<H", service[2])
+    context_data = bytearray()
+    for idx, s in enumerate(syntaxes):
+        offset = len(context_data)
+        context_data += context_header
+        memoryview(context_data)[offset : offset + 2] = struct.pack("<H", idx)
+        context_data += s
+
+    bind_data = bytearray()
+    bind_data += b"\xd0\x16"  # Max Xmit Frag
+    bind_data += b"\xd0\x16"  # Max Recv Frag
+    bind_data += b"\x00\x00\x00\x00"  # Assoc Group
+    bind_data += b"\x03\x00\x00\x00"  # Num context items
+    bind_data += context_data
+
+    sec_trailer: t.Optional[SecTrailer] = None
+    if auth_data:
+        sec_trailer = SecTrailer(
+            type=auth_type,
+            level=auth_level,
+            pad_length=0,
+            context_id=0,
+            data=auth_data,
+        )
+
+    return create_pdu(
+        packet_type=11,
+        packet_flags=0x03 | (0x4 if sign_header else 0x0),
+        call_id=1,
+        header_data=bytes(bind_data),
+        sec_trailer=sec_trailer,
+    )
+
+
+def create_alter_context(
+    service: t.Tuple[uuid.UUID, int, int],
+    token: bytes,
+    sign_header: bool = False,
+    auth_level: int = 6,
+    auth_type: int = 9,
+) -> bytes:
+    ctx1 = b"\x01\x00\x01\x00"
+    ctx1 += service[0].bytes_le
+    ctx1 += struct.pack("<H", service[1])
+    ctx1 += struct.pack("<H", service[1])
+    ctx1 += NDR64[0].bytes_le + struct.pack("<H", NDR64[1]) + struct.pack("<H", NDR[2])
+
+    alter_context_data = bytearray()
+    alter_context_data += b"\xd0\x16"  # Max Xmit Frag
+    alter_context_data += b"\xd0\x16"  # Max Recv Frag
+    alter_context_data += b"\x00\x00\x00\x00"  # Assoc Group
+    alter_context_data += b"\x01\x00\x00\x00"  # Num context items
+    alter_context_data += ctx1
+
+    auth_data = SecTrailer(
+        type=auth_type,
+        level=auth_level,
+        pad_length=0,
+        context_id=0,
+        data=token,
+    )
+
+    return create_pdu(
+        packet_type=14,
+        packet_flags=0x03 | (0x4 if sign_header else 0x0),
+        call_id=1,
+        header_data=bytes(alter_context_data),
+        sec_trailer=auth_data,
+    )
+
+
+def create_request(
+    opnum: int,
+    data: bytes,
+    ctx: t.Optional[spnego.ContextProxy] = None,
+    sign_header: bool = False,
+    auth_level: int = 6,
+    auth_type: int = 9,
+) -> bytes:
+    # Add Verification trailer to data
+    # MS-RPCE 2.2.2.13 Veritifcation Trailer
+    # https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/0e9fea61-1bff-4478-9bfe-a3b6d8b64ac3
+    if ctx:
+        pcontext = bytearray()
+        pcontext += ISD_KEY[0].bytes_le
+        pcontext += struct.pack("<H", ISD_KEY[1]) + struct.pack("<H", ISD_KEY[2])
+        pcontext += NDR64[0].bytes_le
+        pcontext += struct.pack("<H", NDR64[1]) + struct.pack("<H", NDR64[2])
+
+        verification_trailer = bytearray()
+        verification_trailer += b"\x8a\xe3\x13\x71\x02\xf4\x36\x71"  # Signature
+
+        verification_trailer += b"\x02\x40"  # Trailer Command - PCONTEXT + End
+        verification_trailer += struct.pack("<H", len(pcontext))
+        verification_trailer += pcontext
+
+        # Verification trailer to added to a 4 byte boundary on the stub data
+        data_padding = -len(data) % 4
+        data += b"\x00" * data_padding
+
+        data += verification_trailer
+        alloc_hint = len(data)
+        auth_padding = -len(data) % 16
+        data += b"\x00" * auth_padding
+
+    else:
+        alloc_hint = len(data)
+
+    request_data = bytearray()
+    request_data += struct.pack("<I", alloc_hint)
+    request_data += struct.pack("<H", 1)  # Context id
+    request_data += struct.pack("<H", opnum)
+
+    if ctx:
+        header_length = ctx.query_message_sizes().header
+
+        sec_trailer = SecTrailer(
+            type=auth_type,
+            level=auth_level,
+            pad_length=auth_padding,
+            context_id=0,
+            data=b"\x00" * header_length,
+        )
+        pdu_req = bytearray(
+            create_pdu(
+                packet_type=0,
+                packet_flags=0x03,
+                call_id=1,
+                header_data=bytes(request_data),
+                stub_data=data,
+                sec_trailer=sec_trailer,
+            )
+        )
+
+        sign_type = spnego.iov.BufferType.sign_only if sign_header else spnego.iov.BufferType.data_readonly
+        sec_trailer_data = pdu_req[-(header_length + 8) : -header_length]
+        res = ctx.wrap_iov(
+            [
+                (sign_type, bytes(pdu_req[:24])),
+                data,
+                (sign_type, bytes(sec_trailer_data)),
+                spnego.iov.BufferType.header,
+            ],
+            encrypt=True,
+            qop=None,
+        )
+
+        enc_data = res.buffers[1].data
+        sig = res.buffers[3].data
+
+        data_view = memoryview(pdu_req)
+        data_view[24 : 24 + len(data)] = enc_data
+        data_view[-header_length:] = sig
+
+        return bytes(pdu_req)
+
+    else:
+        return create_pdu(
+            packet_type=0,
+            packet_flags=0x03,
+            call_id=1,
+            header_data=bytes(request_data),
+            stub_data=data,
+        )
+
+
+def get_fault_pdu_error(data: memoryview) -> int:
+    status = struct.unpack("<I", data[24:28])[0]
+
+    return status
+
+
+def parse_bind_ack(data: bytes) -> t.Optional[bytes]:
+    view = memoryview(data)
+
+    pkt_type = struct.unpack("B", view[2:3])[0]
+    if pkt_type == 3:
+        err = get_fault_pdu_error(view)
+        raise Exception(f"Receive Fault PDU: 0x{err:08X}")
+
+    assert pkt_type == 12
+
+    auth_length = struct.unpack("<H", view[10:12])[0]
+    if auth_length:
+        auth_blob = view[-auth_length:].tobytes()
+
+        return auth_blob
+
+    else:
+        return None
+
+
+def parse_alter_context(data: bytes) -> bytes:
+    view = memoryview(data)
+
+    pkt_type = struct.unpack("B", view[2:3])[0]
+    if pkt_type == 3:
+        err = get_fault_pdu_error(view)
+        raise Exception(f"Receive Fault PDU: 0x{err:08X}")
+
+    assert pkt_type == 15
+
+    auth_length = struct.unpack("<H", view[10:12])[0]
+    if auth_length:
+        auth_blob = view[-auth_length:].tobytes()
+
+        return auth_blob
+    else:
+        return b""
+
+
+def parse_response(
+    data: bytes,
+    ctx: t.Optional[spnego.ContextProxy] = None,
+    sign_header: bool = False,
+) -> bytes:
+    view = memoryview(data)
+
+    pkt_type = struct.unpack("B", view[2:3])[0]
+    if pkt_type == 3:  # False
+        err = get_fault_pdu_error(view)
+        raise Exception(f"Receive Fault PDU: 0x{err:08X}")
+
+    assert pkt_type == 2
+    frag_length = struct.unpack("<H", view[8:10])[0]
+    auth_length = struct.unpack("<H", view[10:12])[0]
+
+    assert len(view) == frag_length
+    if auth_length:
+        auth_data = view[-(auth_length + 8) :]
+        stub_data = view[24 : len(view) - (auth_length + 8)]
+        padding = struct.unpack("B", auth_data[2:3])[0]
+
+    else:
+        auth_data = memoryview(b"")
+        stub_data = view[24:]
+        padding = 0
+
+    if ctx:
+        sign_type = spnego.iov.BufferType.sign_only if sign_header else spnego.iov.BufferType.data_readonly
+        res = ctx.unwrap_iov(
+            [
+                (sign_type, data[:24]),
+                stub_data.tobytes(),
+                (sign_type, auth_data[:8].tobytes()),
+                (spnego.iov.BufferType.header, auth_data[8:].tobytes()),
+            ],
+        )
+        decrypted_stub = res.buffers[1].data
+
+        return decrypted_stub[: len(decrypted_stub) - padding]
+
+    else:
+        return stub_data.tobytes()
+
+
+def create_ept_map_request(
+    service: t.Tuple[uuid.UUID, int, int],
+    data_rep: t.Tuple[uuid.UUID, int, int],
+    protocol: int = 0x0B,  # TCP/IP
+    port: int = 135,
+    address: int = 0,
+) -> t.Tuple[int, bytes]:
+    # MS-RPCE 2.2.1.2.5 ept_map Method
+    # https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/ab744583-430e-4055-8901-3c6bc007e791
+    # void ept_map(
+    #     [in] handle_t hEpMapper,
+    #     [in, ptr] UUID* obj,
+    #     [in, ptr] twr_p_t map_tower,
+    #     [in, out] ept_lookup_handle_t* entry_handle,
+    #     [in, range(0,500)] unsigned long max_towers,
+    #     [out] unsigned long* num_towers,
+    #     [out, ptr, size_is(max_towers), length_is(*num_towers)]
+    #         twr_p_t* ITowers,
+    #     [out] error_status* status
+    # );
+    def build_floor(protocol: int, lhs: bytes, rhs: bytes) -> bytes:
+        data = bytearray()
+        data += struct.pack("<H", len(lhs) + 1)
+        data += struct.pack("B", protocol)
+        data += lhs
+        data += struct.pack("<H", len(rhs))
+        data += rhs
+
+        return bytes(data)
+
+    floors: t.List[bytes] = [
+        build_floor(
+            protocol=0x0D,
+            lhs=service[0].bytes_le + struct.pack("<H", service[1]),
+            rhs=struct.pack("<H", service[2]),
+        ),
+        build_floor(
+            protocol=0x0D,
+            lhs=data_rep[0].bytes_le + struct.pack("<H", data_rep[1]),
+            rhs=struct.pack("<H", data_rep[2]),
+        ),
+        build_floor(protocol=protocol, lhs=b"", rhs=b"\x00\x00"),
+        build_floor(protocol=0x07, lhs=b"", rhs=struct.pack(">H", port)),
+        build_floor(protocol=0x09, lhs=b"", rhs=struct.pack(">I", address)),
+    ]
+
+    tower = bytearray()
+    tower += struct.pack("<H", len(floors))
+    for f in floors:
+        tower += f
+    tower_padding = -(len(tower) + 4) % 8
+
+    data = bytearray()
+    data += b"\x01" + (b"\x00" * 23)  # Blank UUID pointer with referent id 1
+    data += b"\x02\x00\x00\x00\x00\x00\x00\x00"  # Tower referent id 2
+    data += struct.pack("<Q", len(tower))
+    data += struct.pack("<I", len(tower))
+    data += tower
+    data += b"\x00" * tower_padding
+    data += b"\x00" * 20  # Context handle
+    data += struct.pack("<I", 4)  # Max towers
+
+    return 3, bytes(data)
+
+
+def parse_ept_map_response(data: bytes) -> t.List[Tower]:
+    def unpack_floor(view: memoryview) -> t.Tuple[int, int, memoryview, memoryview]:
+        lhs_len = struct.unpack("<H", view[:2])[0]
+        proto = view[2]
+        lhs = view[3 : lhs_len + 2]
+        offset = lhs_len + 2
+
+        rhs_len = struct.unpack("<H", view[offset : offset + 2])[0]
+        rhs = view[offset + 2 : offset + rhs_len + 2]
+
+        return offset + rhs_len + 2, proto, lhs, rhs
+
+    view = memoryview(data)
+
+    return_code = struct.unpack("<I", view[-4:])[0]
+    assert return_code == 0
+    num_towers = struct.unpack("<I", view[20:24])[0]
+    # tower_max_count = struct.unpack("<Q", view[24:32])[0]
+    # tower_offset = struct.unpack("<Q", view[32:40])[0]
+    tower_count = struct.unpack("<Q", view[40:48])[0]
+
+    tower_data_offset = 8 * tower_count  # Ignore referent ids
+    view = view[48 + tower_data_offset :]
+    towers: t.List[Tower] = []
+    for _ in range(tower_count):
+        tower_length = struct.unpack("<Q", view[:8])[0]
+        padding = -(tower_length + 4) % 8
+        floor_len = struct.unpack("<H", view[12:14])[0]
+        assert floor_len == 5
+        view = view[14:]
+
+        offset, proto, lhs, rhs = unpack_floor(view)
+        view = view[offset:]
+        assert proto == 0x0D
+        service = (
+            uuid.UUID(bytes_le=lhs[:16].tobytes()),
+            struct.unpack("<H", lhs[16:])[0],
+            struct.unpack("<H", rhs)[0],
+        )
+
+        offset, proto, lhs, rhs = unpack_floor(view)
+        view = view[offset:]
+        assert proto == 0x0D
+        data_rep = (
+            uuid.UUID(bytes_le=lhs[:16].tobytes()),
+            struct.unpack("<H", lhs[16:])[0],
+            struct.unpack("<H", rhs)[0],
+        )
+
+        offset, protocol, _, _ = unpack_floor(view)
+        view = view[offset:]
+        assert protocol == 0x0B
+
+        offset, proto, lhs, rhs = unpack_floor(view)
+        view = view[offset:]
+        assert proto == 0x07
+        port = struct.unpack(">H", rhs)[0]
+
+        offset, proto, lhs, rhs = unpack_floor(view)
+        view = view[offset:]
+        assert proto == 0x09
+        addr = struct.unpack(">I", rhs)[0]
+
+        towers.append(
+            Tower(
+                service=service,
+                data_rep=data_rep,
+                protocol=protocol,
+                port=port,
+                addr=addr,
+            )
+        )
+        view = view[padding:]
+
+    assert len(towers) == num_towers
+
+    return towers
+
+
+def rpc_get_key(
+    dc: str,
+    ctx: spnego.ContextProxy,
+    target_sd: bytes,
+    root_key_id: t.Optional[uuid.UUID],
+    l0: int,
+    l1: int,
+    l2: int,
+    auth_level: str = "privacy_integrity",
+    auth_protocol: str = "negotiate",
+) -> GroupKeyEnvelope:
+    sign_header = False
+    if auth_level == "privacy_integrity":
+        sign_header = True
+        auth_level = "privacy"
+
+    auth_level = {
+        "none": 0,  # RPC_C_AUTHN_LEVEL_DEFAULT
+        "integrity": 5,  # RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
+        "privacy": 6,  # RPC_C_AUTHN_LEVEL_PKT_PRIVACY
+    }[auth_level]
+    auth_type = {
+        "negotiate": 0x09,  # RPC_C_AUTHN_GSS_NEGOTIATE
+        "ntlm": 0x0A,  # RPC_C_AUTHN_WINNT
+        "kerberos": 0x10,  # RPC_C_AUTHN_GSS_KERBEROS
+    }[auth_protocol]
+    bind_syntaxes = [
+        NDR[0].bytes_le + struct.pack("<H", NDR[1]) + struct.pack("<H", NDR[2]),
+        NDR64[0].bytes_le + struct.pack("<H", NDR64[1]) + struct.pack("<H", NDR64[2]),
+        BIND_TIME_FEATURE_NEGOTIATION[0].bytes_le
+        + struct.pack("<H", BIND_TIME_FEATURE_NEGOTIATION[1])
+        + struct.pack("<H", BIND_TIME_FEATURE_NEGOTIATION[2]),
+    ]
+
+    # Find the dynamic endpoint port for the ISD service.
+    with socket.create_connection((dc, 135)) as s:
+        bind_data = create_bind(
+            EMP,
+            bind_syntaxes,
+            sign_header=False,
+        )
+        s.sendall(bind_data)
+        resp = s.recv(4096)
+        parse_bind_ack(resp)
+
+        opnum, map_request = create_ept_map_request(ISD_KEY, NDR)
+        request = create_request(
+            opnum,
+            map_request,
+        )
+        s.sendall(request)
+        resp = s.recv(4096)
+
+        ept_response = parse_response(resp)
+        isd_towers = parse_ept_map_response(ept_response)
+        assert len(isd_towers) > 0
+        isd_port = isd_towers[0].port
+
+    out_token = ctx.step()
+    assert out_token
+
+    with socket.create_connection((dc, isd_port)) as s:
+        bind_data = create_bind(
+            ISD_KEY,
+            bind_syntaxes,
+            auth_data=out_token,
+            sign_header=sign_header,
+            auth_level=auth_level,
+            auth_type=auth_type,
+        )
+
+        s.sendall(bind_data)
+        resp = s.recv(4096)
+        in_token = parse_bind_ack(resp)
+
+        out_token = ctx.step(in_token)
+
+        while out_token:
+            # For odd numbered legs we should be sending the MS-RPCE rpc_auth3
+            # PDU. This doesn't seem to be necessary in testing though and
+            # doing so just adds more complication, use the alter context PDU
+            # like normal.
+            out_data = create_alter_context(
+                ISD_KEY,
+                out_token,
+                sign_header=sign_header,
+                auth_level=auth_level,
+                auth_type=auth_type,
+            )
+            s.sendall(out_data)
+            resp = s.recv(4096)
+            in_token = parse_alter_context(resp)
+
+            if in_token:
+                out_token = ctx.step(in_token)
+            else:
+                out_token = None
+
+        assert ctx.complete
+        assert not out_token
+
+        get_key_req = GetKeyRequest(target_sd, root_key_id, l0, l1, l2)
+        request = create_request(
+            get_key_req.opnum,
+            get_key_req.pack(),
+            ctx=ctx,
+            sign_header=sign_header,
+            auth_level=auth_level,
+            auth_type=auth_type,
+        )
+        s.sendall(request)
+        resp = s.recv(4096)
+
+        create_key_resp = parse_response(resp, ctx=ctx, sign_header=sign_header)
+        return GetKeyRequest.unpack_response(create_key_resp)
 
 
 @pytest.mark.parametrize('service', ['HTTP', 'cifs'])
@@ -912,3 +1672,68 @@ def test_ldap_no_integrity(protocol: str) -> None:
             msg = ldap.receive(ssock.recv(4096))[0]
             assert isinstance(msg, sansldap.ExtendedResponse)
             assert msg.value.startswith(b"u:SPNEGO\\")
+
+
+@pytest.mark.parametrize(
+    'protocol, auth_level',
+    [
+        ("kerberos", "privacy_integrity"),
+        ("kerberos", "privacy"),
+        ("negotiate", "privacy_integrity"),
+        ("negotiate", "privacy"),
+        ("negotiate-ntlm", "privacy_integrity"),
+        ("negotiate-ntlm", "privacy"),
+        ("ntlm", "privacy_integrity"),
+        ("ntlm", "privacy"),
+    ],
+)
+def test_dce_rpc_auth(protocol: str, auth_level: str) -> None:
+    auth_kwargs = {
+        "service": "host",
+        "context_req": spnego.ContextReq.default | spnego.ContextReq.dce_style
+    }
+    if protocol == "negotiate-ntlm":
+        auth_kwargs["hostname"] = WIN_DC_IP
+        auth_kwargs["protocol"] = "negotiate"
+    else:
+        auth_kwargs["hostname"] = WIN_DC
+        auth_kwargs["protocol"] = protocol
+
+    if protocol == 'ntlm':
+        auth_kwargs['username'] = USERNAME
+        auth_kwargs['password'] = PASSWORD
+        auth_kwargs['options'] = spnego.NegotiateOptions.use_ntlm
+    elif os.name != 'nt' or IS_SYSTEM:
+        auth_kwargs['username'] = USERNAME
+        auth_kwargs['password'] = PASSWORD
+
+    c = spnego.client(**auth_kwargs)
+
+    # O:SYG:SYD:(A;;CCDC;;;WD)(A;;DC;;;WD)
+    target_sd = (
+        b"\x01\x00\x04\x80\x44\x00\x00\x00"
+        b"\x50\x00\x00\x00\x00\x00\x00\x00"
+        b"\x14\x00\x00\x00\x02\x00\x30\x00"
+        b"\x02\x00\x00\x00\x00\x00\x14\x00"
+        b"\x03\x00\x00\x00\x01\x01\x00\x00"
+        b"\x00\x00\x00\x01\x00\x00\x00\x00"
+        b"\x00\x00\x14\x00\x02\x00\x00\x00"
+        b"\x01\x01\x00\x00\x00\x00\x00\x01"
+        b"\x00\x00\x00\x00\x01\x01\x00\x00"
+        b"\x00\x00\x00\x05\x12\x00\x00\x00"
+        b"\x01\x01\x00\x00\x00\x00\x00\x05"
+        b"\x12\x00\x00\x00"
+    )
+
+    res = rpc_get_key(
+        WIN_DC,
+        c,
+        target_sd,
+        root_key_id=None,
+        l0=-1,
+        l1=-1,
+        l2=-1,
+        auth_level=auth_level,
+        auth_protocol=auth_kwargs["protocol"],
+    )
+    assert isinstance(res, GroupKeyEnvelope)

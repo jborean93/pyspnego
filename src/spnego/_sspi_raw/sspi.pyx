@@ -94,6 +94,7 @@ from spnego._sspi_raw.security cimport (
     ISC_REQ_REPLAY_DETECT,
     ISC_REQ_SEQUENCE_DETECT,
     ISC_REQ_STREAM,
+    ISC_REQ_USE_DCE_STYLE,
     ISC_REQ_USE_SESSION_KEY,
     ISC_REQ_USE_SUPPLIED_CREDS,
     ISC_RET_DELEGATE,
@@ -246,6 +247,7 @@ class ClientContextReq:
     replay_detect = ISC_REQ_REPLAY_DETECT
     sequence_detect = ISC_REQ_SEQUENCE_DETECT
     stream = ISC_REQ_STREAM
+    use_dce_style = ISC_REQ_USE_DCE_STYLE
     use_session_key = ISC_REQ_USE_SESSION_KEY
     use_supplied_creds = ISC_REQ_USE_SUPPLIED_CREDS
 

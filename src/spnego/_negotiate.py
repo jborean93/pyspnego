@@ -14,6 +14,7 @@ from spnego._context import (
     GSSMech,
     IOVUnwrapResult,
     IOVWrapResult,
+    SecPkgContextSizes,
     UnwrapResult,
     WinRMWrapResult,
     WrapResult,
@@ -29,7 +30,12 @@ from spnego._spnego import (
 )
 from spnego._sspi import SSPIProxy
 from spnego.channel_bindings import GssChannelBindings
-from spnego.exceptions import BadMechanismError, InvalidTokenError, NegotiateOptions
+from spnego.exceptions import (
+    BadMechanismError,
+    InvalidTokenError,
+    NegotiateOptions,
+    NoContextError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +79,8 @@ class NegotiateProxy(ContextProxy):
         self._mech_sent = False
         self._mic_sent = False
         self._mic_recv = False
-        self._mic_required = False
+        # DCE will always send a MIC token, even for Kerberos.
+        self._mic_required = bool(self.context_req & ContextReq.dce_style)
 
     @classmethod
     def available_protocols(cls, options: typing.Optional[NegotiateOptions] = None) -> typing.List[str]:
@@ -345,6 +352,12 @@ class NegotiateProxy(ContextProxy):
             ).pack()
 
         return final_token
+
+    def query_message_sizes(self) -> SecPkgContextSizes:
+        if not self.complete:
+            raise NoContextError(context_msg="Cannot get message sizes until context has been established")
+
+        return self._context.query_message_sizes()
 
     def wrap(self, data: bytes, encrypt: bool = True, qop: typing.Optional[int] = None) -> WrapResult:
         return self._context.wrap(data, encrypt=encrypt, qop=qop)
