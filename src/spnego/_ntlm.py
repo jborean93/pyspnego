@@ -419,7 +419,11 @@ class NTLMProxy(ContextProxy):
         channel_bindings: typing.Optional[GssChannelBindings] = None,
     ) -> bytes:
         if not self._temp_negotiate:
-            self._temp_negotiate = Negotiate(self._context_req)
+            # SSPI always sends the version even if it's optional. There have
+            # been reports that some NTLM servers expect this to produce a
+            # valid challenge/authentication token later in the exchange.
+            # https://github.com/jborean93/smbprotocol/issues/216
+            self._temp_negotiate = Negotiate(self._context_req, version=Version.get_current())
             return self._temp_negotiate.pack()
 
         in_token = in_token or b""

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1 - 2023-06-14
+
+* Always set the `NTLMSSP_REQUEST_VERSION` flag on the NTLM `Negotiate` message
+  * This aligns the behaviour with how SSPI generates this message
+
 ## 0.9.0 - 2023-04-29
 
 * Added the `spnego.ContextReq.dce_style` flag to enable DCE authentication mode
