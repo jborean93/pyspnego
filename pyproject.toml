@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "Cython >= 0.29.29, < 3.0.0; sys_platform == 'win32'",  # 0.29.29 includes fixes for Python 3.11
+    "Cython >= 0.29.29, < 4.0.0; sys_platform == 'win32'",  # 0.29.29 includes fixes for Python 3.11
     "setuptools >= 61.0.0",  # Support for setuptools config in pyproject.toml
 ]
 build-backend = "setuptools.build_meta"

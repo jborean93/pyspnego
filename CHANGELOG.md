@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2 - TBD
+
+* Added support for Cython 3.x.y when building the Windows extension modules
+
 ## 0.9.1 - 2023-06-14
 
 * Always set the `NTLMSSP_REQUEST_VERSION` flag on the NTLM `Negotiate` message
