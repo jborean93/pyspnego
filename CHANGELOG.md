@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.2 - TBD
+## 0.9.2 - 2023-08-29
 
 * Added Python 3.12 wheel for Windows
 
