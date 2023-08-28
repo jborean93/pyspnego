@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2 - TBD
+
+* Added Python 3.12 wheel for Windows
+
 ## 0.9.1 - 2023-06-14
 
 * Always set the `NTLMSSP_REQUEST_VERSION` flag on the NTLM `Negotiate` message
