@@ -9,6 +9,10 @@ inventory = YAML.load_file('inventory.yml')
 
 Vagrant.configure("2") do |config|
   inventory['all']['children'].each do |group,group_details|
+    config.winrm.transport = :ssl
+    config.winrm.basic_auth_only = true
+    config.winrm.ssl_peer_verification = false
+
     group_details['children'].each do |sub_group,sub_group_details|
       sub_group_details['hosts'].each do |server,details|
 

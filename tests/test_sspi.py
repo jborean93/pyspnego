@@ -31,18 +31,18 @@ def test_build_iov_list(ntlm_cred):
     )
 
     assert len(actual) == 6
-    assert actual[0][0] == spnego.iov.BufferType.header
-    assert actual[0][1] == bytearray(b"\x01")
-    assert actual[1][0] == spnego.iov.BufferType.data
-    assert actual[1][1] == bytearray(5)
-    assert actual[2][0] == spnego.iov.BufferType.padding
-    assert actual[2][1] == bytearray(2)
-    assert actual[3][0] == spnego.iov.BufferType.header
-    assert actual[3][1] == bytearray(10)
-    assert actual[4][0] == spnego.iov.BufferType.stream
-    assert actual[4][1] == bytearray(0)
-    assert actual[5][0] == spnego.iov.BufferType.data
-    assert actual[5][1] == bytearray(b"\x02")
+    assert actual[0].buffer_type == spnego.iov.BufferType.header
+    assert actual[0].data == b"\x01"
+    assert actual[1].buffer_type == spnego.iov.BufferType.data
+    assert actual[1].data == b"\x00" * 5
+    assert actual[2].buffer_type == spnego.iov.BufferType.padding
+    assert actual[2].data == b"\x00" * 2
+    assert actual[3].buffer_type == spnego.iov.BufferType.header
+    assert actual[3].data == b"\x00" * 10
+    assert actual[4].buffer_type == spnego.iov.BufferType.stream
+    assert actual[4].data == b""
+    assert actual[5].buffer_type == spnego.iov.BufferType.data
+    assert actual[5].data == b"\x02"
 
 
 @pytest.mark.skipif("ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Requires SSPI library")
@@ -58,7 +58,7 @@ def test_build_iov_list_fail_auto_alloc(ntlm_cred):
 def test_no_sspi_library(monkeypatch):
     monkeypatch.setattr(spnego._sspi, "HAS_SSPI", False)
 
-    with pytest.raises(ImportError, match="SSPIProxy requires the SSPI Cython extension to be compiled"):
+    with pytest.raises(ImportError, match="SSPIProxy requires the Windows only sspi python package"):
         spnego._sspi.SSPIProxy()
 
 
