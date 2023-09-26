@@ -24,7 +24,7 @@ on:
   - cron: 0 9 * * *
 
 jobs:
-  build_sdist:
+  build:
     name: build sdist and universal wheel
     runs-on: ubuntu-latest
     steps:
@@ -40,61 +40,10 @@ jobs:
         name: artifact
         path: ./dist/*
 
-  build_wheels:
-    name: build wheels
-    needs:
-    - build_sdist
-
-    runs-on: windows-2022
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-        - version: cp37-win_amd64
-        - version: cp37-win32
-        - version: cp38-win_amd64
-        - version: cp38-win32
-        - version: cp39-win_amd64
-        - version: cp39-win32
-        - version: cp310-win_amd64
-        - version: cp310-win32
-        - version: cp311-win_amd64
-        - version: cp311-win32
-        - version: cp312-win_amd64
-        - version: cp312-win32
-
-    steps:
-    - uses: actions/download-artifact@v3
-      with:
-        name: artifact
-        path: ./
-
-    - name: extract sdist
-      shell: bash
-      run: |
-        tar xf pyspnego-*.tar.gz
-        mv pyspnego-*/* .
-        rm -r pyspnego-*/
-        rm pyspnego-*.tar.gz
-
-    - name: build wheel
-      uses: pypa/cibuildwheel@v2.15.0
-      env:
-        CIBW_ARCHS: all
-        CIBW_BUILD: ${{ matrix.version }}
-        CIBW_BUILD_VERBOSITY: 1
-        CIBW_PRERELEASE_PYTHONS: ${{ matrix.prerelease || 'false' }}
-
-    - uses: actions/upload-artifact@v3
-      with:
-        path: ./wheelhouse/*.whl
-        name: artifact
-
   test:
     name: test
     needs:
-    - build_sdist
-    - build_wheels
+    - build
 
     runs-on: ${{ matrix.os }}
     strategy:
@@ -105,7 +54,6 @@ jobs:
         - macOS-12
         - windows-latest
         python-version:
-        - 3.7
         - 3.8
         - 3.9
         - '3.10'

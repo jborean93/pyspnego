@@ -19,8 +19,6 @@ all:
         ansible_connection: psrp
         ansible_port: 5985
         python_interpreters:
-        - C:\Program Files\Python37
-        - C:\Program Files (x86)\Python37-32
         - C:\Program Files\Python38
         - C:\Program Files (x86)\Python38-32
         - C:\Program Files\Python39

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0 - 2023-09-27
+
+* Drop support for Python 3.7 - new minimum is 3.8+
+* Moved SSPI bindings out into a separate package called `sspi`
+  * This simplifies this project as it doesn't have to worry about SSPI correctness
+  * The `sspi` package improves performance and memory allocation with a more robust API
+  * Fixes an issue with Cython 3 allowing it to align with more modern versions going forward
+
 ## 0.9.2 - 2023-08-29
 
 * Added Python 3.12 wheel for Windows
