@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.10.0 - 2023-09-27
+## 0.10.1 - 2023-09-29
+
+* Rename `sspi` package dependency to `sspic` to avoid conflicts with pywin32
+
+## 0.10.0 - 2023-09-27 - Has been yanked
 
 * Drop support for Python 3.7 - new minimum is 3.8+
 * Moved SSPI bindings out into a separate package called `sspi`
