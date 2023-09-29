@@ -58,7 +58,7 @@ def test_build_iov_list_fail_auto_alloc(ntlm_cred):
 def test_no_sspi_library(monkeypatch):
     monkeypatch.setattr(spnego._sspi, "HAS_SSPI", False)
 
-    with pytest.raises(ImportError, match="SSPIProxy requires the Windows only sspi python package"):
+    with pytest.raises(ImportError, match="SSPIProxy requires the Windows only sspic python package"):
         spnego._sspi.SSPIProxy()
 
 
