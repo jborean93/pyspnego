@@ -15,6 +15,7 @@ See [How to Install](#how-to-install) for more details
 
 * CPython 3.8+
 * [cryptography](https://github.com/pyca/cryptography)
+* [sspic](https://github.com/jborean93/pysspic) - Windows only
 
 ### Optional Requirements
 

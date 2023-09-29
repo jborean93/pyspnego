@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.10.2 - TBD
+
 ## 0.10.1 - 2023-09-29
 
 * Rename `sspi` package dependency to `sspic` to avoid conflicts with pywin32
