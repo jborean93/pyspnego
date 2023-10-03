@@ -36,7 +36,7 @@ from spnego.iov import BufferType, IOVBuffer, IOVResBuffer
 log = logging.getLogger(__name__)
 
 if os.name == "nt":
-    import sspic
+    import sspilib
 
     HAS_SSPI = True
 else:
@@ -51,14 +51,14 @@ def _available_protocols() -> list[str]:
         return []
 
 
-def _create_iov_result(iov: sspic.raw.SecBufferDesc) -> tuple[IOVResBuffer, ...]:
+def _create_iov_result(iov: sspilib.raw.SecBufferDesc) -> tuple[IOVResBuffer, ...]:
     """Converts SSPI IOV buffer to generic IOVBuffer result."""
     buffers = []
     for i in iov:
         buffer_type = int(i.buffer_type)
-        if i.buffer_flags & sspic.raw.SecBufferFlags.SECBUFFER_READONLY_WITH_CHECKSUM:
+        if i.buffer_flags & sspilib.raw.SecBufferFlags.SECBUFFER_READONLY_WITH_CHECKSUM:
             buffer_type = BufferType.sign_only
-        elif i.buffer_flags & sspic.raw.SecBufferFlags.SECBUFFER_READONLY:
+        elif i.buffer_flags & sspilib.raw.SecBufferFlags.SECBUFFER_READONLY:
             buffer_type = BufferType.data_readonly
 
         buffer_entry = IOVResBuffer(type=BufferType(buffer_type), data=i.data)
@@ -72,7 +72,7 @@ def _get_sspi_credential(
     protocol: str,
     usage: str,
     credentials: list[Credential],
-) -> sspic.raw.CredHandle:
+) -> sspilib.raw.CredHandle:
     """Get the SSPI credential.
 
     Will get an SSPI credential for the protocol specified. Currently only
@@ -86,31 +86,31 @@ def _get_sspi_credential(
         credentials: List of credentials to retrieve from.
 
     Returns:
-        sspic.raw.CredHandle: The handle to the SSPI credential to use.
+        sspilib.raw.CredHandle: The handle to the SSPI credential to use.
     """
     credential_kwargs: dict[str, t.Any] = {
         "package": protocol,
         "principal": principal,
         "credential_use": (
-            sspic.raw.CredentialUse.SECPKG_CRED_OUTBOUND
+            sspilib.raw.CredentialUse.SECPKG_CRED_OUTBOUND
             if usage == "initiate"
-            else sspic.raw.CredentialUse.SECPKG_CRED_INBOUND
+            else sspilib.raw.CredentialUse.SECPKG_CRED_INBOUND
         ),
     }
 
     for cred in credentials:
         if isinstance(cred, Password):
             domain, username = split_username(cred.username)
-            auth_data = sspic.raw.WinNTAuthIdentity(
+            auth_data = sspilib.raw.WinNTAuthIdentity(
                 username=username,
                 domain=domain,
                 password=cred.password,
             )
 
-            return sspic.raw.acquire_credentials_handle(**credential_kwargs, auth_data=auth_data).credential
+            return sspilib.raw.acquire_credentials_handle(**credential_kwargs, auth_data=auth_data).credential
 
         elif isinstance(cred, CredentialCache):
-            return sspic.raw.acquire_credentials_handle(**credential_kwargs).credential
+            return sspilib.raw.acquire_credentials_handle(**credential_kwargs).credential
 
     raise InvalidCredentialError(context_msg="No applicable credentials available")
 
@@ -138,14 +138,14 @@ class SSPIProxy(ContextProxy):
     ) -> None:
 
         if not HAS_SSPI:
-            raise ImportError("SSPIProxy requires the Windows only sspic python package")
+            raise ImportError("SSPIProxy requires the Windows only sspilib python package")
 
         credentials = unify_credentials(username, password)
         super(SSPIProxy, self).__init__(
             credentials, hostname, service, channel_bindings, context_req, usage, protocol, options
         )
 
-        self._native_channel_bindings: sspic.SecChannelBindings | None
+        self._native_channel_bindings: sspilib.SecChannelBindings | None
         if channel_bindings:
             self._native_channel_bindings = self._get_native_bindings(channel_bindings)
         else:
@@ -156,7 +156,7 @@ class SSPIProxy(ContextProxy):
         self._security_trailer = 0
 
         self._complete = False
-        self._context: sspic.raw.CtxtHandle | None = None
+        self._context: sspilib.raw.CtxtHandle | None = None
         self.__seq_num = 0
 
         sspi_credential = kwargs.get("_sspi_credential", None)
@@ -179,9 +179,9 @@ class SSPIProxy(ContextProxy):
     @property
     def client_principal(self) -> str | None:
         if self.usage == "accept":
-            names = sspic.raw.query_context_attributes(
-                t.cast(sspic.raw.CtxtHandle, self._context),
-                sspic.raw.SecPkgContextNames,
+            names = sspilib.raw.query_context_attributes(
+                t.cast(sspilib.raw.CtxtHandle, self._context),
+                sspilib.raw.SecPkgContextNames,
             )
             return names.username
         else:
@@ -195,18 +195,18 @@ class SSPIProxy(ContextProxy):
     def negotiated_protocol(self) -> str | None:
         # FIXME: Try and replicate GSSAPI. Will return None for acceptor until the first token is returned. Negotiate
         # for both iniator and acceptor until the context is established.
-        package_info = sspic.raw.query_context_attributes(
-            t.cast(sspic.raw.CtxtHandle, self._context),
-            sspic.raw.SecPkgContextPackageInfo,
+        package_info = sspilib.raw.query_context_attributes(
+            t.cast(sspilib.raw.CtxtHandle, self._context),
+            sspilib.raw.SecPkgContextPackageInfo,
         )
         return package_info.name.lower()
 
     @property
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
-        session_key = sspic.raw.query_context_attributes(
-            t.cast(sspic.raw.CtxtHandle, self._context),
-            sspic.raw.SecPkgContextSessionKey,
+        session_key = sspilib.raw.query_context_attributes(
+            t.cast(sspilib.raw.CtxtHandle, self._context),
+            sspilib.raw.SecPkgContextSessionKey,
         )
         return session_key.session_key
 
@@ -232,12 +232,12 @@ class SSPIProxy(ContextProxy):
         if not self._is_wrapped:
             log.debug("SSPI step input: %s", base64.b64encode(in_token or b"").decode())
 
-        sec_tokens: list[sspic.raw.SecBuffer] = []
+        sec_tokens: list[sspilib.raw.SecBuffer] = []
         if in_token:
             in_token = bytearray(in_token)
-            sec_tokens.append(sspic.raw.SecBuffer(in_token, sspic.raw.SecBufferType.SECBUFFER_TOKEN))
+            sec_tokens.append(sspilib.raw.SecBuffer(in_token, sspilib.raw.SecBufferType.SECBUFFER_TOKEN))
 
-        native_channel_bindings: sspic.SecChannelBindings | None
+        native_channel_bindings: sspilib.SecChannelBindings | None
         if channel_bindings:
             native_channel_bindings = self._get_native_bindings(channel_bindings)
         else:
@@ -246,39 +246,39 @@ class SSPIProxy(ContextProxy):
         if native_channel_bindings:
             sec_tokens.append(native_channel_bindings.dangerous_get_sec_buffer())
 
-        in_buffer: sspic.raw.SecBufferDesc | None = None
+        in_buffer: sspilib.raw.SecBufferDesc | None = None
         if sec_tokens:
-            in_buffer = sspic.raw.SecBufferDesc(sec_tokens)
+            in_buffer = sspilib.raw.SecBufferDesc(sec_tokens)
 
-        out_buffer = sspic.raw.SecBufferDesc(
+        out_buffer = sspilib.raw.SecBufferDesc(
             [
-                sspic.raw.SecBuffer(None, sspic.raw.SecBufferType.SECBUFFER_TOKEN),
+                sspilib.raw.SecBuffer(None, sspilib.raw.SecBufferType.SECBUFFER_TOKEN),
             ]
         )
 
         context_req: int
-        res: sspic.raw.InitializeContextResult | sspic.raw.AcceptContextResult
+        res: sspilib.raw.InitializeContextResult | sspilib.raw.AcceptContextResult
         if self.usage == "initiate":
-            context_req = self._context_req | sspic.IscReq.ISC_REQ_ALLOCATE_MEMORY
-            res = sspic.raw.initialize_security_context(
+            context_req = self._context_req | sspilib.IscReq.ISC_REQ_ALLOCATE_MEMORY
+            res = sspilib.raw.initialize_security_context(
                 credential=self._credential,
                 context=self._context,
                 target_name=self.spn or "",
                 context_req=context_req,
-                target_data_rep=sspic.raw.TargetDataRep.SECURITY_NATIVE_DREP,
+                target_data_rep=sspilib.raw.TargetDataRep.SECURITY_NATIVE_DREP,
                 input_buffers=in_buffer,
                 output_buffers=out_buffer,
             )
             status = res.status
             self._context = res.context
         else:
-            context_req = self._context_req | sspic.AscReq.ASC_REQ_ALLOCATE_MEMORY
-            res = sspic.raw.accept_security_context(
+            context_req = self._context_req | sspilib.AscReq.ASC_REQ_ALLOCATE_MEMORY
+            res = sspilib.raw.accept_security_context(
                 credential=self._credential,
                 context=self._context,
                 input_buffers=in_buffer,
                 context_req=context_req,
-                target_data_rep=sspic.raw.TargetDataRep.SECURITY_NATIVE_DREP,
+                target_data_rep=sspilib.raw.TargetDataRep.SECURITY_NATIVE_DREP,
                 output_buffers=out_buffer,
             )
             status = res.status
@@ -288,10 +288,10 @@ class SSPIProxy(ContextProxy):
 
         self._context_attr = int(res.attributes)
 
-        if status == sspic.raw.NtStatus.SEC_E_OK:
+        if status == sspilib.raw.NtStatus.SEC_E_OK:
             self._complete = True
 
-            attr_sizes = sspic.raw.query_context_attributes(self._context, sspic.raw.SecPkgContextSizes)
+            attr_sizes = sspilib.raw.query_context_attributes(self._context, sspilib.raw.SecPkgContextSizes)
             self._block_size = attr_sizes.block_size
             self._max_signature = attr_sizes.max_signature
             self._security_trailer = attr_sizes.security_trailer
@@ -324,16 +324,16 @@ class SSPIProxy(ContextProxy):
         qop: int | None = None,
     ) -> IOVWrapResult:
         qop = qop or 0
-        if encrypt and qop & sspic.raw.QopFlags.SECQOP_WRAP_NO_ENCRYPT:
+        if encrypt and qop & sspilib.raw.QopFlags.SECQOP_WRAP_NO_ENCRYPT:
             raise ValueError("Cannot set qop with SECQOP_WRAP_NO_ENCRYPT and encrypt=True")
         elif not encrypt:
-            qop |= sspic.raw.QopFlags.SECQOP_WRAP_NO_ENCRYPT
+            qop |= sspilib.raw.QopFlags.SECQOP_WRAP_NO_ENCRYPT
 
         buffers = self._build_iov_list(iov, self._convert_iov_buffer)
-        iov_buffer = sspic.raw.SecBufferDesc(buffers)
+        iov_buffer = sspilib.raw.SecBufferDesc(buffers)
 
-        sspic.raw.encrypt_message(
-            t.cast(sspic.raw.CtxtHandle, self._context),
+        sspilib.raw.encrypt_message(
+            t.cast(sspilib.raw.CtxtHandle, self._context),
             qop=qop,
             message=iov_buffer,
             seq_no=self._seq_num,
@@ -360,14 +360,14 @@ class SSPIProxy(ContextProxy):
         iov: collections.abc.Iterable[IOV],
     ) -> IOVUnwrapResult:
         buffers = self._build_iov_list(iov, self._convert_iov_buffer)
-        iov_buffer = sspic.raw.SecBufferDesc(buffers)
+        iov_buffer = sspilib.raw.SecBufferDesc(buffers)
 
-        qop = sspic.raw.decrypt_message(
-            t.cast(sspic.raw.CtxtHandle, self._context),
+        qop = sspilib.raw.decrypt_message(
+            t.cast(sspilib.raw.CtxtHandle, self._context),
             iov_buffer,
             seq_no=self._seq_num,
         )
-        encrypted = qop & sspic.raw.QopFlags.SECQOP_WRAP_NO_ENCRYPT == 0
+        encrypted = qop & sspilib.raw.QopFlags.SECQOP_WRAP_NO_ENCRYPT == 0
 
         return IOVUnwrapResult(buffers=_create_iov_result(iov_buffer), encrypted=encrypted, qop=qop)
 
@@ -383,14 +383,14 @@ class SSPIProxy(ContextProxy):
     ) -> bytes:
         data = bytearray(data)
         signature = bytearray(self._max_signature)
-        iov = sspic.raw.SecBufferDesc(
+        iov = sspilib.raw.SecBufferDesc(
             [
-                sspic.raw.SecBuffer(data, sspic.raw.SecBufferType.SECBUFFER_DATA),
-                sspic.raw.SecBuffer(signature, sspic.raw.SecBufferType.SECBUFFER_TOKEN),
+                sspilib.raw.SecBuffer(data, sspilib.raw.SecBufferType.SECBUFFER_DATA),
+                sspilib.raw.SecBuffer(signature, sspilib.raw.SecBufferType.SECBUFFER_TOKEN),
             ]
         )
-        sspic.raw.make_signature(
-            t.cast(sspic.raw.CtxtHandle, self._context),
+        sspilib.raw.make_signature(
+            t.cast(sspilib.raw.CtxtHandle, self._context),
             qop or 0,
             iov,
             self._seq_num,
@@ -402,15 +402,15 @@ class SSPIProxy(ContextProxy):
     def verify(self, data: bytes, mic: bytes) -> int:
         data = bytearray(data)
         mic = bytearray(mic)
-        iov = sspic.raw.SecBufferDesc(
+        iov = sspilib.raw.SecBufferDesc(
             [
-                sspic.raw.SecBuffer(data, sspic.raw.SecBufferType.SECBUFFER_DATA),
-                sspic.raw.SecBuffer(mic, sspic.raw.SecBufferType.SECBUFFER_TOKEN),
+                sspilib.raw.SecBuffer(data, sspilib.raw.SecBufferType.SECBUFFER_DATA),
+                sspilib.raw.SecBuffer(mic, sspilib.raw.SecBufferType.SECBUFFER_TOKEN),
             ]
         )
 
-        return sspic.raw.verify_signature(
-            t.cast(sspic.raw.CtxtHandle, self._context),
+        return sspilib.raw.verify_signature(
+            t.cast(sspilib.raw.CtxtHandle, self._context),
             iov,
             self._seq_num,
         )
@@ -423,10 +423,10 @@ class SSPIProxy(ContextProxy):
         sspi_req: type[int] | None
         if self.usage == "initiate":
             attr_map.append((ContextReq.no_integrity, "REQ_NO_INTEGRITY"))
-            sspi_req = sspic.IscReq
+            sspi_req = sspilib.IscReq
             sspi_prefix = "ISC"
         else:
-            sspi_req = sspic.AscReq
+            sspi_req = sspilib.AscReq
             sspi_prefix = "ASC"
 
         attr_map.extend(
@@ -456,7 +456,7 @@ class SSPIProxy(ContextProxy):
         self.__seq_num += 1
         return num
 
-    def _convert_iov_buffer(self, buffer: IOVBuffer) -> sspic.raw.SecBuffer:
+    def _convert_iov_buffer(self, buffer: IOVBuffer) -> sspilib.raw.SecBuffer:
         data = bytearray()
 
         if isinstance(buffer.data, bytes):
@@ -484,24 +484,24 @@ class SSPIProxy(ContextProxy):
                 data = bytearray(auto_alloc_size[buffer.type])
 
         # This buffer types need manual mapping from the generic value to the
-        # one understood by sspic.
+        # one understood by sspilib.
         buffer_type = int(buffer.type)
         buffer_flags = 0
         if buffer_type == BufferType.sign_only:
-            buffer_type = sspic.raw.SecBufferType.SECBUFFER_DATA
-            buffer_flags = sspic.raw.SecBufferFlags.SECBUFFER_READONLY_WITH_CHECKSUM
+            buffer_type = sspilib.raw.SecBufferType.SECBUFFER_DATA
+            buffer_flags = sspilib.raw.SecBufferFlags.SECBUFFER_READONLY_WITH_CHECKSUM
         elif buffer_type == BufferType.data_readonly:
-            buffer_type = sspic.raw.SecBufferType.SECBUFFER_DATA
-            buffer_flags = sspic.raw.SecBufferFlags.SECBUFFER_READONLY
+            buffer_type = sspilib.raw.SecBufferType.SECBUFFER_DATA
+            buffer_flags = sspilib.raw.SecBufferFlags.SECBUFFER_READONLY
 
-        return sspic.raw.SecBuffer(data, buffer_type, buffer_flags)
+        return sspilib.raw.SecBuffer(data, buffer_type, buffer_flags)
 
     def _get_native_bindings(
         self,
         channel_bindings: GssChannelBindings,
-    ) -> sspic.SecChannelBindings:
+    ) -> sspilib.SecChannelBindings:
         """Gets the raw byte value of the SEC_CHANNEL_BINDINGS structure."""
-        return sspic.SecChannelBindings(
+        return sspilib.SecChannelBindings(
             initiator_addr_type=int(channel_bindings.initiator_addrtype),
             initiator_addr=channel_bindings.initiator_address,
             acceptor_addr_type=int(channel_bindings.acceptor_addrtype),
