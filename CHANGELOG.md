@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.10.2 - TBD
+## 0.10.2 - 2023-10-04
 
-## 0.10.1 - 2023-09-29
+* Another rename of the `sspi` package dependency to `sspilib`
+
+## 0.10.1 - 2023-09-29 - Has been yanked
 
 * Rename `sspi` package dependency to `sspic` to avoid conflicts with pywin32
 
