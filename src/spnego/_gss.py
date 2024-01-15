@@ -145,16 +145,16 @@ def _get_gssapi_credential(
 
             if isinstance(cred, KerberosKeytab):
                 username = cred.principal or ""
-                password = cred.keytab
+                password = to_bytes(cred.keytab)
                 is_keytab = True
             else:
                 username = cred.username
-                password = cred.password
+                password = _encode_kerb_password(cred.password)
                 is_keytab = False
 
             raw_cred = _kinit(
                 to_bytes(username),
-                to_bytes(password),
+                password,
                 forwardable=forwardable,
                 is_keytab=is_keytab,
             )
@@ -293,6 +293,40 @@ def _gss_acquire_cred_from_ccache(
         return gssapi_creds
 
 
+def _encode_kerb_password(
+    value: str,
+) -> bytes:
+    """Encode string to use for Kerberos passwords.
+
+    Encodes the input string to use with Kerberos functions as a password. This
+    is a special encoding method to ensure that any invalid surrogate chars are
+    encoded as the replacement char U+FFFD. This is needed when dealing with
+    randomly generated passwords like gMSA or machine accounts. The raw UTF-16
+    bytes can be encoded in a string with the following:
+
+        b"...".decode("utf-16-le", errors="surrogatepass")
+
+    The invalid surrogate pairs in the UTF-16 byte sequence will be preserved
+    in the str value allowing this function to replace it as needed. This
+    means the value can be used with both NTLM and Kerberos authentication with
+    the same value.
+
+    Args:
+        value: The string to encode to bytes.
+
+    Returns:
+        bytes: The encoded string value.
+    """
+    b_data = []
+    for c in value:
+        try:
+            b_data.append(c.encode("utf-8", errors="strict"))
+        except UnicodeEncodeError:
+            b_data.append(b"\xEF\xBF\xBD")
+
+    return b"".join(b_data)
+
+
 class GSSAPIProxy(ContextProxy):
     """GSSAPI proxy class for GSSAPI on Linux.
 
@@ -313,7 +347,6 @@ class GSSAPIProxy(ContextProxy):
         options: NegotiateOptions = NegotiateOptions.none,
         **kwargs: typing.Any,
     ) -> None:
-
         if not HAS_GSSAPI:
             raise ImportError("GSSAPIProxy requires the Python gssapi library: %s" % GSSAPI_IMP_ERR)
 

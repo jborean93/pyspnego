@@ -175,3 +175,27 @@ def test_gssapi_no_valid_acceptor_cred():
 
         with pytest.raises(InvalidCredentialError, match="No applicable credentials available"):
             spnego._gss.GSSAPIProxy(cred, protocol=protocol, usage="accept")
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("", b""),
+        ("foo", b"foo"),
+        ("café", b"caf\xC3\xA9"),
+        (
+            b"\xDD\xBA\xE2\xD9\x12\x53".decode("utf-16-le", errors="surrogatepass"),
+            b"\xEB\xAB\x9D\xEF\xBF\xBD\xE5\x8C\x92",
+        ),
+        (
+            b"\xDD\xBA\xE2\xD9\x12\x53".decode("utf-16-le", errors="replace"),
+            b"\xEB\xAB\x9D\xEF\xBF\xBD\xE5\x8C\x92",
+        ),
+    ],
+)
+def test_encode_password(
+    value: str,
+    expected: bytes,
+) -> None:
+    actual = spnego._gss._encode_kerb_password(value)
+    assert actual == expected

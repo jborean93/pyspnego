@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.3 - TBD
+
+* Support input password string encoded with the `surrogatepass` error option
+  * This allows the caller to provide a password for a gMSA or machine account that could contain invalid surrogate pairs for both NTLM and Kerberos auth.
+
 ## 0.10.2 - 2023-10-04
 
 * Another rename of the `sspi` package dependency to `sspilib`
