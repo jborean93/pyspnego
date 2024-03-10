@@ -28,14 +28,14 @@ jobs:
     name: build sdist and universal wheel
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: build sdist and universal wheel
       run: |
         python -m pip install build
         python -m build
 
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: artifact
         path: ./dist/*
@@ -86,14 +86,14 @@ jobs:
           gssapi-provider: heimdal
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: ${{ matrix.python-arch }}
 
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: artifact
         path: ./dist
@@ -119,24 +119,25 @@ jobs:
 
     - name: Upload Test Results
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: Unit Test Results (${{ matrix.os }} ${{ matrix.python-version }} ${{ matrix.python-arch }})
+        name: Unit Test Results (${{ matrix.os }} ${{ matrix.python-version }} ${{ matrix.python-arch }} ${{ matrix.gssapi-provider }})
         path: ./junit/test-results.xml
 
     - name: Upload Coverage Results
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: Coverage Results (${{ matrix.os }} ${{ matrix.python-version }} ${{ matrix.python-arch }})
+        name: Coverage Results (${{ matrix.os }} ${{ matrix.python-version }} ${{ matrix.python-arch }} ${{ matrix.gssapi-provider }})
         path: ./coverage.xml
 
     - name: Upload Coverage to codecov
       if: always()
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         files: ./coverage.xml
-        flags: ${{ steps.os.outputs.name }},py${{ matrix.python-version }},${{ matrix.python-arch }}
+        flags: ${{ steps.os.outputs.name }},py${{ matrix.python-version }},${{ matrix.python-arch }},${{ matrix.gssapi-provider }}
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   publish:
     name: publish
@@ -148,7 +149,7 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: artifact
         path: ./dist
