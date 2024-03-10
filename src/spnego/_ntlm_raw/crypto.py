@@ -331,7 +331,7 @@ def lmowfv1(password: str) -> bytes:
     # Fix the password to upper case and pad the length to exactly 14 bytes. While it is true LM only authentication
     # will fail if the password exceeds 14 bytes typically it is used in conjunction with the NTv1 hash which has no
     # such restrictions.
-    b_password = password.upper().encode("utf-8").ljust(14, b"\x00")[:14]
+    b_password = password.upper().encode("utf-8", errors="surrogatepass").ljust(14, b"\x00")[:14]
 
     b_hash = io.BytesIO()
     for start, end in [(0, 7), (7, 14)]:
@@ -366,7 +366,7 @@ def ntowfv1(password: str) -> bytes:
     if is_ntlm_hash(password):
         return base64.b16decode(password.split(":")[1].upper())
 
-    return md4(password.encode("utf-16-le"))
+    return md4(password.encode("utf-16-le", errors="surrogatepass"))
 
 
 def ntowfv2(username: str, nt_hash: bytes, domain_name: typing.Optional[str]) -> bytes:
