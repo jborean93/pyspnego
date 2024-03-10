@@ -4,6 +4,7 @@
 
 * Support input password string encoded with the `surrogatepass` error option
   * This allows the caller to provide a password for a gMSA or machine account that could contain invalid surrogate pairs for both NTLM and Kerberos auth.
+* Stop using deprecated `datetime.dateime.utcnow()` for CredSSP acceptor context
 
 ## 0.10.2 - 2023-10-04
 

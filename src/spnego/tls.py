@@ -126,7 +126,7 @@ def generate_tls_certificate() -> typing.Tuple[bytes, bytes, bytes]:
     # socket.getfqdn() can block for a few seconds if DNS is not set up properly.
     name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "CREDSSP-%s" % platform.node())])
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)
