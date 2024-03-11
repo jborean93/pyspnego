@@ -259,7 +259,7 @@ def unify_credentials(
     """
     if username:
         if isinstance(username, str):
-            if not password:
+            if password is None:
                 username = [CredentialCache(username=username)]
             elif is_ntlm_hash(password):
                 lm, nt = password.split(":", 1)
