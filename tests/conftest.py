@@ -73,7 +73,7 @@ def ntlm_cred(tmpdir, monkeypatch):
         yield "%s\\%s" % (domain, username), password
 
     finally:
-        if cleanup:
+        if cleanup is not None:
             cleanup()
 
 
