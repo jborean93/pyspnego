@@ -27,6 +27,8 @@ all:
         - C:\Program Files (x86)\Python310-32
         - C:\Program Files\Python311
         - C:\Program Files (x86)\Python311-32
+        - C:\Program Files\Python312
+        - C:\Program Files (x86)\Python312-32
         python_venv_path: C:\temp\venv
         krb_provider: SSPI
 
@@ -65,3 +67,4 @@ all:
     domain_username: spnego
     domain_password: Password01
     domain_upn: '{{ domain_username }}@{{ domain_name | upper }}'
+    gmsa_username: MyGMSA

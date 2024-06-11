@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import collections
 import dataclasses
+import datetime
 import getpass
 import io
 import os
@@ -36,6 +37,7 @@ from xml.etree import ElementTree as ET
 
 USERNAME = '{{ domain_upn }}'
 PASSWORD = '{{ domain_password }}'
+GMSA_USERNAME = '{{ gmsa_username }}$@{{ domain_name | upper }}'
 HOSTNAME = socket.gethostname()
 HOST_FQDN = '%s.{{ domain_name }}' % HOSTNAME
 WIN_DC = '{{ groups['win_controller'][0] | lower }}.{{ domain_name | lower }}'
@@ -140,6 +142,67 @@ class HTTPWinRMAuth(requests.auth.AuthBase):
             out_token = self.context.step(base64.b64decode(in_token))
 
         return response
+
+
+@dataclasses.dataclass(frozen=True)
+class MSDSManagedPassword:
+    # https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/a9019740-3d73-46ef-a9ae-3ea8eb86ac2e
+    version: int
+    current_password: bytes
+    previous_password: bytes
+    query_password_interval: datetime.timedelta
+    unchanged_password_interval: datetime.timedelta
+
+    @classmethod
+    def unpack(
+        cls,
+        data: bytearray | bytes | memoryview,
+    ) -> MSDSManagedPassword:
+        view = memoryview(data)
+
+        version = int.from_bytes(view[:2], byteorder="little", signed=False)
+        # reserved = int.from_bytes(view[2:4], byteorder="little", signed=False)
+        # length = int.from_bytes(view[4:8], byteorder="little", signed=False)
+        current_password_offset = int.from_bytes(view[8:10], byteorder="little", signed=False)
+        previous_password_offset = int.from_bytes(view[10:12], byteorder="little", signed=False)
+        query_password_offset = int.from_bytes(view[12:14], byteorder="little", signed=False)
+        unchanged_interval_offset = int.from_bytes(view[14:16], byteorder="little", signed=False)
+
+        current_password = MSDSManagedPassword._get_null_terminated_string(view, current_password_offset)
+        previous_password = MSDSManagedPassword._get_null_terminated_string(view, previous_password_offset)
+
+        query_password_interval = int.from_bytes(
+            view[query_password_offset : query_password_offset + 8],
+            byteorder="little",
+            signed=False,
+        )
+        unchanged_password_interval = int.from_bytes(
+            view[unchanged_interval_offset : unchanged_interval_offset + 8],
+            byteorder="little",
+            signed=False,
+        )
+
+        return MSDSManagedPassword(
+            version=version,
+            current_password=current_password,
+            previous_password=previous_password,
+            query_password_interval=datetime.timedelta(microseconds=query_password_interval / 10),
+            unchanged_password_interval=datetime.timedelta(microseconds=unchanged_password_interval / 10),
+        )
+
+    @classmethod
+    def _get_null_terminated_string(
+        cls,
+        view: memoryview,
+        offset: int,
+    ) -> bytes:
+        if offset == 0:
+            return b""
+
+        data = view[offset:].tobytes()
+        b_data = data[: data.index(b"\x00\x00")]
+
+        return b_data
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1737,3 +1800,107 @@ def test_dce_rpc_auth(protocol: str, auth_level: str) -> None:
         auth_protocol=auth_kwargs["protocol"],
     )
     assert isinstance(res, GroupKeyEnvelope)
+
+
+@pytest.mark.parametrize('protocol', ["kerberos", "negotiate", "negotiate-ntlm", "ntlm"])
+def test_gmsa_password_encoding(protocol: str) -> None:
+    domain_parts = WIN_DC.split(".", 2)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0) as sock:
+        sock.settimeout(10)
+        sock.connect((WIN_DC, 389))
+
+        auth_kwargs = {
+            "hostname": WIN_DC,
+            "protocol": "negotiate",
+            "service": "ldap",
+        }
+
+        if os.name != 'nt' or IS_SYSTEM:
+            c = spnego.client(
+                USERNAME,
+                PASSWORD,
+                **auth_kwargs,
+            )
+
+        else:
+            c = spnego.client(**auth_kwargs)
+
+        ldap = sansldap.LDAPClient()
+
+        in_token = None
+        while not c.complete:
+            token = c.step(in_token=in_token)
+            if not token:
+                break
+
+            ldap.bind_sasl("GSS-SPNEGO", cred=token)
+            sock.sendall(ldap.data_to_send())
+
+            msg = ldap.receive(sock.recv(4096))[0]
+            assert isinstance(msg, sansldap.BindResponse)
+            if msg.result.result_code not in [
+                sansldap.LDAPResultCode.SUCCESS,
+                sansldap.LDAPResultCode.SASL_BIND_IN_PROGRESS
+            ]:
+                raise Exception(f"Failed to bind: {msg.result.diagnostics_message}")
+
+            in_token = msg.server_sasl_creds
+
+        if msg.result.result_code != sansldap.LDAPResultCode.SUCCESS:
+            raise Exception(f"Failed to bind {msg.result.result_code.name}: {msg.result.diagnostics_message}")
+
+        # Get gMSA msDS-ManagedPassword value
+        gmsa_user_split = GMSA_USERNAME.split("@", 1)[0]
+        ldap.search_request(
+            base_object=f"DC={domain_parts[1]},DC={domain_parts[2]}",
+            scope=sansldap.SearchScope.SUBTREE,
+            dereferencing_policy=sansldap.DereferencingPolicy.NEVER,
+            size_limit=0,
+            time_limit=0,
+            types_only=False,
+            filter=sansldap.LDAPFilter.from_string(f"(sAMAccountName={gmsa_user_split})"),
+            attributes=["msDS-ManagedPassword"],
+            controls=None
+        )
+
+        out_msg = c.wrap(ldap.data_to_send()).data
+        sock.sendall(len(out_msg).to_bytes(4, byteorder="big") + out_msg)
+
+        managed_password_value = None
+        search_continue = True
+        while search_continue:
+            in_msg = sock.recv(4096)
+            msgs = ldap.receive(c.unwrap(in_msg[4:]).data)
+
+            for msg in msgs:
+                if isinstance(msg, sansldap.SearchResultEntry):
+                    if msg.object_name.lower().startswith(f"cn={gmsa_user_split.lower()[:-1]}"):
+                        managed_password_value = MSDSManagedPassword.unpack(msg.attributes[0].values[0])
+
+                elif isinstance(msg, sansldap.SearchResultDone):
+                    if msg.result.result_code != sansldap.LDAPResultCode.SUCCESS:
+                        raise Exception(f"Received error response: {msg.result}")
+
+                    search_continue = False
+
+        assert managed_password_value
+
+    context_kwargs = {
+        'service': 'http',
+        'username': GMSA_USERNAME,
+        'password': managed_password_value.current_password.decode("utf-16-le", errors="surrogatepass"),
+    }
+
+    if protocol == "negotiate-ntlm":
+        context_kwargs["hostname"] = WIN_SERVER_TRUSTED_IP
+        context_kwargs["protocol"] = "negotiate"
+    else:
+        context_kwargs["hostname"] = WIN_SERVER_TRUSTED
+        context_kwargs["protocol"] = protocol
+
+    c = spnego.client(**context_kwargs)
+    rc, stdout, stderr = winrm_run(c, 'Negotiate', WIN_SERVER_TRUSTED, 'whoami.exe', [])
+    assert rc == 0
+    assert stdout.strip().lower() == f"{domain_parts[1].lower()}\\{gmsa_user_split.lower()}"
+    assert stderr == ''

@@ -1,10 +1,12 @@
 # Changelog
 
-## 0.10.3 - TBD
+## 0.11.0 - TBD
 
 * Support input password string encoded with the `surrogatepass` error option
   * This allows the caller to provide a password for a gMSA or machine account that could contain invalid surrogate pairs for both NTLM and Kerberos auth.
 * Stop using deprecated `datetime.dateime.utcnow()` for CredSSP acceptor context
+* Treat an empty string as a valid password, `None` is kept as use the cached credential
+* Improve the exception shown when no password was provided and no cached credential was available
 
 ## 0.10.2 - 2023-10-04
 
