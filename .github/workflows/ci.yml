@@ -51,7 +51,7 @@ jobs:
       matrix:
         os:
         - ubuntu-latest
-        - macOS-12
+        - macOS-13
         - macOS-latest
         - windows-latest
         python-version:
@@ -63,6 +63,7 @@ jobs:
         python-arch:
         - x86
         - x64
+        - arm64
         gssapi-provider:
         - mit
         - heimdal
@@ -72,17 +73,23 @@ jobs:
         - os: ubuntu-latest
           python-arch: x86
         - os: ubuntu-latest
+          python-arch: arm64
+        - os: ubuntu-latest
           gssapi-provider: sspi
 
-        - os: macOS-12
+        - os: macOS-13
           python-arch: x86
-        - os: macOS-12
+        - os: macOS-13
+          python-arch: arm64
+        - os: macOS-13
           gssapi-provider: mit
-        - os: macOS-12
+        - os: macOS-13
           gssapi-provider: sspi
 
         - os: macOS-latest
           python-arch: x86
+        - os: macOS-latest
+          python-arch: x64
         - os: macOS-latest
           python-version: 3.8
         - os: macOS-latest
@@ -92,6 +99,8 @@ jobs:
         - os: macOS-latest
           gssapi-provider: sspi
 
+        - os: windows-latest
+          python-arch: arm64
         - os: windows-latest
           gssapi-provider: mit
         - os: windows-latest
