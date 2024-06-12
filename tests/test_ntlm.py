@@ -168,12 +168,20 @@ def test_invalid_lm_compat_level(level, monkeypatch):
         ntlm.NTLMProxy("user", "pass")
 
 
-@pytest.mark.parametrize("usage", ["initiate", "accept"])
-def test_context_no_store(usage):
+def test_context_no_store_initiate():
     with pytest.raises(
-        OperationNotAvailableError, match="Retrieving NTLM store without NTLM_USER_FILE set to a " "filepath"
+        OperationNotAvailableError,
+        match="No username or password was specified and the credential cache did not exist or contained no credentials",
     ):
-        ntlm.NTLMProxy(CredentialCache(), usage=usage)
+        ntlm.NTLMProxy(CredentialCache(), usage="initiate")
+
+
+def test_context_no_store_accept():
+    with pytest.raises(
+        OperationNotAvailableError,
+        match="NTLM acceptor requires NTLM credential cache to be provided through the env var NTLM_USER_FILE set to a filepath",
+    ):
+        ntlm.NTLMProxy(CredentialCache(), usage="accept")
 
 
 def test_iov_available():

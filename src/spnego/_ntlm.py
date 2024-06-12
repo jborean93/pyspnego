@@ -135,7 +135,9 @@ def _get_credential(
         https://asecuritysite.com/encryption/lmhash
     """
     if not store:
-        raise OperationNotAvailableError(context_msg="Retrieving NTLM store without NTLM_USER_FILE set to a filepath")
+        raise OperationNotAvailableError(
+            context_msg="No username or password was specified and the credential cache did not exist or contained no credentials"
+        )
 
     domain = domain or ""
 
@@ -178,7 +180,7 @@ def _get_credential(
         else:
             raise SpnegoError(
                 ErrorCode.failure,
-                context_msg="Failed to find any matching credential in " "NTLM_USER_FILE credential store.",
+                context_msg="Failed to find any matching credential in NTLM_USER_FILE credential store.",
             )
 
 
@@ -306,7 +308,7 @@ class NTLMProxy(ContextProxy):
             # Make sure that the credential file is set and exists
             if not _get_credential_file():
                 raise OperationNotAvailableError(
-                    context_msg="Retrieving NTLM store without NTLM_USER_FILE set to a " "filepath"
+                    context_msg="NTLM acceptor requires NTLM credential cache to be provided through the env var NTLM_USER_FILE set to a filepath"
                 )
 
         self._temp_negotiate: typing.Optional[Negotiate] = None
