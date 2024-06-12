@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 - TBD
+## 0.11.0 - 2024-06-12
 
 * Support input password string encoded with the `surrogatepass` error option
   * This allows the caller to provide a password for a gMSA or machine account that could contain invalid surrogate pairs for both NTLM and Kerberos auth.
