@@ -12,7 +12,7 @@ def main() -> None:
     client = spnego.client("username", "password", hostname="server")
 
     in_token = None
-    while client.complete:
+    while not client.complete:
         out_token = client.step(in_token)
         if not out_token:
             break
