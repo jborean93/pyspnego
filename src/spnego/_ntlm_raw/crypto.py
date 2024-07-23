@@ -21,7 +21,6 @@ import typing
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher
-from cryptography.hazmat.decrepit.ciphers import algorithms as deprecated_algorithms
 
 from spnego._ntlm_raw.des import DES
 from spnego._ntlm_raw.md4 import md4
@@ -31,6 +30,14 @@ from spnego._ntlm_raw.messages import (
     NTClientChallengeV2,
     TargetInfo,
 )
+
+try:
+    # cryptography 43.0.0 and later moved ARC4 to decrepit
+    from cryptography.hazmat.decrepit.ciphers import algorithms
+except ImportError:
+    from cryptography.hazmat.primitives.ciphers import (  # type: ignore[no-redef]
+        algorithms,
+    )
 
 # A user does not need to specify their actual plaintext password they can specify the LM and NT hash (from lmowfv1 and
 # ntowfv2) in the form 'lm_hash_hex:nt_hash_hex'. This is still considered a plaintext pass as we can use it to build
@@ -44,7 +51,7 @@ class RC4Handle:
     def __init__(self, key: bytes) -> None:
         self._key = key
 
-        arc4 = deprecated_algorithms.ARC4(self._key)
+        arc4 = algorithms.ARC4(self._key)
         cipher = Cipher(arc4, mode=None, backend=default_backend())
         self._handle = cipher.encryptor()
 
@@ -54,7 +61,7 @@ class RC4Handle:
 
     def reset(self) -> None:
         """Reset's the cipher stream back to the original state."""
-        arc4 = deprecated_algorithms.ARC4(self._key)
+        arc4 = algorithms.ARC4(self._key)
         cipher = Cipher(arc4, mode=None, backend=default_backend())
         self._handle = cipher.encryptor()
 
