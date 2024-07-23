@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.1 - TBD
+## 0.11.1 - 2024-07-24
 
 * Import `ARC4` cipher from the new `decrepits` module sub-package, this removes the warning issued in newer versions of the `cryptography` library
 
