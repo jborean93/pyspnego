@@ -25,7 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12"
 ]
 dependencies = [
-    "cryptography",
+    "cryptography >= 43.0.0",
     "sspilib >= 0.1.0; sys_platform == 'win32'"
 ]
 dynamic = ["version"]

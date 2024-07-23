@@ -20,7 +20,8 @@ import struct
 import typing
 
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+from cryptography.hazmat.primitives.ciphers import Cipher
+from cryptography.hazmat.decrepit.ciphers import algorithms as deprecated_algorithms
 
 from spnego._ntlm_raw.des import DES
 from spnego._ntlm_raw.md4 import md4
@@ -43,7 +44,7 @@ class RC4Handle:
     def __init__(self, key: bytes) -> None:
         self._key = key
 
-        arc4 = algorithms.ARC4(self._key)
+        arc4 = deprecated_algorithms.ARC4(self._key)
         cipher = Cipher(arc4, mode=None, backend=default_backend())
         self._handle = cipher.encryptor()
 
@@ -53,7 +54,7 @@ class RC4Handle:
 
     def reset(self) -> None:
         """Reset's the cipher stream back to the original state."""
-        arc4 = algorithms.ARC4(self._key)
+        arc4 = deprecated_algorithms.ARC4(self._key)
         cipher = Cipher(arc4, mode=None, backend=default_backend())
         self._handle = cipher.encryptor()
 
