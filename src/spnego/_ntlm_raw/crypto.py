@@ -20,7 +20,7 @@ import struct
 import typing
 
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+from cryptography.hazmat.primitives.ciphers import Cipher
 
 from spnego._ntlm_raw.des import DES
 from spnego._ntlm_raw.md4 import md4
@@ -30,6 +30,14 @@ from spnego._ntlm_raw.messages import (
     NTClientChallengeV2,
     TargetInfo,
 )
+
+try:
+    # cryptography 43.0.0 and later moved ARC4 to decrepit
+    from cryptography.hazmat.decrepit.ciphers import algorithms
+except ImportError:
+    from cryptography.hazmat.primitives.ciphers import (  # type: ignore[no-redef]
+        algorithms,
+    )
 
 # A user does not need to specify their actual plaintext password they can specify the LM and NT hash (from lmowfv1 and
 # ntowfv2) in the form 'lm_hash_hex:nt_hash_hex'. This is still considered a plaintext pass as we can use it to build

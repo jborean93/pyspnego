@@ -16,4 +16,3 @@ repos:
     exclude: ^setup.py|build/
     additional_dependencies:
     - ruamel.yaml
-    - types-cryptography

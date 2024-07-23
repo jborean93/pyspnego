@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1 - TBD
+
+* Import `ARC4` cipher from the new `decrepits` module sub-package, this removes the warning issued in newer versions of the `cryptography` library
+
 ## 0.11.0 - 2024-06-12
 
 * Support input password string encoded with the `surrogatepass` error option
