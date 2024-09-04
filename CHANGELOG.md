@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.2 - TBD
+
+* Fix up CredSSP acceptor when running with a LibreSSL based Python install (OpenBSD)
+
 ## 0.11.1 - 2024-07-24
 
 * Import `ARC4` cipher from the new `decrepits` module sub-package, this removes the warning issued in newer versions of the `cryptography` library
