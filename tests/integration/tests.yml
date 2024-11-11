@@ -1,47 +1,63 @@
 - name: run integration tests on Windows
   hosts: SERVER2012R2
-  gather_facts: no
+  gather_facts: false
   tags:
   - windows
 
   tasks:
   - name: template out tests
-    win_template:
+    ansible.windows.win_template:
       src: test_integration.py.tmpl
       dest: C:\temp\test_integration.py
       block_start_string: '{!!'
       block_end_string: '!!}'
 
   - name: run integration tests as a normal user account
-    win_command: '"{{ python_venv_path }}\{{ item | win_basename }}\Scripts\python.exe" -m pytest C:\temp\test_integration.py -v'
+    ansible.windows.win_command: >
+      "{{ python_venv_path }}\{{ item | win_basename }}\Scripts\python.exe"
+      -m
+      pytest
+      C:\temp\test_integration.py
+      -v
     with_items: '{{ python_interpreters }}'
-    become: yes
+    become: true
     become_method: runas
     vars:
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
 
   - name: run integration tests as the SYSTEM account
-    win_command: '"{{ python_venv_path }}\{{ item | win_basename }}\Scripts\python.exe" -m pytest C:\temp\test_integration.py -v'
+    ansible.windows.win_command: >
+      "{{ python_venv_path }}\{{ item | win_basename }}\Scripts\python.exe"
+      -m
+      pytest
+      C:\temp\test_integration.py
+      -v
     with_items: '{{ python_interpreters }}'
-    become: yes
+    become: true
     become_method: runas
     become_user: SYSTEM
 
 - name: run integration tests on Linux
   hosts: linux_children
-  gather_facts: no
+  gather_facts: false
   tags:
   - linux
 
   tasks:
   - name: template out tests
-    template:
+    ansible.builtin.template:
       src: test_integration.py.tmpl
       dest: ~/test_integration.py
       block_start_string: '{!!'
       block_end_string: '!!}'
 
   - name: run integration tests
-    command: '"{{ python_venv_path }}/{{ item | basename }}/bin/python" -m pytest ~/test_integration.py -v --forked'
+    ansible.builtin.command: >
+      "{{ python_venv_path }}/{{ item | basename }}/bin/python"
+      -m
+      pytest
+      ~/test_integration.py
+      -v
+      --forked
     with_items: '{{ python_interpreters }}'

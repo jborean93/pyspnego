@@ -1,6 +1,6 @@
 - name: setup local configuration and scratch information
   hosts: localhost
-  gather_facts: no
+  gather_facts: false
 
   tasks:
   - name: create cert output folder
@@ -22,7 +22,7 @@
 
 - name: get network adapter for each Windows host
   hosts: windows
-  gather_facts: no
+  gather_facts: false
   tasks:
   - name: get network connection for private adapter
     ansible.windows.win_powershell:
@@ -64,7 +64,7 @@
 
 - name: create Domain Controller
   hosts: win_controller
-  gather_facts: no
+  gather_facts: false
   tasks:
   - name: set the DNS for the specified adapter to localhost
     ansible.windows.win_dns_client:
@@ -83,7 +83,7 @@
       upn: '{{ domain_upn }}'
       description: '{{ domain_username }} Domain Account'
       password: '{{ domain_password }}'
-      password_never_expires: yes
+      password_never_expires: true
       update_password: on_create
       groups:
         add:
@@ -94,7 +94,7 @@
     ansible.windows.win_whoami:
     register: become_res
     failed_when: become_res.upn != domain_upn
-    become: yes
+    become: true
     become_method: runas
     vars:
       ansible_become_user: '{{ domain_upn }}'
@@ -109,7 +109,7 @@
     ansible.windows.win_certificate_store:
       path: C:\Windows\TEMP\ldaps.pfx
       password: password
-      key_exportable: no
+      key_exportable: false
       key_storage: machine
       state: present
       store_type: service
@@ -125,7 +125,7 @@
         $dse.CommitChanges()
     when: ldaps_cert_info is changed
     vars:
-      ansible_become: yes
+      ansible_become: true
       ansible_become_method: runas
       ansible_become_user: '{{ domain_upn }}'
       ansible_become_pass: '{{ domain_password }}'
@@ -176,7 +176,7 @@
 
 - name: join Windows host to domain
   hosts: win_children
-  gather_facts: no
+  gather_facts: false
   tasks:
   - name: set the DNS for the private adapter to point to the DC
     ansible.windows.win_dns_client:
@@ -194,7 +194,7 @@
   - name: trust hosts for delegation in AD
     microsoft.ad.computer:
       identity: SERVER2022$ # We only want to have this host with delegation for testing
-      trusted_for_delegation: yes
+      trusted_for_delegation: true
     register: delegation_res
     run_once: true
     delegate_to: '{{ groups["win_controller"][0] }}'
@@ -219,7 +219,7 @@
     ansible.windows.win_whoami:
     register: become_res
     failed_when: become_res.upn != domain_upn
-    become: yes
+    become: true
     become_method: runas
     vars:
       ansible_become_user: '{{ domain_upn }}'
@@ -246,7 +246,7 @@
 
 - name: set up Python interpreters on test Windows host
   hosts: SERVER2012R2
-  gather_facts: no
+  gather_facts: false
   tasks:
   - name: install Python interpreters
     ansible.windows.win_package:
@@ -279,11 +279,17 @@
     - url: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
       product_id: '{9AFDC691-40E5-4B15-835F-9A524AC4672C}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.12.4/python-3.12.4.exe
-      product_id: '{104F0229-E76E-4C6B-B532-E55DE73A723E}'
+    - url: https://www.python.org/ftp/python/3.12.7/python-3.12.7.exe
+      product_id: '{CDE1679E-52FD-4AEA-9FA4-36E092E2B1D5}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe
-      product_id: '{62DD7DAF-6279-46FA-A06B-C4A541244045}'
+    - url: https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe
+      product_id: '{FF6D0E73-2F53-4CF9-BD2C-F144E4FA02FE}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.13.0/python-3.13.0.exe
+      product_id: '{2CEFA2B5-14D8-4C3A-B023-B8B5F4A86282}'
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - url: https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe
+      product_id: '{09D95048-E91D-4F33-9197-1182FCA17B16}'
       arguments: /quiet InstallAllUsers=1 Shortcuts=0
 
   - name: ensure virtualenv package is installed for each Python install
@@ -354,7 +360,7 @@
 
 - name: set up WinRM config and SMB shares on Windows hosts
   hosts: windows
-  gather_facts: no
+  gather_facts: false
   tasks:
   - name: set WinRM Cbt value to Strict
     ansible.windows.win_powershell:
@@ -384,15 +390,15 @@
     community.windows.win_firewall_rule:
       name: File and Printer Sharing (SMB-In)
       state: present
-      enabled: yes
+      enabled: true
 
 - name: set up Linux host
   hosts: linux_children
-  gather_facts: no
-  become: yes
+  gather_facts: false
+  become: true
   handlers:
   - name: restart NetworkManager.service
-    service:
+    ansible.builtin.service:
       name: NetworkManager.service
       state: restarted
 
@@ -444,13 +450,13 @@
       name: '{{ inventory_hostname }}_{{ item }}'
       description: Kerberos principal for {{ inventory_hostname }} {{ item }} keytab
       password: '{{ domain_password }}'
-      password_never_expires: yes
+      password_never_expires: true
       update_password: on_create
       attributes:
         set:
           msDS-SupportedEncryptionTypes: 16  # AES256_CTS_HMAC_SHA1_96
       state: present
-    become: no
+    become: false
     delegate_to: DC01
     with_items:
     - HTTP
@@ -468,7 +474,7 @@
       -ptype KRB5_NT_PRINCIPAL
     args:
       creates: C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
-    become: no
+    become: false
     delegate_to: DC01
     with_items:
     - HTTP
@@ -478,8 +484,8 @@
     ansible.builtin.fetch:
       src: C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
       dest: '{{ inventory_hostname }}-{{ item }}.keytab'
-      flat: yes
-    become: no
+      flat: true
+    become: false
     delegate_to: DC01
     with_items:
     - HTTP
@@ -499,7 +505,7 @@
       chdir: ~/
       creates: ~/user.keytab
       stdin: "addent -password -p {{ domain_upn }} -k 1 -e aes256-cts\n{{ domain_password }}\nwrite_kt user.keytab"
-    become: no
+    become: false
     when: krb_provider == 'MIT'
 
   - name: create user keytab - Heimdal
@@ -514,7 +520,7 @@
     args:
       chdir: ~/
       creates: ~/user.keytab
-    become: no
+    become: false
     when: krb_provider == 'Heimdal'
 
   - name: copy across CA cert
@@ -531,21 +537,21 @@
     ansible.builtin.file:
       path: ~/wheels
       state: directory
-    become: no
+    become: false
 
   - name: extract wheel artifacts
     ansible.builtin.unarchive:
       src: artifact.zip
       dest: ~/wheels
-    become: no
+    become: false
 
   - name: get pyspnego artifact sdist filename
     ansible.builtin.find:
       paths: ~/wheels
       patterns: 'pyspnego-*.tar.gz'
-      recurse: no
+      recurse: false
       file_type: file
-    become: no
+    become: false
     register: spnego_sdist_file
 
   - name: verify sdist was found
@@ -569,7 +575,7 @@
       virtualenv: '{{ python_venv_path }}/{{ item | basename }}'
       virtualenv_python: '{{ item }}'
       extra_args: --find-links file://{{ spnego_sdist_file.files[0].path | dirname }}
-    become: no
+    become: false
     with_items: '{{ python_interpreters }}'
 
   - name: template out test integration file
@@ -580,4 +586,4 @@
       block_end_string: '!!}'
     tags:
     - template
-    become: no
+    become: false

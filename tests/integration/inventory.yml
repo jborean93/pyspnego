@@ -29,6 +29,8 @@ all:
         - C:\Program Files (x86)\Python311-32
         - C:\Program Files\Python312
         - C:\Program Files (x86)\Python312-32
+        - C:\Program Files\Python313
+        - C:\Program Files (x86)\Python313-32
         python_venv_path: C:\temp\venv
         krb_provider: SSPI
 
