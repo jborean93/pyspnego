@@ -3,6 +3,7 @@
 ## 0.11.2 - TBD
 
 * Fix up CredSSP acceptor when running with a LibreSSL based Python install (OpenBSD)
+* Added official support for Python 3.13
 
 ## 0.11.1 - 2024-07-24
 
