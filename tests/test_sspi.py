@@ -86,4 +86,10 @@ def test_sspi_wrap_no_encryption(ntlm_cred):
 @pytest.mark.skipif("ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Requires SSPI library")
 def test_sspi_no_valid_cred():
     with pytest.raises(InvalidCredentialError, match="No applicable credentials available"):
-        spnego._sspi.SSPIProxy(spnego.KerberosKeytab("user_princ", "ccache"), protocol="kerberos")
+        spnego._sspi.SSPIProxy(spnego.KerberosCCache("ccache", "user_princ"), protocol="kerberos")
+
+
+@pytest.mark.skipif("ntlm" not in spnego._sspi.SSPIProxy.available_protocols(), reason="Requires SSPI library")
+def test_sspi_keytab_without_principal():
+    with pytest.raises(InvalidCredentialError, match="KerberosKeytab for SSPI requires a principal to be set"):
+        spnego._sspi.SSPIProxy(spnego.KerberosKeytab("keytab"), protocol="kerberos")

@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "cryptography",
-    "sspilib >= 0.1.0; sys_platform == 'win32'"
+    "sspilib >= 0.3.0; sys_platform == 'win32'"  # Introduces KeytabCredential
 ]
 dynamic = ["version"]
 
@@ -70,6 +70,7 @@ exclude = '''
   | buck-out
   | build
   | dist
+  | tests/integration/collections
 )/
 '''
 
@@ -77,7 +78,10 @@ exclude = '''
 profile = "black"
 
 [tool.mypy]
-exclude = "build/"
+exclude = [
+    "build/",
+    "tests/integration/collections/",
+]
 mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
 show_error_codes = true
 show_column_numbers = true

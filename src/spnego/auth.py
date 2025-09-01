@@ -178,9 +178,15 @@ def server(
     context_req: ContextReq = ContextReq.default,
     protocol: str = "negotiate",
     options: NegotiateOptions = NegotiateOptions.none,
+    *,
+    credentials: typing.Optional[typing.Union[str, Credential, typing.List[Credential]]] = None,
     **kwargs: typing.Any,
 ) -> ContextProxy:
     """Create a server context to be used for authentication.
+
+    It is only possible to specify a credential when running on Windows and
+    using Kerberos either through Negotiate or Kerberos directly. Other
+    platforms and protocols may be supported in the future.
 
     Args:
         hostname: The principal part of the SPN. This is required for Kerberos auth to build the SPN.
@@ -189,11 +195,12 @@ def server(
         context_req: The :class:`spnego.ContextReq` flags to use when setting up the context.
         protocol: The protocol to authenticate with, can be `ntlm`, `kerberos`, `negotiate`, or `credssp`.
         options: The :class:`spnego.NegotiateOptions` that define pyspnego specific options to control the negotiation.
+        credentials: A credential or list or credentials to use with the server auth context.
         kwargs: Optional arguments to pass through to the authentiction context.
 
     Returns:
         ContextProxy: The context proxy for a client.
     """
     return _new_context(
-        None, None, hostname, service, channel_bindings, context_req, protocol, options, "accept", **kwargs
+        credentials, None, hostname, service, channel_bindings, context_req, protocol, options, "accept", **kwargs
     )

@@ -5,6 +5,8 @@
 * Drop support for Python 3.7 - new minimum is 3.9+
 * Add official support for Python 3.14
 * Fix CredSSP server certificate generation to limit CN name to 64 characters
+* Added support for using the `KerberosKeytab` on SSPI/Windows with Kerberos authentication
+* Added support for specifying credentials for `spnego.server` using the `credentials` kwarg. This currently only works on Windows/SSPI when specifying a keytab credential for the service
 
 ## 0.11.2 - 2024-11-12
 
