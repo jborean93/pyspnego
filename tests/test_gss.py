@@ -182,14 +182,14 @@ def test_gssapi_no_valid_acceptor_cred():
     [
         ("", b""),
         ("foo", b"foo"),
-        ("café", b"caf\xC3\xA9"),
+        ("café", b"caf\xc3\xa9"),
         (
-            b"\xDD\xBA\xE2\xD9\x12\x53".decode("utf-16-le", errors="surrogatepass"),
-            b"\xEB\xAB\x9D\xEF\xBF\xBD\xE5\x8C\x92",
+            b"\xdd\xba\xe2\xd9\x12\x53".decode("utf-16-le", errors="surrogatepass"),
+            b"\xeb\xab\x9d\xef\xbf\xbd\xe5\x8c\x92",
         ),
         (
-            b"\xDD\xBA\xE2\xD9\x12\x53".decode("utf-16-le", errors="replace"),
-            b"\xEB\xAB\x9D\xEF\xBF\xBD\xE5\x8C\x92",
+            b"\xdd\xba\xe2\xd9\x12\x53".decode("utf-16-le", errors="replace"),
+            b"\xeb\xab\x9d\xef\xbf\xbd\xe5\x8c\x92",
         ),
     ],
 )

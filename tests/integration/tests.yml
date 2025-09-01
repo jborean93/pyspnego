@@ -1,5 +1,5 @@
 - name: run integration tests on Windows
-  hosts: SERVER2012R2
+  hosts: TESTWIN
   gather_facts: false
   tags:
   - windows

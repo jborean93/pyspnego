@@ -14,7 +14,7 @@ def test_des_invalid_key_size():
 
 
 def test_expand_56bit_key():
-    expected = b"\x01\x80\x80\x61\x40\x29\x19\x0E"
+    expected = b"\x01\x80\x80\x61\x40\x29\x19\x0e"
     actual = DES.key56_to_key64(b"\x01\x02\x03\x04\x05\x06\x07")
     assert actual == expected
 

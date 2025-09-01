@@ -51,18 +51,13 @@ lib::setup::python_requirements() {
     fi
 
     echo "Installing spnego"
-    if [ "$(expr substr $(uname -s) 1 5)" == "MINGW" ]; then
-        DIST_LINK_PATH="$( echo "${PWD}/dist" | sed -e 's/^\///' -e 's/\//\\/g' -e 's/^./\0:/' )"
-    else
-        DIST_LINK_PATH="${PWD}/dist"
-    fi
 
     # Getting the version is important so that pip prioritises our local dist
     python -m pip install build
     SPNEGO_VERSION="$( python -c "import build.util; print(build.util.project_wheel_metadata('.').get('Version'))" )"
 
     python -m pip install pyspnego=="${SPNEGO_VERSION}" \
-        --find-links "file://${DIST_LINK_PATH}" \
+        --find-links dist \
         --verbose
 
     echo "Installing dev dependencies"

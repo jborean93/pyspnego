@@ -1,6 +1,6 @@
 # Pyspnego Integration Tests
 
-This directory contains files that cna be used for more complex integration tests that aren't easily covered in CI.
+This directory contains files that can be used for more complex integration tests that aren't easily covered in CI.
 
 It current achieves this by creating a bunch of virtual machines using Vagrant, configuring those hosts using Ansible
 then running the tests on the various hosts using Ansible.
@@ -10,6 +10,14 @@ To run these tests run the following:
 ```bash
 # Setup the virtual machine in either Libvirt or VirtualBox
 vagrant up
+
+# Install Ansible and test deps
+uv venv
+uv pip install -e ../../ ansible-core pypsrp
+source .venv/bin/activate
+
+# Install collection requirements
+ansible-galaxy collection install -r requirements.yml -p collections
 
 # Configure the virtual machines and get them ready for the tests
 ansible-playbook main.yml -vv

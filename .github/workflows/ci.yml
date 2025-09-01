@@ -20,15 +20,12 @@ on:
     types:
     - published
 
-  schedule:
-  - cron: 0 9 * * *
-
 jobs:
   build:
     name: build sdist and universal wheel
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: build sdist and universal wheel
       run: |
@@ -55,12 +52,12 @@ jobs:
         - macOS-latest
         - windows-latest
         python-version:
-        - 3.8
         - 3.9
         - '3.10'
         - '3.11'
         - '3.12'
         - '3.13'
+        - '3.14-dev'
         python-arch:
         - x86
         - x64
@@ -92,8 +89,6 @@ jobs:
         - os: macOS-latest
           python-arch: x64
         - os: macOS-latest
-          python-version: 3.8
-        - os: macOS-latest
           python-version: 3.9
         - os: macOS-latest
           gssapi-provider: mit
@@ -108,14 +103,14 @@ jobs:
           gssapi-provider: heimdal
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: ${{ matrix.python-arch }}
 
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v5
       with:
         name: artifact
         path: ./dist
@@ -156,7 +151,7 @@ jobs:
 
     - name: Upload Coverage to codecov
       if: always()
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
         files: ./coverage.xml
         flags: ${{ steps.os.outputs.name }},py${{ matrix.python-version }},${{ matrix.python-arch }},${{ matrix.gssapi-provider }}
@@ -172,7 +167,7 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v5
       with:
         name: artifact
         path: ./dist

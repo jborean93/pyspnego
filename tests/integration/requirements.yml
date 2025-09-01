@@ -1,0 +1,6 @@
+collections:
+- name: ansible.windows
+  version: '>=1.5.0'  # ansible.windows.win_powershell added
+- name: community.windows
+- name: microsoft.ad
+  version: '>=1.7.0'  # microsoft.ad.service_account added

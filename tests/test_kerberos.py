@@ -128,21 +128,21 @@ def test_unpack_krb_as_req():
 
     assert actual.padata[0].data_type == kerb.KerberosPADataType.enc_timestamp
     assert (
-        actual.padata[0].b_value == b"\x30\x41\xA0\x03\x02\x01\x12\xA2\x3A\x04\x38\x07\x40\x46\x03\xA8"
-        b"\x69\xC9\x31\x76\xE2\x8E\xDA\xD1\x34\xCE\x7F\xC4\xC8\x73\x58\x0D"
-        b"\xF4\x61\x1C\x85\x5F\x43\xF6\xAA\x9E\x48\xE2\xF0\x8C\xC2\x88\x70"
-        b"\xAA\xBC\xF0\xF7\xF2\xD4\xA2\xC2\xE3\x53\xDE\x81\xF7\x30\x2F\xAF"
-        b"\x7C\x85\x12"
+        actual.padata[0].b_value == b"\x30\x41\xa0\x03\x02\x01\x12\xa2\x3a\x04\x38\x07\x40\x46\x03\xa8"
+        b"\x69\xc9\x31\x76\xe2\x8e\xda\xd1\x34\xce\x7f\xc4\xc8\x73\x58\x0d"
+        b"\xf4\x61\x1c\x85\x5f\x43\xf6\xaa\x9e\x48\xe2\xf0\x8c\xc2\x88\x70"
+        b"\xaa\xbc\xf0\xf7\xf2\xd4\xa2\xc2\xe3\x53\xde\x81\xf7\x30\x2f\xaf"
+        b"\x7c\x85\x12"
     )
     pa1_val = actual.padata[0].value
     assert isinstance(pa1_val, kerb.EncryptedData)
     assert pa1_val.etype == kerb.KerberosEncryptionType.aes256_cts_hmac_sha1_96
     assert pa1_val.kvno is None
     assert (
-        pa1_val.cipher == b"\x07\x40\x46\x03\xA8\x69\xC9\x31\x76\xE2\x8E\xDA\xD1\x34\xCE\x7F"
-        b"\xC4\xC8\x73\x58\x0D\xF4\x61\x1C\x85\x5F\x43\xF6\xAA\x9E\x48\xE2"
-        b"\xF0\x8C\xC2\x88\x70\xAA\xBC\xF0\xF7\xF2\xD4\xA2\xC2\xE3\x53\xDE"
-        b"\x81\xF7\x30\x2F\xAF\x7C\x85\x12"
+        pa1_val.cipher == b"\x07\x40\x46\x03\xa8\x69\xc9\x31\x76\xe2\x8e\xda\xd1\x34\xce\x7f"
+        b"\xc4\xc8\x73\x58\x0d\xf4\x61\x1c\x85\x5f\x43\xf6\xaa\x9e\x48\xe2"
+        b"\xf0\x8c\xc2\x88\x70\xaa\xbc\xf0\xf7\xf2\xd4\xa2\xc2\xe3\x53\xde"
+        b"\x81\xf7\x30\x2f\xaf\x7c\x85\x12"
     )
 
     assert actual.padata[1].data_type == 149
@@ -264,6 +264,7 @@ def test_unpack_krb_tgs_req():
 
     # Test pyspnego-parse dict.
     actual = kerb.parse_kerberos_token(actual)
+    assert isinstance(actual, dict)
     assert actual["pvno"] == 5
     assert actual["msg-type"] == "TGS-REQ (12)"
     assert isinstance(actual["padata"], list)
@@ -325,9 +326,9 @@ def test_unpack_krb_as_rep():
     assert len(actual.padata) == 1
     assert actual.padata[0].data_type == kerb.KerberosPADataType.etype_info2
     assert (
-        actual.padata[0].b_value == b"\x30\x25\x30\x23\xA0\x03\x02\x01\x12\xA1\x1C\x1B\x1A\x44\x4F\x4D"
-        b"\x41\x49\x4E\x2E\x4C\x4F\x43\x41\x4C\x76\x61\x67\x72\x61\x6E\x74"
-        b"\x2D\x64\x6F\x6D\x61\x69\x6E"
+        actual.padata[0].b_value == b"\x30\x25\x30\x23\xa0\x03\x02\x01\x12\xa1\x1c\x1b\x1a\x44\x4f\x4d"
+        b"\x41\x49\x4e\x2e\x4c\x4f\x43\x41\x4c\x76\x61\x67\x72\x61\x6e\x74"
+        b"\x2d\x64\x6f\x6d\x61\x69\x6e"
     )
     pa1_val = actual.padata[0].value
     assert isinstance(pa1_val, list)
@@ -347,6 +348,7 @@ def test_unpack_krb_as_rep():
 
     # Test pyspnego-parse dict.
     actual = kerb.parse_kerberos_token(actual)
+    assert isinstance(actual, dict)
     assert actual["pvno"] == 5
     assert actual["msg-type"] == "AS-REP (11)"
     assert isinstance(actual["padata"], list)
@@ -403,6 +405,7 @@ def test_unpack_krb_tgs_rep():
 
     # Test pyspnego-parse dict.
     actual = kerb.parse_kerberos_token(actual)
+    assert isinstance(actual, dict)
     assert actual["pvno"] == 5
     assert actual["msg-type"] == "TGS-REP (13)"
     assert actual["padata"] is None
@@ -450,6 +453,7 @@ def test_unpack_krb_ap_req():
 
     # Test pyspnego-parse dict.
     actual = kerb.parse_kerberos_token(actual)
+    assert isinstance(actual, dict)
     assert actual["pvno"] == 5
     assert actual["msg-type"] == "AP-REQ (14)"
     assert actual["ap-options"]["raw"] == 32
@@ -503,6 +507,7 @@ def test_unpack_krb_ap_rep():
 
     # Test pyspnego-parse dict.
     actual = kerb.parse_kerberos_token(actual)
+    assert isinstance(actual, dict)
     assert actual["pvno"] == 5
     assert actual["msg-type"] == "AP-REP (15)"
     assert actual["enc-part"]["etype"] == "AES256_CTS_HMAC_SHA1_96 (18)"
@@ -534,6 +539,7 @@ def test_unpack_krb_error():
     assert actual.susec == 748591
 
     actual = kerb.parse_kerberos_token(actual, encoding="utf-8")
+    assert isinstance(actual, dict)
     assert actual["pvno"] == 5
     assert actual["msg-type"] == "KRB-ERROR (30)"
     assert actual["ctime"] is None
