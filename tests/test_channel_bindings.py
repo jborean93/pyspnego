@@ -6,13 +6,13 @@ import sys
 import spnego.channel_bindings as cb
 
 TEST_DATA = cb.GssChannelBindings(
-    cb.AddressType.inet, b"\x01\x02\x03\x04", cb.AddressType.unspecified, b"\x05\x06\x07\x08", b"caf\xC3\xA9"
+    cb.AddressType.inet, b"\x01\x02\x03\x04", cb.AddressType.unspecified, b"\x05\x06\x07\x08", b"caf\xc3\xa9"
 )
 
 TEST_B_DATA = (
     b"\x02\x00\x00\x00\x04\x00\x00\x00\x01\x02\x03\x04"
     b"\x00\x00\x00\x00\x04\x00\x00\x00\x05\x06\x07\x08"
-    b"\x05\x00\x00\x00caf\xC3\xA9"
+    b"\x05\x00\x00\x00caf\xc3\xa9"
 )
 
 
@@ -37,7 +37,7 @@ def test_channel_bindings_unpack():
     assert actual.initiator_address == b"\x01\x02\x03\x04"
     assert actual.acceptor_addrtype == cb.AddressType.unspecified
     assert actual.acceptor_address == b"\x05\x06\x07\x08"
-    assert actual.application_data == b"caf\xC3\xA9"
+    assert actual.application_data == b"caf\xc3\xa9"
 
 
 def test_channel_bindings_str():

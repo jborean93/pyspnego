@@ -322,7 +322,7 @@ def _encode_kerb_password(
         try:
             b_data.append(c.encode("utf-8", errors="strict"))
         except UnicodeEncodeError:
-            b_data.append(b"\xEF\xBF\xBD")
+            b_data.append(b"\xef\xbf\xbd")
 
     return b"".join(b_data)
 

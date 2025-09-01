@@ -4,6 +4,7 @@
 
 import os
 import socket
+import sys
 
 import pytest
 
@@ -33,17 +34,16 @@ def ntlm_cred(tmpdir, monkeypatch):
     cleanup = None
     try:
         # Use unicode credentials to test out edge cases when dealing with non-ascii chars.
+        clef = to_text(b"\xf0\x9d\x84\x9e")
         username = "ÜseӜ"
         password = "Pӓ$sw0r̈d"
 
-        if HAS_SSPI:
-            domain = to_text(socket.gethostname())
-
-            # Can only test this out with Windows due to issue with gss-ntlmssp when dealing with surrogate pairs.
-            # https://github.com/gssapi/gss-ntlmssp/issues/20
-            clef = to_text(b"\xF0\x9D\x84\x9E")
+        if sys.platform != "darwin":
             username += clef
             password += clef
+
+        if HAS_SSPI:
+            domain = to_text(socket.gethostname())
 
             buff = {
                 "name": username,

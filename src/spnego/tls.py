@@ -124,7 +124,9 @@ def generate_tls_certificate() -> typing.Tuple[bytes, bytes, bytes]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
 
     # socket.getfqdn() can block for a few seconds if DNS is not set up properly.
-    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "CREDSSP-%s" % platform.node())])
+    # The name also has a max length of 64 characters.
+    cn_name = f"CREDSSP-{platform.node()}"[:64]
+    name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, cn_name)])
 
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (

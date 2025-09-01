@@ -38,11 +38,11 @@ def test_seal_ntlmv1():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(TEST_NTLMV1_FLAGS, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\x56\xFE\x04\xD8\x61\xF9\x31\x9A\xF0\xD7\x23\x8A\x2E\x3B\x4D\x45" b"\x7F\xB8"
+    assert actual_msg == b"\x56\xfe\x04\xd8\x61\xf9\x31\x9a\xf0\xd7\x23\x8a\x2e\x3b\x4d\x45" b"\x7f\xb8"
 
     # The docs example seems to keep the random pad in the signature even though the actual function definition sets
     # that to 0x00000000. Assert the actual working implementation that has been tested against MS servers.
-    assert actual_signature == b"\x01\x00\x00\x00\x00\x00\x00\x00\x09\xDC\xD1\xDF\x2E\x45\x9D\x36"
+    assert actual_signature == b"\x01\x00\x00\x00\x00\x00\x00\x00\x09\xdc\xd1\xdf\x2e\x45\x9d\x36"
 
 
 def test_seal_ntlmv1_with_ess():
@@ -61,8 +61,8 @@ def test_seal_ntlmv1_with_ess():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\xA0\x23\x72\xF6\x53\x02\x73\xF3\xAA\x1E\xB9\x01\x90\xCE\x52\x00" b"\xC9\x9D"
-    assert actual_signature == b"\x01\x00\x00\x00\xFF\x2A\xEB\x52\xF6\x81\x79\x3A\x00\x00\x00\x00"
+    assert actual_msg == b"\xa0\x23\x72\xf6\x53\x02\x73\xf3\xaa\x1e\xb9\x01\x90\xce\x52\x00" b"\xc9\x9d"
+    assert actual_signature == b"\x01\x00\x00\x00\xff\x2a\xeb\x52\xf6\x81\x79\x3a\x00\x00\x00\x00"
 
 
 def test_seal_ntlmv2():
@@ -82,8 +82,8 @@ def test_seal_ntlmv2():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\x54\xE5\x01\x65\xBF\x19\x36\xDC\x99\x60\x20\xC1\x81\x1B\x0F\x06" b"\xFB\x5F"
-    assert actual_signature == b"\x01\x00\x00\x00\x7F\xB3\x8E\xC5\xC5\x5D\x49\x76\x00\x00\x00\x00"
+    assert actual_msg == b"\x54\xe5\x01\x65\xbf\x19\x36\xdc\x99\x60\x20\xc1\x81\x1b\x0f\x06" b"\xfb\x5f"
+    assert actual_signature == b"\x01\x00\x00\x00\x7f\xb3\x8e\xc5\xc5\x5d\x49\x76\x00\x00\x00\x00"
 
 
 def test_seal_ntlmv2_no_key_exch():
@@ -98,8 +98,8 @@ def test_seal_ntlmv2_no_key_exch():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\x54\xE5\x01\x65\xBF\x19\x36\xDC\x99\x60\x20\xC1\x81\x1B\x0F\x06" b"\xFB\x5F"
-    assert actual_signature == b"\x01\x00\x00\x00\x70\x35\x28\x51\xF2\x56\x43\x09\x00\x00\x00\x00"
+    assert actual_msg == b"\x54\xe5\x01\x65\xbf\x19\x36\xdc\x99\x60\x20\xc1\x81\x1b\x0f\x06" b"\xfb\x5f"
+    assert actual_signature == b"\x01\x00\x00\x00\x70\x35\x28\x51\xf2\x56\x43\x09\x00\x00\x00\x00"
 
 
 def test_sign_with_always_sign():

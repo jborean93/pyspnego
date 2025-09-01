@@ -122,9 +122,13 @@ ENV/
 # vim
 *.swp
 
+# uv
+uv.lock
+
 # Integration test files
 tests/integration/artifact.zip
 tests/integration/cert_setup
+tests/integration/collections
 tests/integration/*.keytab
 tests/integration/.vagrant
 tests/integration/*.swp

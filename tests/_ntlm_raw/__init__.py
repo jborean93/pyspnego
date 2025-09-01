@@ -11,8 +11,8 @@ TEST_SERVER_NAME = "Server"
 TEST_WORKSTATION_NAME = "COMPUTER"
 TEST_RANDOM_SESSION_KEY = b"\x55" * 16
 TEST_TIME = b"\x00" * 8
-TEST_CLIENT_CHALLENGE = b"\xAA" * 8
-TEST_SERVER_CHALLENGE = b"\x01\x23\x45\x67\x89\xAB\xCD\xEF"
+TEST_CLIENT_CHALLENGE = b"\xaa" * 8
+TEST_SERVER_CHALLENGE = b"\x01\x23\x45\x67\x89\xab\xcd\xef"
 
 # https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/2624850f-36e9-403c-a832-1d9c7243acc2
 TEST_NTLMV1_FLAGS = (

@@ -139,37 +139,31 @@
         add:
         - '{{ domain_username }}'
 
-  - name: create gMSA account
+  - name: Create KDS root key if not present
     ansible.windows.win_powershell:
+      error_action: stop
       script: |
-        param([string]$UserName, [string]$Realm)
-        $ErrorActionPreference = 'Stop'
         $Ansible.Changed = $false
-
-        if (-not (Get-KdsRootKey -ErrorAction SilentlyContinue)) {
-            $null = Add-KdsRootKey -EffectiveTime ((Get-Date).AddHours(-10))
+        if (-not (Get-KdsRootKey)) {
+            Add-KdsRootKey -EffectiveTime ((Get-Date).AddHours(-10))
             $Ansible.Changed = $true
         }
+    become: true
+    become_method: runas
+    become_user: SYSTEM
 
-        try {
-            $null = Get-ADServiceAccount -Identity $UserName
-        }
-        catch {
-            $accountParams = @{
-                Name = $UserName
-                DNSHostName = "$UserName.$Realm"
-                KerberosEncryptionType = 'AES128,AES256'
-                OtherAttributes = @{
-                    userPrincipalName = "${UserName}`$@${Realm}"
-                }
-                PrincipalsAllowedToRetrieveManagedPassword = 'gMSAUsers'
-            }
-            New-ADServiceAccount @accountParams
-            $Ansible.Changed = $true
-        }
-      parameters:
-        UserName: '{{ gmsa_username }}'
-        Realm: '{{ domain_name }}'
+  - name: create gMSA account
+    microsoft.ad.service_account:
+      identity: '{{ gmsa_username }}'
+      dns_hostname: '{{ gmsa_username }}@{{ domain_name }}'
+      kerberos_encryption_types:
+        set:
+        - aes128
+        - aes256
+      allowed_to_retrieve_password:
+        set:
+        - gMSAUsers
+      upn: '{{ gmsa_username }}$@{{ domain_name }}'
     become: true
     become_method: runas
     become_user: SYSTEM
@@ -240,57 +234,67 @@
 #       }
 #       Get-ItemProperty @getParams | Select-Object -Property @(
 #           @{ N = 'Name'; E = { $_.DisplayName } },
-#           @{ N = 'AppId'; E = { $_.PSChildName } }
+#           @{ N = 'AppId'; E = { $_.PSChildName.Trim('{}') } }
 #       )
-#   } | Where-Object { $_.Name -like 'Python * Standard Library *' }
+#   } |
+#     Where-Object { $_.Name -like 'Python * Standard Library *' } |
+#     Sort-Object {
+#       $null = $_.Name -match 'Python (\d+\.\d+\.\d+).+Standard Library \((\d+)-bit\)'
+#       [Version]"$($matches[1]).$($matches[2])"
+#     }
 
 - name: set up Python interpreters on test Windows host
-  hosts: SERVER2012R2
+  hosts: TESTWIN
   gather_facts: false
   tasks:
   - name: install Python interpreters
     ansible.windows.win_package:
-      path: '{{ item.url }}'
-      arguments: '{{ item.arguments }}'
-      product_id: '{{ item.product_id }}'
+      path: https://www.python.org/ftp/python/{{ item.version }}/python-{{ item.version}}{{ item.version_suffix }}.exe
+      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+      product_id: '{{ "{" ~ item.product_id ~ "}" }}'
       state: present
     with_items:
-    - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe
-      product_id: '{4196628C-AE5C-4304-B166-B7C1E93CDC25}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
-      product_id: '{080E0048-853C-49FB-96ED-30DEF7AB6E34}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe
-      product_id: '{E23C472D-F346-4D47-A909-9D48E5D7252F}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe
-      product_id: '{90A30DAB-6FD8-4CF8-BB8B-C0DB21C69F20}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.10.11/python-3.10.11.exe
-      product_id: '{2627E7A3-6630-4858-8151-D91D1AF62F8E}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe
-      product_id: '{6532871D-1F76-408C-ABD0-63C732137351}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.11.9/python-3.11.9.exe
-      product_id: '{89D284CB-6250-4C7A-88DD-56A7CE162ACD}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
-      product_id: '{9AFDC691-40E5-4B15-835F-9A524AC4672C}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.12.7/python-3.12.7.exe
-      product_id: '{CDE1679E-52FD-4AEA-9FA4-36E092E2B1D5}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe
-      product_id: '{FF6D0E73-2F53-4CF9-BD2C-F144E4FA02FE}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.13.0/python-3.13.0.exe
-      product_id: '{2CEFA2B5-14D8-4C3A-B023-B8B5F4A86282}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
-    - url: https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe
-      product_id: '{09D95048-E91D-4F33-9197-1182FCA17B16}'
-      arguments: /quiet InstallAllUsers=1 Shortcuts=0
+    - version: 3.9.13
+      version_suffix: ''
+      product_id: E23C472D-F346-4D47-A909-9D48E5D7252F
+    - version: 3.9.13
+      version_suffix: -amd64
+      product_id: 90A30DAB-6FD8-4CF8-BB8B-C0DB21C69F20
+
+    - version: 3.10.11
+      version_suffix: ''
+      product_id: 2627E7A3-6630-4858-8151-D91D1AF62F8E
+    - version: 3.10.11
+      version_suffix: -amd64
+      product_id: 6532871D-1F76-408C-ABD0-63C732137351
+
+    - version: 3.11.9
+      version_suffix: ''
+      product_id: 89D284CB-6250-4C7A-88DD-56A7CE162ACD
+    - version: 3.11.9
+      version_suffix: -amd64
+      product_id: 9AFDC691-40E5-4B15-835F-9A524AC4672C
+
+    - version: 3.12.10
+      version_suffix: ''
+      product_id: 4B1491F1-E78B-412B-8768-125E196F6983
+    - version: 3.12.10
+      version_suffix: -amd64
+      product_id: DE12B597-D4BF-4B1B-BF5F-C5CE41AFBDFC
+
+    - version: 3.13.7
+      version_suffix: ''
+      product_id: 6A5E274E-2B54-455F-BBF1-786A0AE0DFF6
+    - version: 3.13.7
+      version_suffix: -amd64
+      product_id: A139F43E-8105-465D-AC80-28F349CBE08D
+
+    - version: 3.14.0
+      version_suffix: rc2
+      product_id: FE22F56A-E5BB-4D0B-BEED-58BD86357579
+    - version: 3.14.0
+      version_suffix: rc2-amd64
+      product_id: 8E1686E1-754A-4AA4-A0BD-648350CD9636
 
   - name: ensure virtualenv package is installed for each Python install
     ansible.windows.win_command: '"{{ item }}\python.exe" -m pip install virtualenv'

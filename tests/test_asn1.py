@@ -16,10 +16,10 @@ ASN1_TAG_TESTS = [
     # Constructed value
     (asn1.TagClass.universal, True, asn1.TypeTagNumber.octet_string, b"\x00\x00", b"\x24\x02\x00\x00"),
     # Large tag number
-    (asn1.TagClass.application, True, 1024, b"\x00\x00", b"\x7F\x88\x00\x02\x00\x00"),
-    (asn1.TagClass.application, True, 1048576, b"\x00\x00", b"\x7F\xC0\x80\x00\x02\x00\x00"),
+    (asn1.TagClass.application, True, 1024, b"\x00\x00", b"\x7f\x88\x00\x02\x00\x00"),
+    (asn1.TagClass.application, True, 1048576, b"\x00\x00", b"\x7f\xc0\x80\x00\x02\x00\x00"),
     # Long length
-    (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 127, b"\x04\x7F" + (b"\x00" * 127)),
+    (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 127, b"\x04\x7f" + (b"\x00" * 127)),
     (asn1.TagClass.universal, False, asn1.TypeTagNumber.octet_string, b"\x00" * 128, b"\x04\x81\x80" + (b"\x00" * 128)),
     (
         asn1.TagClass.universal,
@@ -32,41 +32,41 @@ ASN1_TAG_TESTS = [
 
 # openssl asn1parse -genstr 'INTEGER:<val>' -out test && hexdump -C test && rm test
 INTEGER_TESTS = [  # INTEGER has weird rules that I don't fully understand, use a test of test cases.
-    (-748591, b"\x02\x03\xF4\x93\xD1"),
-    (-32769, b"\x02\x03\xFF\x7F\xFF"),
+    (-748591, b"\x02\x03\xf4\x93\xd1"),
+    (-32769, b"\x02\x03\xff\x7f\xff"),
     (-32768, b"\x02\x02\x80\x00"),
     (-32767, b"\x02\x02\x80\x01"),
-    (-257, b"\x02\x02\xFE\xFF"),
-    (-256, b"\x02\x02\xFF\x00"),
-    (-255, b"\x02\x02\xFF\x01"),
-    (-129, b"\x02\x02\xFF\x7F"),
+    (-257, b"\x02\x02\xfe\xff"),
+    (-256, b"\x02\x02\xff\x00"),
+    (-255, b"\x02\x02\xff\x01"),
+    (-129, b"\x02\x02\xff\x7f"),
     (-128, b"\x02\x01\x80"),
     (-127, b"\x02\x01\x81"),
-    (-17, b"\x02\x01\xEF"),
-    (-16, b"\x02\x01\xF0"),
-    (-10, b"\x02\x01\xF6"),
-    (-1, b"\x02\x01\xFF"),
+    (-17, b"\x02\x01\xef"),
+    (-16, b"\x02\x01\xf0"),
+    (-10, b"\x02\x01\xf6"),
+    (-1, b"\x02\x01\xff"),
     (0, b"\x02\x01\x00"),
     (1, b"\x02\x01\x01"),
-    (10, b"\x02\x01\x0A"),
+    (10, b"\x02\x01\x0a"),
     (16, b"\x02\x01\x10"),
     (17, b"\x02\x01\x11"),
-    (127, b"\x02\x01\x7F"),
+    (127, b"\x02\x01\x7f"),
     (128, b"\x02\x02\x00\x80"),
     (129, b"\x02\x02\x00\x81"),
-    (255, b"\x02\x02\x00\xFF"),
+    (255, b"\x02\x02\x00\xff"),
     (256, b"\x02\x02\x01\x00"),
     (257, b"\x02\x02\x01\x01"),
-    (32767, b"\x02\x02\x7F\xFF"),
+    (32767, b"\x02\x02\x7f\xff"),
     (32768, b"\x02\x03\x00\x80\x00"),
     (32769, b"\x02\x03\x00\x80\x01"),
-    (748591, b"\x02\x03\x0B\x6C\x2F"),
+    (748591, b"\x02\x03\x0b\x6c\x2f"),
 ]
 
 OID_TESTS = [
-    ("1.2", b"\x06\x01\x2A"),
-    ("1.2.3", b"\x06\x02\x2A\x03"),
-    ("1.2.3.1024.2", b"\x06\x05\x2A\x03\x88\x00\x02"),
+    ("1.2", b"\x06\x01\x2a"),
+    ("1.2.3", b"\x06\x02\x2a\x03"),
+    ("1.2.3.1024.2", b"\x06\x05\x2a\x03\x88\x00\x02"),
 ]
 
 
@@ -238,16 +238,16 @@ def test_unpack_asn1_bit_string(value, expected):
 
 def test_pack_asn1_general_string():
     actual = asn1.pack_asn1_general_string("cafe")
-    assert actual == b"\x1B\x04\x63\x61\x66\x65"
+    assert actual == b"\x1b\x04\x63\x61\x66\x65"
 
 
 def test_pack_asn1_enumerated():
     actual = asn1.pack_asn1_enumerated(1024)
-    assert actual == b"\x0A\x02\x04\x00"
+    assert actual == b"\x0a\x02\x04\x00"
 
 
 def test_unpack_asn1_enumerated():
-    value = b"\x0A\x02\x04\x00"
+    value = b"\x0a\x02\x04\x00"
     expected = 1024
 
     actual = asn1.unpack_asn1_enumerated(value[2:])
@@ -259,12 +259,12 @@ def test_unpack_asn1_enumerated():
 
 def test_pack_asn1_general_string_encoding():
     actual = asn1.pack_asn1_general_string("café", encoding="utf-8")
-    assert actual == b"\x1B\x05\x63\x61\x66\xC3\xA9"
+    assert actual == b"\x1b\x05\x63\x61\x66\xc3\xa9"
 
 
 def test_unpack_asn1_general_string():
-    value = b"\x1B\x05\x63\x61\x66\xC3\xA9"
-    expected = b"\x63\x61\x66\xC3\xA9"
+    value = b"\x1b\x05\x63\x61\x66\xc3\xa9"
+    expected = b"\x63\x61\x66\xc3\xa9"
 
     actual = asn1.unpack_asn1_general_string(value[2:])
     assert actual == expected
@@ -378,8 +378,8 @@ def test_unpack_asn1_boolean(value, expected):
 @pytest.mark.parametrize(
     "value",
     [
-        b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x5A",
-        b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x2E\x30\x30\x30\x30\x30\x30\x5A",
+        b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x5a",
+        b"\x31\x39\x37\x30\x30\x31\x30\x31\x30\x30\x30\x30\x30\x30\x2e\x30\x30\x30\x30\x30\x30\x5a",
     ],
 )
 def test_unpack_asn1_generalized_time(value):

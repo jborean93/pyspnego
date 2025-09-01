@@ -9,9 +9,9 @@ all:
               vagrant_box: jborean93/WindowsServer2022
         win_children:
           hosts:
-            SERVER2012R2:
+            TESTWIN:
               ansible_host: 192.168.65.11
-              vagrant_box: jborean93/WindowsServer2012R2
+              vagrant_box: jborean93/WindowsServer2016
             SERVER2022:
               ansible_host: 192.168.65.12
               vagrant_box: jborean93/WindowsServer2022
@@ -19,8 +19,6 @@ all:
         ansible_connection: psrp
         ansible_port: 5985
         python_interpreters:
-        - C:\Program Files\Python38
-        - C:\Program Files (x86)\Python38-32
         - C:\Program Files\Python39
         - C:\Program Files (x86)\Python39-32
         - C:\Program Files\Python310
@@ -31,6 +29,9 @@ all:
         - C:\Program Files (x86)\Python312-32
         - C:\Program Files\Python313
         - C:\Program Files (x86)\Python313-32
+        # cffi does not have Windows wheels for 3.14 yet
+        # - C:\Program Files\Python314
+        # - C:\Program Files (x86)\Python314-32
         python_venv_path: C:\temp\venv
         krb_provider: SSPI
 

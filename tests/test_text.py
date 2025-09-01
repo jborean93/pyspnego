@@ -40,9 +40,9 @@ class ObjUnicodeError:
 
 
 def test_to_bytes_from_bytes():
-    actual = text.to_bytes(b"\xFF\x00\x7F\x80")
+    actual = text.to_bytes(b"\xff\x00\x7f\x80")
 
-    assert actual == b"\xFF\x00\x7F\x80"
+    assert actual == b"\xff\x00\x7f\x80"
 
 
 @pytest.mark.parametrize(
@@ -50,7 +50,7 @@ def test_to_bytes_from_bytes():
     [
         ("cafe", b"cafe"),
         ("café", b"caf\xc3\xa9"),
-        ("ÜseӜ", b"\x55\xCC\x88\x73\x65\xD3\x9C"),
+        ("ÜseӜ", b"\x55\xcc\x88\x73\x65\xd3\x9c"),
     ],
 )
 def test_to_bytes_from_text(value, expected):
@@ -126,7 +126,7 @@ def test_to_text_from_text():
     [
         (b"cafe", "cafe"),
         (b"caf\xc3\xa9", "café"),
-        (b"\x55\xCC\x88\x73\x65\xD3\x9C", "ÜseӜ"),
+        (b"\x55\xcc\x88\x73\x65\xd3\x9c", "ÜseӜ"),
     ],
 )
 def test_to_text_from_bytes(value, expected):
@@ -143,9 +143,9 @@ def test_to_text_encoding():
 
 def test_to_text_errors():
     with pytest.raises(UnicodeError, match="codec can't decode byte 0xff"):
-        text.to_text(b"caf\xFF")
+        text.to_text(b"caf\xff")
 
-    actual = text.to_text(b"caf\xFF", errors="replace")
+    actual = text.to_text(b"caf\xff", errors="replace")
 
     assert actual == "caf�"
 

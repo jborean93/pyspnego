@@ -13,7 +13,7 @@ be used to decode raw NTLM/SPNEGO/Kerberos tokens into a human readable format.
 
 See [How to Install](#how-to-install) for more details
 
-* CPython 3.8+
+* CPython 3.9+
 * [cryptography](https://github.com/pyca/cryptography)
 * [sspilib](https://github.com/jborean93/sspilib) - Windows only
 
@@ -44,10 +44,7 @@ To install these packages, run the below
 # Debian/Ubuntu
 apt-get install gcc python3-dev libkrb5-dev
 
-# Centos/RHEL
-yum install gcc python-devel krb5-devel
-
-# Fedora
+# Centos/RHEL/Fedora
 dnf install gcc python-devel krb5-devel
 
 # Arch Linux

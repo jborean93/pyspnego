@@ -302,7 +302,7 @@ def kxkey(
 
     elif flags & NegotiateFlags.lm_key:
         b_data = lm_response[:8]
-        return des(lmowf[:7], b_data) + des(lmowf[7:8] + b"\xBD\xBD\xBD\xBD\xBD\xBD", b_data)
+        return des(lmowf[:7], b_data) + des(lmowf[7:8] + b"\xbd\xbd\xbd\xbd\xbd\xbd", b_data)
 
     elif flags & NegotiateFlags.non_nt_session_key:
         return lmowf[:8] + b"\x00" * 8
@@ -505,10 +505,10 @@ def sealkey(flags: int, session_key: bytes, usage: str) -> bytes:
 
     elif flags & NegotiateFlags.lm_key or flags & NegotiateFlags.datagram:
         if flags & NegotiateFlags.key_56:
-            return session_key[:7] + b"\xA0"
+            return session_key[:7] + b"\xa0"
 
         else:
-            return session_key[:5] + b"\xE5\x38\xB0"
+            return session_key[:5] + b"\xe5\x38\xb0"
 
     else:
         return session_key

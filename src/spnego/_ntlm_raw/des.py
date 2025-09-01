@@ -952,7 +952,7 @@ class DES:
 
         is converted to
 
-        b"\x01\x80\x80\x61\x40\x29\x19\x0E"
+        b"\x01\x80\x80\x61\x40\x29\x19\x0e"
         00000001 10000000 10000000 01100001 01000000 00101001 00011001 00001110
 
         https://crypto.stackexchange.com/questions/15799/des-with-actual-7-byte-key

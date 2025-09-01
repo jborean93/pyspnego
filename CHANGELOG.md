@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 - TBD
+
+* Drop support for Python 3.7 - new minimum is 3.9+
+* Add official support for Python 3.14
+* Fix CredSSP server certificate generation to limit CN name to 64 characters
+
 ## 0.11.2 - 2024-11-12
 
 * Fix up CredSSP acceptor when running with a LibreSSL based Python install (OpenBSD)
