@@ -1308,17 +1308,27 @@ def rpc_get_key(
         return GetKeyRequest.unpack_response(create_key_resp)
 
 
-@pytest.mark.parametrize('service', ['HTTP', 'cifs'])
+@pytest.mark.parametrize('service', ['SERV1', 'serv2'])
 def test_kerberos_authentication(service, monkeypatch):
-    if os.name != 'nt':
-        monkeypatch.setenv('KRB5_KTNAME', '/etc/%s.keytab' % service)
+    server_kwargs = {}
+    if os.name == 'nt':
+        server_kwargs['credentials'] = spnego.KerberosKeytab(keytab=rf"C:\temp\{service}.keytab")
 
+        # SSPI will report the user in the Netlogon form, use PowerShell to convert the UPN to the Netlogon user.
+        pwsh_command = base64.b64encode('''
+$username = '{0}'
+([Security.Principal.NTAccount]$username).Translate(
+[Security.Principal.SecurityIdentifier]
+).Translate([Security.Principal.NTAccount]).Value
+'''.format(USERNAME).encode('utf-16-le')).decode()
+        expected_username = subprocess.Popen(['powershell', '-EncodedCommand', pwsh_command],
+                                            stdout=subprocess.PIPE).communicate()[0].strip().decode()
     else:
-        if not IS_SYSTEM:
-            pytest.skip("Cannot run Kerberos server tests when not running as SYSTEM")
+        monkeypatch.setenv('KRB5_KTNAME', '/etc/%s.keytab' % service)
+        expected_username = USERNAME
 
     c = spnego.client(USERNAME, PASSWORD, hostname=HOST_FQDN, service=service)
-    s = spnego.server()
+    s = spnego.server(**server_kwargs)
 
     in_token = None
     while not c.complete:
@@ -1327,20 +1337,6 @@ def test_kerberos_authentication(service, monkeypatch):
             break
 
         in_token = s.step(out_token)
-
-    if os.name == 'nt':
-        # SSPI will report the user in the Netlogon form, use PowerShell to convert the UPN to the Netlogon user.
-        pwsh_command = base64.b64encode('''
-$username = '{0}'
-([Security.Principal.NTAccount]$username).Translate(
-    [Security.Principal.SecurityIdentifier]
-).Translate([Security.Principal.NTAccount]).Value
-'''.format(USERNAME).encode('utf-16-le')).decode()
-        expected_username = subprocess.Popen(['powershell', '-EncodedCommand', pwsh_command],
-                                             stdout=subprocess.PIPE).communicate()[0].strip().decode()
-
-    else:
-        expected_username = USERNAME
 
     assert s.client_principal == expected_username
     assert s.session_key == c.session_key
@@ -1372,7 +1368,6 @@ $username = '{0}'
     assert c_iov_res.buffers[1].data == plaintext
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='Windows doesnt support keytabs')
 @pytest.mark.parametrize('protocol, set_principal', [
     ('kerberos', False),
     ('kerberos', True),
@@ -1380,19 +1375,39 @@ $username = '{0}'
     ('negotiate', True),
 ])
 def test_kerberos_authentication_with_keytab(protocol, set_principal, monkeypatch):
-    monkeypatch.setenv('KRB5_KTNAME', '/etc/HTTP.keytab')
-
-    auth_kwargs = {}
+    client_kwargs = {}
+    server_kwargs = {}
     if protocol != 'negotiate':
-        auth_kwargs['protocol'] = protocol
+        client_kwargs['protocol'] = protocol
+        server_kwargs['protocol'] = protocol
 
+    client_principal = None
     if set_principal:
-        keytab = spnego.KerberosKeytab(keytab=os.path.expanduser('~/user.keytab'), principal=USERNAME)
-    else:
-        keytab = spnego.KerberosKeytab(keytab=os.path.expanduser('~/user.keytab'))
+        client_principal = USERNAME
+    elif os.name == 'nt':
+        pytest.skip("SSPI requires a principal in the keytab to work")
 
-    c = spnego.client(keytab, hostname=HOST_FQDN, service='HTTP', **auth_kwargs)
-    s = spnego.server(**auth_kwargs)
+    if os.name == 'nt':
+        server_kwargs['credentials'] = spnego.KerberosKeytab(keytab=r'C:\temp\SERV1.keytab')
+        keytab_path = r'C:\temp\user.keytab'
+
+        # SSPI will report the user in the Netlogon form, use PowerShell to convert the UPN to the Netlogon user.
+        pwsh_command = base64.b64encode('''
+$username = '{0}'
+([Security.Principal.NTAccount]$username).Translate(
+    [Security.Principal.SecurityIdentifier]
+).Translate([Security.Principal.NTAccount]).Value
+'''.format(USERNAME).encode('utf-16-le')).decode()
+        expected_username = subprocess.Popen(['powershell', '-EncodedCommand', pwsh_command],
+                                             stdout=subprocess.PIPE).communicate()[0].strip().decode()
+    else:
+        monkeypatch.setenv('KRB5_KTNAME', '/etc/SERV1.keytab')
+        keytab_path = os.path.expanduser('~/user.keytab')
+        expected_username = USERNAME
+
+    keytab = spnego.KerberosKeytab(keytab=keytab_path, principal=client_principal)
+    c = spnego.client(keytab, hostname=HOST_FQDN, service='SERV1', **client_kwargs)
+    s = spnego.server(**server_kwargs)
 
     in_token = None
     while not c.complete:
@@ -1402,7 +1417,7 @@ def test_kerberos_authentication_with_keytab(protocol, set_principal, monkeypatc
 
         in_token = s.step(out_token)
 
-    assert s.client_principal == USERNAME
+    assert s.client_principal == expected_username
     assert s.session_key == c.session_key
     assert c.negotiated_protocol == 'kerberos'
     assert s.negotiated_protocol == 'kerberos'
@@ -1418,7 +1433,7 @@ def test_kerberos_authentication_with_keytab(protocol, set_principal, monkeypatc
 def test_kerberos_authentication_with_cache(protocol, use_cache_cred, monkeypatch, tmp_path):
     cred = None
 
-    monkeypatch.setenv('KRB5_KTNAME', '/etc/HTTP.keytab')
+    monkeypatch.setenv('KRB5_KTNAME', '/etc/SERV1.keytab')
 
     kinit_args = ['kinit']
     config = {}
@@ -1449,7 +1464,7 @@ def test_kerberos_authentication_with_cache(protocol, use_cache_cred, monkeypatc
     if protocol != 'negotiate':
         auth_kwargs['protocol'] = protocol
 
-    c = spnego.client(cred, hostname=HOST_FQDN, service='HTTP', **auth_kwargs)
+    c = spnego.client(cred, hostname=HOST_FQDN, service='SERV1', **auth_kwargs)
     s = spnego.server(**auth_kwargs)
 
     in_token = None

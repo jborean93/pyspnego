@@ -168,6 +168,80 @@
     become_method: runas
     become_user: SYSTEM
 
+- name: create test keytabs
+  hosts: TESTWIN,linux_children
+  gather_facts: false
+  tasks:
+  - name: create AD principal for host keytabs
+    microsoft.ad.user:
+      name: '{{ inventory_hostname }}_{{ item }}'
+      description: Kerberos principal for {{ inventory_hostname }} {{ item }} keytab
+      password: '{{ domain_password }}'
+      password_never_expires: true
+      update_password: on_create
+      attributes:
+        set:
+          msDS-SupportedEncryptionTypes: 16  # AES256_CTS_HMAC_SHA1_96
+      state: present
+    become: false
+    delegate_to: DC01
+    with_items:
+    - SERV1
+    - serv2
+
+  - name: create service keytabs
+    ansible.windows.win_command: >-
+      ktpass.exe
+      -out C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
+      -princ {{ item }}/{{ inventory_hostname }}.{{ domain_name }}@{{ domain_name | upper }}
+      -mapUser {{ inventory_hostname }}_{{ item }}@{{ domain_name | upper }}
+      +rndpass
+      -mapOp set
+      -crypto AES256-SHA1
+      -ptype KRB5_NT_PRINCIPAL
+    args:
+      creates: C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
+    become: false
+    delegate_to: DC01
+    with_items:
+    - SERV1
+    - serv2
+
+  - name: create user keytab
+    ansible.windows.win_command: >-
+      ktpass.exe
+      -out C:\temp\{{ domain_username }}.keytab
+      -princ {{ domain_upn }}
+      -mapuser {{ domain_upn }}
+      -pass {{ domain_password }}
+      -crypto AES256-SHA1
+      -ptype KRB5_NT_PRINCIPAL
+    args:
+      creates: C:\temp\{{ domain_username }}.keytab
+    become: false
+    delegate_to: DC01
+    run_once: true
+
+  - name: fetch the service keytab
+    ansible.builtin.fetch:
+      src: C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
+      dest: '{{ inventory_hostname }}-{{ item }}.keytab'
+      flat: true
+    become: false
+    delegate_to: DC01
+    with_items:
+    - SERV1
+    - serv2
+
+  - name: fetch the user keytab
+    ansible.builtin.fetch:
+      src: C:\temp\{{ domain_username }}.keytab
+      dest: '{{ domain_username }}.keytab'
+      flat: true
+    become: false
+    delegate_to: DC01
+    run_once: true
+
 - name: join Windows host to domain
   hosts: win_children
   gather_facts: false
@@ -243,7 +317,7 @@
 #       [Version]"$($matches[1]).$($matches[2])"
 #     }
 
-- name: set up Python interpreters on test Windows host
+- name: set up Python interpreters and other test requirements on test Windows host
   hosts: TESTWIN
   gather_facts: false
   tasks:
@@ -353,6 +427,19 @@
       creates: '{{ python_venv_path }}\{{ item | win_basename }}\Lib\site-packages\spnego'
     with_items: '{{ python_interpreters }}'
 
+  - name: copy service keytabs to host
+    ansible.windows.win_copy:
+      src: '{{ inventory_hostname }}-{{ item }}.keytab'
+      dest: C:\temp\{{ item }}.keytab
+    with_items:
+    - SERV1
+    - serv2
+
+  - name: copy user keytab to host
+    ansible.windows.win_copy:
+      src: '{{ domain_username }}.keytab'
+      dest: C:\temp\user.keytab
+
   - name: template out test integration file
     ansible.windows.win_template:
       src: test_integration.py.tmpl
@@ -449,83 +536,19 @@
       src: krb5.conf.tmpl
       dest: /etc/krb5.conf
 
-  - name: create AD principal for Linux keytabs
-    microsoft.ad.user:
-      name: '{{ inventory_hostname }}_{{ item }}'
-      description: Kerberos principal for {{ inventory_hostname }} {{ item }} keytab
-      password: '{{ domain_password }}'
-      password_never_expires: true
-      update_password: on_create
-      attributes:
-        set:
-          msDS-SupportedEncryptionTypes: 16  # AES256_CTS_HMAC_SHA1_96
-      state: present
-    become: false
-    delegate_to: DC01
-    with_items:
-    - HTTP
-    - cifs
-
-  - name: create keytab for Linux hosts
-    ansible.windows.win_command: >-
-      ktpass.exe
-      -out C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
-      -princ {{ item }}/{{ inventory_hostname }}.{{ domain_name }}@{{ domain_name | upper }}
-      -mapUser {{ inventory_hostname }}_{{ item }}@{{ domain_name | upper }}
-      +rndpass
-      -mapOp set
-      -crypto AES256-SHA1
-      -ptype KRB5_NT_PRINCIPAL
-    args:
-      creates: C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
-    become: false
-    delegate_to: DC01
-    with_items:
-    - HTTP
-    - cifs
-
-  - name: fetch the keytab
-    ansible.builtin.fetch:
-      src: C:\temp\{{ inventory_hostname }}-{{ item }}.keytab
-      dest: '{{ inventory_hostname }}-{{ item }}.keytab'
-      flat: true
-    become: false
-    delegate_to: DC01
-    with_items:
-    - HTTP
-    - cifs
-
-  - name: copy keytabs to host
+  - name: copy service keytabs to host
     ansible.builtin.copy:
       src: '{{ inventory_hostname }}-{{ item }}.keytab'
       dest: /etc/{{ item }}.keytab
     with_items:
-    - HTTP
-    - cifs
+    - SERV1
+    - serv2
 
-  - name: create user keytab - MIT
-    ansible.builtin.command: ktutil
-    args:
-      chdir: ~/
-      creates: ~/user.keytab
-      stdin: "addent -password -p {{ domain_upn }} -k 1 -e aes256-cts\n{{ domain_password }}\nwrite_kt user.keytab"
+  - name: copy user keytab to host
+    ansible.builtin.copy:
+      src: '{{ domain_username }}.keytab'
+      dest: ~/user.keytab
     become: false
-    when: krb_provider == 'MIT'
-
-  - name: create user keytab - Heimdal
-    ansible.builtin.command: >-
-      ktutil
-      --keytab=user.keytab
-      add
-      --principal={{ domain_upn }}
-      --kvno=1
-      --enctype=aes256-cts
-      --password={{ domain_password }}
-    args:
-      chdir: ~/
-      creates: ~/user.keytab
-    become: false
-    when: krb_provider == 'Heimdal'
 
   - name: copy across CA cert
     ansible.builtin.copy:

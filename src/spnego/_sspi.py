@@ -22,7 +22,13 @@ from spnego._context import (
     split_username,
     wrap_system_error,
 )
-from spnego._credential import Credential, CredentialCache, Password, unify_credentials
+from spnego._credential import (
+    Credential,
+    CredentialCache,
+    KerberosKeytab,
+    Password,
+    unify_credentials,
+)
 from spnego.channel_bindings import GssChannelBindings
 from spnego.exceptions import (
     InvalidCredentialError,
@@ -101,16 +107,33 @@ def _get_sspi_credential(
     for cred in credentials:
         if isinstance(cred, Password):
             domain, username = split_username(cred.username)
-            auth_data = sspilib.raw.WinNTAuthIdentity(
+            pass_data = sspilib.raw.WinNTAuthIdentity(
                 username=username,
                 domain=domain,
                 password=cred.password,
             )
 
-            return sspilib.raw.acquire_credentials_handle(**credential_kwargs, auth_data=auth_data).credential
+            return sspilib.raw.acquire_credentials_handle(**credential_kwargs, auth_data=pass_data).credential
 
         elif isinstance(cred, CredentialCache):
             return sspilib.raw.acquire_credentials_handle(**credential_kwargs).credential
+
+        elif isinstance(cred, KerberosKeytab):
+            if not cred.principal:
+                raise InvalidCredentialError(context_msg="KerberosKeytab for SSPI requires a principal to be set")
+
+            domain, username = split_username(cred.principal)
+            with open(cred.keytab, mode="rb") as kt_file:
+                keytab = kt_file.read()
+
+            kt_data = sspilib.raw.WinNTAuthIdentityPackedCredential(
+                credential_type=sspilib.raw.WinNTAuthCredentialType.SEC_WINNT_AUTH_DATA_TYPE_KEYTAB,
+                credential=keytab,
+                username=username,
+                domain=domain,
+            )
+
+            return sspilib.raw.acquire_credentials_handle(**credential_kwargs, auth_data=kt_data).credential
 
     raise InvalidCredentialError(context_msg="No applicable credentials available")
 

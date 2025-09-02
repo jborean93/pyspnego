@@ -86,24 +86,9 @@ class NTLMHash:
 class KerberosKeytab:
     """Kerberos Keytab Credential.
 
-    Used with :class:`GSSAPIProxy` for Kerberos authentication. It is used to
-    retrieve a Kerberos ticket using a keytab for authentication rather than a
-    password. The keytab value is specified in the form ``TYPE:RESIDUAL`` where
-    the ``TYPE`` supported is down to the installed Kerberos/GSSAPI
-    implementation and ``RESIDUAL`` is a value specific to the type. Common
-    types are:
-
-        FILE: The value is the path to a keytab.
-        MEMORY: The value is a unique identifier to a keytab stored in memory
-            of the current process. It must be resolvable by the linked GSSAPI
-            provider that this library uses.
-
-    There are other ccache types but they are mostly platform or GSSAPI
-    implementation specific.
-
-    .. Note:
-        This only works on Linux, Windows does not have the concept of a
-        keytab.
+    Used with :class:`GSSAPIProxy` or :class:`SSPIProxy` for Kerberos
+    authentication. It is used to retrieve a Kerberos ticket using a keytab for
+    authentication rather than a password.
 
     Attributes:
         keytab: The keytab to use for authentication. The path will not be
