@@ -61,10 +61,10 @@ try:
     from gssapi.raw import IOV as GSSIOV
     from gssapi.raw import IOVBuffer as GSSIOVBuffer
     from gssapi.raw import IOVBufferType, unwrap_iov, wrap_iov, wrap_iov_length
-except ImportError as err:
-    GSSAPI_IOV_IMP_ERR = sys.exc_info()
+except ImportError as e:
+    GSSAPI_IOV_IMP_ERR = str(e)
     HAS_IOV = False
-    log.debug("Python gssapi IOV extension not available: %s" % str(GSSAPI_IOV_IMP_ERR[1]))
+    log.debug("Python gssapi IOV extension not available: %s" % GSSAPI_IOV_IMP_ERR)
 
 _GSS_C_INQ_SSPI_SESSION_KEY = "1.2.840.113554.1.2.2.5.5"
 
