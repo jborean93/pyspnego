@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.0 - TBD
+## 0.12.0 - 2025-09-03
 
 * Drop support for Python 3.7 - new minimum is 3.9+
 * Add official support for Python 3.14
