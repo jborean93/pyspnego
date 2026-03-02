@@ -1023,8 +1023,8 @@ class SingleHost:
         _b_data: typing.Optional[bytes] = None,
     ) -> None:
         if _b_data:
-            if len(_b_data) != 48:
-                raise ValueError("SingleHost bytes must have a length of 48")
+            if len(_b_data) < 8:
+                raise ValueError("SingleHost bytes must have at least a length of 8")
             self._data = memoryview(_b_data)
 
         else:
@@ -1061,23 +1061,27 @@ class SingleHost:
 
     @property
     def custom_data(self) -> bytes:
-        return self._data[8:16].tobytes()
+        return self._data[8:16].tobytes() if len(self._data) >= 16 else b""
 
     @custom_data.setter
     def custom_data(self, value: bytes) -> None:
         if len(value) != 8:
             raise ValueError("custom_data length must be 8 bytes long")
+        if len(self._data) < 16:
+            raise ValueError("cannot set custom_data on a SingleHost with less than 16 bytes of data")
 
         self._data[8:16] = value
 
     @property
     def machine_id(self) -> bytes:
-        return self._data[16:48].tobytes()
+        return self._data[16:48].tobytes() if len(self._data) >= 48 else b""
 
     @machine_id.setter
     def machine_id(self, value: bytes) -> None:
         if len(value) != 32:
             raise ValueError("machine_id length must be 32 bytes long")
+        if len(self._data) < 48:
+            raise ValueError("cannot set machine_id on a SingleHost with less than 48 bytes of data")
 
         self._data[16:48] = value
 

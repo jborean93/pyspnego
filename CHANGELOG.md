@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1 - 2026-03-03
+
+* Fix NTLM challenge parser when the `TargetInfo` contains extra data for `Single_Host_Data`
+  * Windows 11 24H2 is sending at least 80 bytes and as we don't use this data we don't care if it doesn't fit a specific size
+
 ## 0.12.0 - 2025-09-03
 
 * Drop support for Python 3.7 - new minimum is 3.9+

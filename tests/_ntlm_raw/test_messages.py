@@ -1380,7 +1380,7 @@ def test_single_host_defaults():
 
 
 def test_single_host_invalid_size():
-    with pytest.raises(ValueError, match="SingleHost bytes must have a length of 48"):
+    with pytest.raises(ValueError, match="SingleHost bytes must have at least a length of 8"):
         messages.SingleHost.unpack(b_data=b"\x00")
 
 
@@ -1412,11 +1412,40 @@ def test_single_host_unpack():
     assert actual.machine_id == b"\x02" * 32
 
 
+def test_single_host_unpack_extra_data():
+    data = b"\x00" * 48 + b"\x11\x11\x11"
+    sh = messages.SingleHost.unpack(data)
+    actual = sh.pack()
+    assert actual == data
+
+
 def test_single_host_eq():
     assert messages.SingleHost.unpack(b"\x00" * 48) == b"\x00" * 48
     assert messages.SingleHost.unpack(b"\x00" * 48) != b"\x11" * 48
     assert messages.SingleHost.unpack(b"\x00" * 48) != 1
     assert messages.SingleHost.unpack(b"\x00" * 48) == messages.SingleHost.unpack(b"\x00" * 48)
+
+
+def test_single_host_custom_data_empty():
+    single_host = messages.SingleHost.unpack(b"\x00" * 15)
+    assert single_host.custom_data == b""
+
+
+def test_single_host_custom_data_buffer_not_large_enough():
+    single_host = messages.SingleHost.unpack(b"\x00" * 15)
+    with pytest.raises(ValueError, match="cannot set custom_data on a SingleHost with less than 16 bytes of data"):
+        single_host.custom_data = b"\x00\x00\x00\x00\x00\x00\x00\x00"
+
+
+def test_single_host_machine_id_empty():
+    single_host = messages.SingleHost.unpack(b"\x00" * 47)
+    assert single_host.machine_id == b""
+
+
+def test_single_host_machine_id_buffer_not_large_enough():
+    single_host = messages.SingleHost.unpack(b"\x00" * 47)
+    with pytest.raises(ValueError, match="cannot set machine_id on a SingleHost with less than 48 bytes of data"):
+        single_host.machine_id = b"\x00" * 32
 
 
 def test_version_pack():
