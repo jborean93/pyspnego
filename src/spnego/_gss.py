@@ -246,7 +246,7 @@ def _kinit(
         cred = krb5.get_init_creds_password(ctx, princ, init_opt, password=password)
 
     mem_ccache = krb5.cc_new_unique(ctx, b"MEMORY")
-    krb5.cc_initialize(ctx, mem_ccache, princ)
+    krb5.cc_initialize(ctx, mem_ccache, cred.client)
     krb5.cc_store_cred(ctx, mem_ccache, cred)
 
     return _gss_acquire_cred_from_ccache(mem_ccache, None)
