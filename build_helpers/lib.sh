@@ -73,8 +73,8 @@ lib::sanity::run() {
         echo "::group::Running Sanity Checks"
     fi
 
-    python -m black . --check
-    python -m isort . --check-only
+    python -m ruff check .
+    python -m ruff format . --check
     python -m mypy .
 
     if [ x"${GITHUB_ACTIONS}" = "xtrue" ]; then

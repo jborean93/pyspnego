@@ -104,7 +104,7 @@ def test_extract_asn1_tlv(value, tag_class, tag_number, expected):
 
 def test_extract_asn1_tlv_invalid_universal_class():
     expected = (
-        "Invalid ASN.1 OCTET STRING tags, actual tag class TagClass.universal and tag number " "TypeTagNumber.integer"
+        "Invalid ASN.1 OCTET STRING tags, actual tag class TagClass.universal and tag number TypeTagNumber.integer"
     )
     with pytest.raises(ValueError, match=re.escape(expected)):
         asn1.extract_asn1_tlv(

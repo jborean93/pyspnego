@@ -46,9 +46,8 @@ GSSAPI_IMP_ERR = None
 try:
     import gssapi
     import krb5
-    from gssapi.raw import ChannelBindings, GSSError
+    from gssapi.raw import ChannelBindings, GSSError, inquire_sec_context_by_oid, set_cred_option
     from gssapi.raw import exceptions as gss_errors
-    from gssapi.raw import inquire_sec_context_by_oid, set_cred_option
 except ImportError as e:
     GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False

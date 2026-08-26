@@ -1,9 +1,8 @@
-black == 25.1.0
 gssapi >= 1.5.0 ; sys_platform != 'win32'
 k5test ; sys_platform != 'win32'
 krb5 ; sys_platform != 'win32'
-isort == 6.0.1
 mypy == 1.17.1
+ruff == 0.16.4
 pre-commit
 pytest
 pytest-cov

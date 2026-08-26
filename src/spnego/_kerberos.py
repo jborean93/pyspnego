@@ -760,7 +760,6 @@ class _KerberosMsgType(type):
 
 
 class KerberosV5Msg(metaclass=_KerberosMsgType):
-
     MESSAGE_TYPE = KerberosMessageType.unknown
     PVNO = 5
 

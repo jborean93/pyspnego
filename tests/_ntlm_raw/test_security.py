@@ -38,7 +38,7 @@ def test_seal_ntlmv1():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(TEST_NTLMV1_FLAGS, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\x56\xfe\x04\xd8\x61\xf9\x31\x9a\xf0\xd7\x23\x8a\x2e\x3b\x4d\x45" b"\x7f\xb8"
+    assert actual_msg == b"\x56\xfe\x04\xd8\x61\xf9\x31\x9a\xf0\xd7\x23\x8a\x2e\x3b\x4d\x45\x7f\xb8"
 
     # The docs example seems to keep the random pad in the signature even though the actual function definition sets
     # that to 0x00000000. Assert the actual working implementation that has been tested against MS servers.
@@ -61,7 +61,7 @@ def test_seal_ntlmv1_with_ess():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(TEST_NTLMV1_CLIENT_CHALLENGE_FLAGS, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\xa0\x23\x72\xf6\x53\x02\x73\xf3\xaa\x1e\xb9\x01\x90\xce\x52\x00" b"\xc9\x9d"
+    assert actual_msg == b"\xa0\x23\x72\xf6\x53\x02\x73\xf3\xaa\x1e\xb9\x01\x90\xce\x52\x00\xc9\x9d"
     assert actual_signature == b"\x01\x00\x00\x00\xff\x2a\xeb\x52\xf6\x81\x79\x3a\x00\x00\x00\x00"
 
 
@@ -82,7 +82,7 @@ def test_seal_ntlmv2():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\x54\xe5\x01\x65\xbf\x19\x36\xdc\x99\x60\x20\xc1\x81\x1b\x0f\x06" b"\xfb\x5f"
+    assert actual_msg == b"\x54\xe5\x01\x65\xbf\x19\x36\xdc\x99\x60\x20\xc1\x81\x1b\x0f\x06\xfb\x5f"
     assert actual_signature == b"\x01\x00\x00\x00\x7f\xb3\x8e\xc5\xc5\x5d\x49\x76\x00\x00\x00\x00"
 
 
@@ -98,7 +98,7 @@ def test_seal_ntlmv2_no_key_exch():
     b_data = to_bytes("Plaintext", encoding="utf-16-le")
     actual_msg, actual_signature = seal(flags, seal_handle, sign_key, 0, b_data)
 
-    assert actual_msg == b"\x54\xe5\x01\x65\xbf\x19\x36\xdc\x99\x60\x20\xc1\x81\x1b\x0f\x06" b"\xfb\x5f"
+    assert actual_msg == b"\x54\xe5\x01\x65\xbf\x19\x36\xdc\x99\x60\x20\xc1\x81\x1b\x0f\x06\xfb\x5f"
     assert actual_signature == b"\x01\x00\x00\x00\x70\x35\x28\x51\xf2\x56\x43\x09\x00\x00\x00\x00"
 
 

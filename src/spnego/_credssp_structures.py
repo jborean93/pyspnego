@@ -259,9 +259,7 @@ class TSCredentials:
             1: TSPasswordCreds,
             2: TSSmartCardCreds,
             6: TSRemoteGuardCreds,
-        }.get(
-            cred_type
-        )
+        }.get(cred_type)
         if not cred_class:
             raise ValueError("Unknown credType %s in TSCredentials, cannot unpack" % cred_type)
 
