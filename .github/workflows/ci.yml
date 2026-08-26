@@ -48,7 +48,6 @@ jobs:
       matrix:
         os:
         - ubuntu-latest
-        - macOS-15-intel
         - macOS-latest
         - windows-latest
         python-version:
@@ -71,13 +70,6 @@ jobs:
         - os: ubuntu-latest
           python-arch: arm64
         - os: ubuntu-latest
-          gssapi-provider: sspi
-
-        - os: macOS-15-intel
-          python-arch: arm64
-        - os: macOS-15-intel
-          gssapi-provider: mit
-        - os: macOS-15-intel
           gssapi-provider: sspi
 
         - os: macOS-latest
