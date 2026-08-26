@@ -64,7 +64,7 @@ def ntlm_cred(tmpdir, monkeypatch):
         else:
             domain = "Dȫm̈Ąiᴞ"
 
-        tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
+        tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$.creds")
         with open(tmp_creds, mode="wb") as fd:
             fd.write(to_bytes("%s:%s:%s" % (domain, username, password)))
 

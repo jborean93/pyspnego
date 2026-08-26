@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.2 - 2026-08-26
+
+* Fix up NTLM single host data unpacking to be less strict making it compatible with newer Windows versions
+* Use canoncial Kerberos client principal from `kinit` operation, this avoid issues around not being able to find TGT in cache during Kerberos authentication
+
 ## 0.12.1 - 2026-03-03
 
 * Fix NTLM challenge parser when the `TargetInfo` contains extra data for `Single_Host_Data`

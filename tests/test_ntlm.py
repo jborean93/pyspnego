@@ -46,7 +46,7 @@ def test_get_credential_file_no_env_var():
 
 
 def test_get_credential_file_env_var_missing_file(tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
+    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$.creds")
 
     monkeypatch.setenv("NTLM_USER_FILE", tmp_creds)
 
@@ -55,7 +55,7 @@ def test_get_credential_file_env_var_missing_file(tmpdir, monkeypatch):
 
 
 def test_get_credential_file(tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
+    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$.creds")
     with open(tmp_creds, mode="wb") as fd:
         fd.write(b"data")
 
@@ -135,7 +135,7 @@ def test_get_credential_file(tmpdir, monkeypatch):
     ],
 )
 def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, input, tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
+    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$.creds")
     monkeypatch.setenv("NTLM_USER_FILE", tmp_creds)
     with open(tmp_creds, mode="wb") as fd:
         fd.write(to_bytes(line))
@@ -148,14 +148,12 @@ def test_get_credential_from_file(line, username, domain, lm_hash, nt_hash, inpu
 
 
 def test_get_credential_from_file_no_matches(tmpdir, monkeypatch):
-    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$" ".creds")
+    tmp_creds = os.path.join(to_text(tmpdir), "pÿspᴞӛgӫ TÈ$.creds")
     monkeypatch.setenv("NTLM_USER_FILE", tmp_creds)
     with open(tmp_creds, mode="wb") as fd:
         fd.write(b"domain:username:password")
 
-    with pytest.raises(
-        SpnegoError, match="Failed to find any matching credential in NTLM_USER_FILE " "credential store."
-    ):
+    with pytest.raises(SpnegoError, match="Failed to find any matching credential in NTLM_USER_FILE credential store."):
         ntlm._NTLMCredential(CredentialCache("fake\\username"))
 
 
@@ -425,7 +423,7 @@ def test_ntlm_no_encoding_flags():
     n = ntlm.NTLMProxy("user", "pass")
     with pytest.raises(
         SpnegoError,
-        match="Neither NEGOTIATE_OEM or NEGOTIATE_UNICODE flags were set, cannot derive " "encoding for text fields",
+        match="Neither NEGOTIATE_OEM or NEGOTIATE_UNICODE flags were set, cannot derive encoding for text fields",
     ):
         n._step_accept_negotiate(negotiate.tobytes())
 

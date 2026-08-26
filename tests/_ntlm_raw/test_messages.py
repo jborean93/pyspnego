@@ -959,9 +959,7 @@ def test_authenticate_unpack_ntlmv1():
     assert actual.domain_name == TEST_USER_DOM
     assert actual.user_name == TEST_USER
     assert actual.workstation == TEST_WORKSTATION_NAME
-    assert (
-        actual.encrypted_random_session_key == b"\x51\x88\x22\xb1\xb3\xf3\x50\xc8" b"\x95\x86\x82\xec\xbb\x3e\x3c\xb7"
-    )
+    assert actual.encrypted_random_session_key == b"\x51\x88\x22\xb1\xb3\xf3\x50\xc8\x95\x86\x82\xec\xbb\x3e\x3c\xb7"
     assert actual.flags == 3800072757
     assert actual.mic is None
     assert actual.version == messages.Version(5, 1, 2600)
@@ -1035,9 +1033,7 @@ def test_authenticate_unpack_ntlmv2():
     assert actual.domain_name == TEST_USER_DOM
     assert actual.user_name == TEST_USER
     assert actual.workstation == TEST_WORKSTATION_NAME
-    assert (
-        actual.encrypted_random_session_key == b"\xc5\xda\xd2\x54\x4f\xc9\x79\x90" b"\x94\xce\x1c\xe9\x0b\xc9\xd0\x3e"
-    )
+    assert actual.encrypted_random_session_key == b"\xc5\xda\xd2\x54\x4f\xc9\x79\x90\x94\xce\x1c\xe9\x0b\xc9\xd0\x3e"
     assert actual.flags == 3800597045
     assert actual.mic is None
     assert actual.version == messages.Version(5, 1, 2600)

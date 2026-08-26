@@ -112,7 +112,6 @@ def _parse_ntlm_target_info(
 
     info = []
     for av_id, raw_value in target_info.items():
-
         if av_id == AvId.eol:
             value = None
         elif av_id in text_values:
