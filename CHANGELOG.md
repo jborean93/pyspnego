@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.13.0 - TBD
+
 ## 0.12.2 - 2026-08-26
 
 * Fix up NTLM single host data unpacking to be less strict making it compatible with newer Windows versions
