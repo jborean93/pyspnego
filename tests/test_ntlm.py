@@ -428,6 +428,28 @@ def test_ntlm_no_encoding_flags():
         n._step_accept_negotiate(negotiate.tobytes())
 
 
+@pytest.mark.parametrize("version", [True, False])
+def test_ntlm_accept_challenge_version(version):
+    flags = NegotiateFlags.unicode | NegotiateFlags.ntlm | NegotiateFlags.extended_session_security
+    if version:
+        flags |= NegotiateFlags.version
+    negotiate = Negotiate(flags)
+    assert bool(negotiate.flags & NegotiateFlags.version) == version
+
+    n = ntlm.NTLMProxy("user", "pass")
+    challenge = Challenge.unpack(n._step_accept_negotiate(negotiate.pack()))
+
+    # The payload must start after the Version field when the flag is set.
+    if version:
+        assert challenge.flags & NegotiateFlags.version
+        assert challenge.version == Version.get_current()
+        assert challenge._payload_offset == 56
+    else:
+        assert challenge.flags & NegotiateFlags.version == 0
+        assert challenge.version is None
+        assert challenge._payload_offset == 48
+
+
 @pytest.mark.parametrize(
     "client_opt, present",
     [
