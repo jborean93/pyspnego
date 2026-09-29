@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.13.0 - TBD
+## 0.12.3 - 2026-09-30
+
+* Fix NTLM acceptor to include the `Version` field in the `CHALLENGE` message when `NTLMSSP_NEGOTIATE_VERSION` is negotiated
+  * Strict initiators like `gss-ntlmssp` failed to decode the message as the field offsets were 8 bytes too early
 
 ## 0.12.2 - 2026-08-26
 

@@ -526,7 +526,19 @@ class NTLMProxy(ContextProxy):
         target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
         target_info[AvId.timestamp] = FileTime.now()
 
-        challenge = Challenge(flags, server_challenge, target_name=target_name, target_info=target_info)
+        # The Version field is only present when the flag is set, strict
+        # decoders like gss-ntlmssp reject the message if it is missing.
+        challenge_kwargs: typing.Dict[str, typing.Any] = {}
+        if flags & NegotiateFlags.version:
+            challenge_kwargs["version"] = Version.get_current()
+
+        challenge = Challenge(
+            flags,
+            server_challenge,
+            target_name=target_name,
+            target_info=target_info,
+            **challenge_kwargs,
+        )
 
         self._temp_negotiate = negotiate
         self._temp_challenge = challenge
