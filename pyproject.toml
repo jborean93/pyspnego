@@ -127,14 +127,6 @@ module = "argcomplete"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "k5test"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "k5test.realm"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "ruamel"
 ignore_missing_imports = true
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.4 - TBD
+## 0.12.4 - 2026-10-06
 
 * Fix SSPI acceptor with explicit `Password` or `KerberosKeytab` credentials failing with `SEC_E_LOGON_DENIED` when the username is in the UPN form `user@REALM`
   * The `pszPrincipal` value is no longer passed to `AcquireCredentialsHandle`, it was set to the SPN for acceptors but does not control the acceptor identity
@@ -10,6 +10,11 @@
   * Windows initiators list the MS Kerberos OID `1.2.840.48018.1.2.2` ahead of the standard OID and reject a `NegTokenResp` that does not echo it
   * The MS Kerberos OID and the pre RFC draft OID `1.3.5.1.5.2` are treated as aliases of Kerberos when matching the mech list and `supportedMech`, matching MIT krb5
   * The acceptor no longer requests a `mechListMIC` when the initiator listed a Kerberos alias first as the optimistic mech was the one selected
+* Use `socket.gethostname()` rather than `socket.getfqdn()` for the `DnsComputerName` in the NTLM acceptor `CHALLENGE` message
+  * `socket.getfqdn()` does a DNS lookup which can block for a few seconds when DNS is not set up for the host
+* Fix the SSPI `negotiated_protocol` and `session_key` properties failing with a `TypeError` before the first step
+  * `negotiated_protocol` returns the protocol requested, or `None` for `negotiate`, like the GSSAPI and Python Negotiate proxies
+  * `session_key` raises `NoContextError` like the GSSAPI proxy
 
 ## 0.12.3 - 2026-09-30
 

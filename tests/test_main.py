@@ -11,7 +11,6 @@ import pytest
 
 import spnego.__main__ as entrypoint
 from spnego._ntlm_raw.messages import (
-    Authenticate,
     AvId,
     Challenge,
     Negotiate,
