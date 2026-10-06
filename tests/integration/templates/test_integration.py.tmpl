@@ -1312,7 +1312,7 @@ def rpc_get_key(
 def test_kerberos_authentication(service, monkeypatch):
     server_kwargs = {}
     if os.name == 'nt':
-        server_kwargs['credentials'] = spnego.KerberosKeytab(keytab=rf"C:\temp\{service}.keytab")
+        server_kwargs['credentials'] = spnego.KerberosKeytab(principal=f"{service}\\{HOST_FQDN}", keytab=rf"C:\temp\{service}.keytab")
 
         # SSPI will report the user in the Netlogon form, use PowerShell to convert the UPN to the Netlogon user.
         pwsh_command = base64.b64encode('''
@@ -1388,7 +1388,7 @@ def test_kerberos_authentication_with_keytab(protocol, set_principal, monkeypatc
         pytest.skip("SSPI requires a principal in the keytab to work")
 
     if os.name == 'nt':
-        server_kwargs['credentials'] = spnego.KerberosKeytab(keytab=r'C:\temp\SERV1.keytab')
+        server_kwargs['credentials'] = spnego.KerberosKeytab(principal=f'SERV1\\{HOST_FQDN}', keytab=r'C:\temp\SERV1.keytab')
         keytab_path = r'C:\temp\user.keytab'
 
         # SSPI will report the user in the Netlogon form, use PowerShell to convert the UPN to the Netlogon user.

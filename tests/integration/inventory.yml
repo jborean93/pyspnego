@@ -20,18 +20,12 @@ all:
         ansible_port: 5985
         python_interpreters:
         - C:\Program Files\Python39
-        - C:\Program Files (x86)\Python39-32
         - C:\Program Files\Python310
-        - C:\Program Files (x86)\Python310-32
         - C:\Program Files\Python311
-        - C:\Program Files (x86)\Python311-32
         - C:\Program Files\Python312
-        - C:\Program Files (x86)\Python312-32
         - C:\Program Files\Python313
-        - C:\Program Files (x86)\Python313-32
-        # cffi does not have Windows wheels for 3.14 yet
-        # - C:\Program Files\Python314
-        # - C:\Program Files (x86)\Python314-32
+        - C:\Program Files\Python314
+        - C:\Program Files\Python315
         python_venv_path: C:\temp\venv
         krb_provider: SSPI
 

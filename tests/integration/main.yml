@@ -329,46 +329,32 @@
       state: present
     with_items:
     - version: 3.9.13
-      version_suffix: ''
-      product_id: E23C472D-F346-4D47-A909-9D48E5D7252F
-    - version: 3.9.13
       version_suffix: -amd64
       product_id: 90A30DAB-6FD8-4CF8-BB8B-C0DB21C69F20
 
-    - version: 3.10.11
-      version_suffix: ''
-      product_id: 2627E7A3-6630-4858-8151-D91D1AF62F8E
     - version: 3.10.11
       version_suffix: -amd64
       product_id: 6532871D-1F76-408C-ABD0-63C732137351
 
     - version: 3.11.9
-      version_suffix: ''
-      product_id: 89D284CB-6250-4C7A-88DD-56A7CE162ACD
-    - version: 3.11.9
       version_suffix: -amd64
       product_id: 9AFDC691-40E5-4B15-835F-9A524AC4672C
 
     - version: 3.12.10
-      version_suffix: ''
-      product_id: 4B1491F1-E78B-412B-8768-125E196F6983
-    - version: 3.12.10
       version_suffix: -amd64
       product_id: DE12B597-D4BF-4B1B-BF5F-C5CE41AFBDFC
 
-    - version: 3.13.7
-      version_suffix: ''
-      product_id: 6A5E274E-2B54-455F-BBF1-786A0AE0DFF6
-    - version: 3.13.7
+    - version: 3.13.16
       version_suffix: -amd64
-      product_id: A139F43E-8105-465D-AC80-28F349CBE08D
+      product_id: 56322D83-737F-4A85-9EC1-9FAB196A6970
 
-    - version: 3.14.0
-      version_suffix: rc2
-      product_id: FE22F56A-E5BB-4D0B-BEED-58BD86357579
-    - version: 3.14.0
-      version_suffix: rc2-amd64
-      product_id: 8E1686E1-754A-4AA4-A0BD-648350CD9636
+    - version: 3.14.8
+      version_suffix: -amd64
+      product_id: E60CC960-3B61-4FB9-B4A3-9D7788B81D9C
+
+    - version: 3.15.0
+      version_suffix: rc3-amd64
+      product_id: 6E23005C-7173-4451-96AD-90D028344702
 
   - name: ensure virtualenv package is installed for each Python install
     ansible.windows.win_command: '"{{ item }}\python.exe" -m pip install virtualenv'
