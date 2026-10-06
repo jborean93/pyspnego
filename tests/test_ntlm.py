@@ -552,7 +552,7 @@ def test_ntlm_workstation_override(env_var, expected, ntlm_cred, monkeypatch):
     target_info = TargetInfo()
     target_info[AvId.nb_computer_name] = target_name
     target_info[AvId.nb_domain_name] = "WORKSTATION"
-    target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
+    target_info[AvId.dns_computer_name] = to_text(socket.gethostname())
     target_info[AvId.timestamp] = FileTime.now()
 
     version = Version(10, 0, 0, 1)
@@ -602,7 +602,7 @@ def test_ntlm_custom_time(include_time, expected, ntlm_cred, mocker, monkeypatch
     target_info = TargetInfo()
     target_info[AvId.nb_computer_name] = target_name
     target_info[AvId.nb_domain_name] = "WORKSTATION"
-    target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
+    target_info[AvId.dns_computer_name] = to_text(socket.gethostname())
 
     if include_time:
         target_info[AvId.timestamp] = FileTime.now()

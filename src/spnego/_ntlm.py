@@ -523,7 +523,7 @@ class NTLMProxy(ContextProxy):
         target_info = TargetInfo()
         target_info[AvId.nb_computer_name] = target_name
         target_info[AvId.nb_domain_name] = "WORKSTATION"
-        target_info[AvId.dns_computer_name] = to_text(socket.getfqdn())
+        target_info[AvId.dns_computer_name] = to_text(socket.gethostname())
         target_info[AvId.timestamp] = FileTime.now()
 
         # The Version field is only present when the flag is set, strict

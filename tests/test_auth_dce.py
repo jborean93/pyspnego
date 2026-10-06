@@ -3,15 +3,10 @@
 # MIT License (see LICENSE or https://opensource.org/licenses/MIT)
 
 import socket
-import sys
 
 import pytest
 
 import spnego
-import spnego._credssp
-import spnego._gss
-import spnego._sspi
-import spnego.channel_bindings
 import spnego.iov
 from spnego.exceptions import NoContextError
 
@@ -107,49 +102,42 @@ def _message_test(
 ) -> None:
     sign_type = spnego.iov.BufferType.sign_only if sign_header else spnego.iov.BufferType.data_readonly
 
+    # DCE/RPC pads the stub data to 16 bytes, SSPI Kerberos fails to verify a
+    # signed buffer after the data if the data is not a multiple of 16.
+    data = b"data".ljust(16, b"\x00")
+
     wrap1 = client.wrap_iov(
         [
             (sign_type, b"header"),
-            b"data",
+            data,
             (sign_type, b"sec_trailer"),
             spnego.iov.BufferType.header,
         ]
     )
-    assert wrap1.buffers[1].data != b"data"
+    assert wrap1.buffers[1].data != data
 
     unwrap1 = server.unwrap_iov(wrap1.buffers)
-    assert unwrap1.buffers[1].data == b"data"
+    assert unwrap1.buffers[1].data == data
 
     wrap2 = server.wrap_iov(
         [
             (sign_type, b"header"),
-            b"data",
+            data,
             (sign_type, b"sec_trailer"),
             spnego.iov.BufferType.header,
         ]
     )
-    assert wrap2.buffers[1].data != b"data"
+    assert wrap2.buffers[1].data != data
 
     unwrap2 = client.unwrap_iov(wrap2.buffers)
-    assert unwrap2.buffers[1].data == b"data"
+    assert unwrap2.buffers[1].data == data
 
 
 @pytest.mark.parametrize("protocol", ["negotiate", "kerberos"])
-def test_kerberos(protocol, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    c = spnego.client(
-        kerb_cred.user_princ,
-        None,
-        protocol=protocol,
-        hostname=socket.getfqdn(),
-        context_req=spnego.ContextReq.default | spnego.ContextReq.dce_style,
-    )
-    s = spnego.server(
-        protocol=protocol,
-        context_req=spnego.ContextReq.default | spnego.ContextReq.dce_style,
-    )
+def test_kerberos(protocol, kerb_realm):
+    context_req = spnego.ContextReq.default | spnego.ContextReq.dce_style
+    c = kerb_realm.client(kerb_realm.username, protocol=protocol, context_req=context_req)
+    s = kerb_realm.server(protocol=protocol, context_req=context_req)
 
     expected_no_context = "Cannot get message sizes until context has been established"
     with pytest.raises(NoContextError, match=expected_no_context):
@@ -175,7 +163,7 @@ def test_ntlm(protocol, ntlm_cred):
         ntlm_cred[0],
         ntlm_cred[1],
         protocol=protocol,
-        hostname=socket.getfqdn(),
+        hostname=socket.gethostname(),
         context_req=spnego.ContextReq.default | spnego.ContextReq.dce_style,
     )
     s = spnego.server(

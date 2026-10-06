@@ -9,16 +9,33 @@ lib::setup::debian_requirements() {
     if [ x"$GSSAPI_PROVIDER" = "xheimdal" ]; then
         echo "Installing Heimdal packages for Debian"
         apt-get -y install \
-            heimdal-{clients,dev,kdc}
-
-        export PATH="/usr/lib/heimdal-servers:${PATH}"
+            heimdal-{clients,dev}
 
     else
         echo "Installing MIT Kerberos packages for Debian"
         apt-get -y install \
             gss-ntlmssp \
-            krb5-{user,kdc,admin-server,multidev} \
+            krb5-{user,multidev} \
             libkrb5-dev
+    fi
+
+    if ! command -v pwsh > /dev/null; then
+        # PowerShell runs the KDC used by the Kerberos tests. The powershell
+        # package in the Microsoft repository tracks the latest stable release.
+        echo "Installing PowerShell from the Microsoft package repository"
+        apt-get -y install \
+            ca-certificates \
+            curl
+
+        source /etc/os-release
+        curl -sSL \
+            "https://packages.microsoft.com/config/debian/${VERSION_ID}/packages-microsoft-prod.deb" \
+            -o /tmp/packages-microsoft-prod.deb
+        dpkg -i /tmp/packages-microsoft-prod.deb
+        rm -f /tmp/packages-microsoft-prod.deb
+
+        apt-get update
+        apt-get -y install powershell
     fi
 }
 
@@ -38,6 +55,13 @@ lib::setup::system_requirements() {
 
     else
         echo "Distro not found!"
+    fi
+
+    if command -v pwsh > /dev/null; then
+        echo "Using PowerShell $( pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' )"
+    else
+        echo "PowerShell 7.6 or newer is required to run the Kerberos tests" >&2
+        return 1
     fi
 
     if [ x"${GITHUB_ACTIONS}" = "xtrue" ]; then
@@ -87,7 +111,10 @@ lib::tests::run() {
         echo "::group::Running Tests"
     fi
 
-    python -m pytest \
+    # The Kerberos tests need a KDC, the PowerShell script starts one and runs
+    # the command given with the realm details set in the environment.
+    pwsh -NoProfile -NonInteractive -File build_helpers/run-with-kdc.ps1 \
+        python -m pytest \
         -v \
         --junitxml junit/test-results.xml \
         --cov spnego \

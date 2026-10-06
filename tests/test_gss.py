@@ -13,6 +13,15 @@ import spnego._gss
 import spnego.iov
 from spnego.exceptions import InvalidCredentialError, NoContextError
 
+from .conftest import KerberosRealm
+
+
+@pytest.fixture()
+def gss_client(kerb_realm: KerberosRealm) -> spnego._gss.GSSAPIProxy:
+    """A GSSAPI Kerberos client context for the user of the realm."""
+    pytest.importorskip("gssapi")
+    return spnego._gss.GSSAPIProxy(kerb_realm.username, protocol="kerberos")
+
 
 def test_gss_sasl_description_fail(mocker, monkeypatch):
     gssapi = pytest.importorskip("gssapi")
@@ -37,9 +46,8 @@ def test_gss_sasl_description_fail(mocker, monkeypatch):
     assert mock_inquire_sasl.call_count == 2
 
 
-def test_build_iov_list(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
-    actual = c._build_iov_list(
+def test_build_iov_list(gss_client: spnego._gss.GSSAPIProxy) -> None:
+    actual = gss_client._build_iov_list(
         [
             (spnego.iov.BufferType.header, b"\x01"),
             (spnego.iov.BufferType.data, 1),
@@ -48,7 +56,7 @@ def test_build_iov_list(kerb_cred):
             spnego.iov.BufferType.stream,
             b"\x02",
         ],
-        c._convert_iov_buffer,
+        gss_client._convert_iov_buffer,
     )
 
     assert len(actual) == 6
@@ -60,99 +68,86 @@ def test_build_iov_list(kerb_cred):
     assert actual[5] == (spnego.iov.BufferType.data, False, b"\x02")
 
 
-def test_gssapi_query_message_sizes_fail(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_query_message_sizes_fail(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot get message sizes until context has been established"):
-        c.query_message_sizes()
+        gss_client.query_message_sizes()
 
 
-def test_gssapi_wrap_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
-
-    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
-        c.wrap(b"data")
-
-
-def test_gssapi_wrap_iov_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_wrap_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
-        c.wrap_iov([])
+        gss_client.wrap(b"data")
 
 
-def test_gssapi_wrap_winrm_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_wrap_iov_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
-        c.wrap_winrm(b"data")
+        gss_client.wrap_iov([])
 
 
-def test_gssapi_unwrap_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_wrap_winrm_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
-    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
-        c.unwrap(b"data")
+    with pytest.raises(NoContextError, match="Cannot wrap until context has been established"):
+        gss_client.wrap_winrm(b"data")
 
 
-def test_gssapi_unwrap_iov_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_unwrap_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
-        c.unwrap_iov([])
+        gss_client.unwrap(b"data")
 
 
-def test_gssapi_unwrap_winrm_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_unwrap_iov_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
-        c.unwrap_winrm(b"header", b"data")
+        gss_client.unwrap_iov([])
 
 
-def test_gssapi_sign_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_unwrap_winrm_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
+
+    with pytest.raises(NoContextError, match="Cannot unwrap until context has been established"):
+        gss_client.unwrap_winrm(b"header", b"data")
+
+
+def test_gssapi_sign_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot sign until context has been established"):
-        c.sign(b"data")
+        gss_client.sign(b"data")
 
 
-def test_gssapi_verify_no_context(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_gssapi_verify_no_context(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     with pytest.raises(NoContextError, match="Cannot verify until context has been established"):
-        c.verify(b"data", b"mic")
+        gss_client.verify(b"data", b"mic")
 
 
-def test_build_iov_list_invalid_tuple(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_build_iov_list_invalid_tuple(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     expected = "IOV entry tuple must contain 2 values, the type and data, see IOVBuffer."
     with pytest.raises(ValueError, match=expected):
-        c._build_iov_list([(1, 2, 3)], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
+        gss_client._build_iov_list([(1, 2, 3)], gss_client._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
-def test_build_iov_list_invalid_buffer_type(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_build_iov_list_invalid_buffer_type(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     expected = "IOV entry[0] must specify the BufferType as an int"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([(b"", b"")], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
+        gss_client._build_iov_list([(b"", b"")], gss_client._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
-def test_build_iov_list_invalid_data(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_build_iov_list_invalid_data(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     expected = "IOV entry[1] must specify the buffer bytes, length of the buffer, or whether it is auto allocated."
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([(1, "data")], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
+        gss_client._build_iov_list([(1, "data")], gss_client._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
-def test_build_iov_list_invalid_value(kerb_cred):
-    c = spnego._gss.GSSAPIProxy(kerb_cred.user_princ, protocol="kerberos")
+def test_build_iov_list_invalid_value(gss_client: spnego._gss.GSSAPIProxy) -> None:
 
     expected = "IOV entry must be a IOVBuffer tuple, int, or bytes"
     with pytest.raises(ValueError, match=re.escape(expected)):
-        c._build_iov_list([None], c._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
+        gss_client._build_iov_list([None], gss_client._convert_iov_buffer)  # type: ignore[list-item] # we are testing this
 
 
 def test_no_gssapi_library(monkeypatch):

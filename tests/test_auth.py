@@ -5,7 +5,6 @@
 import os
 import socket
 import ssl
-import sys
 import typing
 
 import pytest
@@ -31,8 +30,11 @@ from spnego.exceptions import (
     InvalidCredentialError,
     InvalidTokenError,
     NoCredentialError,
+    OperationNotAvailableError,
     SpnegoError,
 )
+
+from .conftest import KerberosRealm
 
 
 def _message_test(client: spnego.ContextProxy, server: spnego.ContextProxy) -> None:
@@ -231,140 +233,16 @@ def test_no_valid_credential_available_multiple_available_protocol():
 # Negotiate scenarios
 
 
-def test_negotiate_with_kerberos(kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    c = spnego.client(
-        kerb_cred.user_princ, None, hostname=socket.getfqdn(), options=spnego.NegotiateOptions.use_negotiate
-    )
-    s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
+def test_negotiate_with_kerberos(kerb_realm):
+    c = kerb_realm.client(kerb_realm.username, protocol="negotiate", options=spnego.NegotiateOptions.use_negotiate)
+    s = kerb_realm.server(protocol="negotiate", options=spnego.NegotiateOptions.use_negotiate)
 
     assert c.get_extra_info("invalid") is None
     assert c.get_extra_info("invalid", "default") == "default"
 
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-
-    token3 = c.step(token2)
-    assert token3 is None
-
-    # Make sure it reports the right protocol
-    assert c.negotiated_protocol == "kerberos"
-    assert s.negotiated_protocol == "kerberos"
-
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr & spnego.ContextReq.mutual_auth
-    assert s.context_attr & spnego.ContextReq.mutual_auth
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-
-    token3 = c.step(token2)
-    assert token3 is None
-
-    # Make sure it reports the right protocol
-    assert c.negotiated_protocol == "kerberos"
-    assert s.negotiated_protocol == "kerberos"
-
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr & spnego.ContextReq.mutual_auth
-    assert s.context_attr & spnego.ContextReq.mutual_auth
-
-    _message_test(c, s)
-
-
-def test_negotiate_with_kerberos_no_integrity(kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    c = spnego.client(
-        kerb_cred.user_princ,
-        None,
-        hostname=socket.getfqdn(),
-        options=spnego.NegotiateOptions.use_negotiate,
-        context_req=spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect | spnego.ContextReq.no_integrity,
-    )
-    s = spnego.server(options=spnego.NegotiateOptions.use_negotiate)
-
-    assert c.get_extra_info("invalid") is None
-    assert c.get_extra_info("invalid", "default") == "default"
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-
-    token3 = c.step(token2)
-    assert token3 is None
-
-    # Make sure it reports the right protocol
-    assert c.negotiated_protocol == "kerberos"
-    assert s.negotiated_protocol == "kerberos"
-
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
-    assert s.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-
-    token3 = c.step(token2)
-    assert token3 is None
-
-    # Make sure it reports the right protocol
-    assert c.negotiated_protocol == "kerberos"
-    assert s.negotiated_protocol == "kerberos"
-
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr & spnego.ContextReq.mutual_auth
-    assert s.context_attr & spnego.ContextReq.mutual_auth
-
-    _message_test(c, s)
+    for client, server in _kerberos_auth_test(c, s, kerb_realm):
+        assert client.context_attr & spnego.ContextReq.mutual_auth
+        assert server.context_attr & spnego.ContextReq.mutual_auth
 
 
 def test_negotiate_through_python_ntlm(ntlm_cred):
@@ -865,550 +743,193 @@ def test_ntlm_with_unsupported_credential():
 # Kerberos scenarios
 
 
+def _kerberos_exchange(
+    client: spnego.ContextProxy,
+    server: spnego.ContextProxy,
+    kerb_realm: KerberosRealm,
+    step_kwargs: typing.Optional[typing.Dict[str, typing.Any]] = None,
+) -> None:
+    """Runs the Kerberos token exchange and checks the established contexts."""
+    step_kwargs = step_kwargs or {}
+
+    # SPNEGO only knows the protocol once the first token has been processed.
+    initial_protocol = None if server.protocol == "negotiate" else "kerberos"
+
+    assert not client.complete
+    assert not server.complete
+    assert server.negotiated_protocol == initial_protocol
+
+    token1 = client.step(**step_kwargs)
+    assert isinstance(token1, bytes)
+    assert not client.complete
+    assert not server.complete
+    assert server.negotiated_protocol == initial_protocol
+
+    token2 = server.step(token1, **step_kwargs)
+    assert isinstance(token2, bytes)
+    assert not client.complete
+    assert server.complete
+    assert server.negotiated_protocol == "kerberos"
+
+    token3 = client.step(token2, **step_kwargs)
+    assert token3 is None
+    assert client.complete
+    assert server.complete
+    assert client.negotiated_protocol == "kerberos"
+    assert server.negotiated_protocol == "kerberos"
+
+    assert isinstance(client.session_key, bytes)
+    assert isinstance(server.session_key, bytes)
+    assert client.session_key == server.session_key
+
+    assert client.client_principal is None
+    assert server.client_principal == kerb_realm.expected_client_principal
+
+
+def _kerberos_auth_test(
+    client: spnego.ContextProxy,
+    server: spnego.ContextProxy,
+    kerb_realm: KerberosRealm,
+    step_kwargs: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    message_test: bool = True,
+) -> typing.List[typing.Tuple[spnego.ContextProxy, spnego.ContextProxy]]:
+    """Authenticates the client to the server with Kerberos.
+
+    Runs the exchange and wraps messages with the contexts unless message_test
+    is False, then does the same with a new context from each side to check
+    the credentials are reusable. Returns both pairs of contexts so a test can
+    check more of their state.
+    """
+    contexts: typing.List[typing.Tuple[spnego.ContextProxy, spnego.ContextProxy]] = []
+    for _ in range(2):
+        if contexts:
+            client = client.new_context()
+            server = server.new_context()
+
+        _kerberos_exchange(client, server, kerb_realm, step_kwargs)
+        if message_test:
+            _message_test(client, server)
+        contexts.append((client, server))
+
+    return contexts
+
+
+@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
 @pytest.mark.parametrize("explicit_user", [False, True])
-def test_gssapi_kerberos_auth(explicit_user, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    username = None
-    if explicit_user:
-        username = kerb_cred.user_princ
-
-    c = spnego.client(
-        username, None, hostname=kerb_cred.hostname, protocol="kerberos", options=spnego.NegotiateOptions.use_gssapi
-    )
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="kerberos")
+def test_kerberos_auth(protocol, explicit_user, kerb_realm):
+    username = kerb_realm.username if explicit_user else None
+    c = kerb_realm.client(username, protocol=protocol)
+    s = kerb_realm.server(protocol=protocol)
 
     assert c.get_extra_info("invalid") is None
     assert c.get_extra_info("invalid", "default") == "default"
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
 
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = c.session_key
+    # The GSSAPI and SSPI proxies fail here, negotiate with GSSAPI may use the
+    # Python SPNEGO wrapper which returns an empty key instead.
+    if protocol == "kerberos" or kerb_realm.provider == "sspi":
+        with pytest.raises(SpnegoError, match="Retrieving session key"):
+            _ = c.session_key
 
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = s.session_key
+        with pytest.raises(SpnegoError, match="Retrieving session key"):
+            _ = s.session_key
 
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
+    _kerberos_auth_test(c, s, kerb_realm)
 
 
+@pytest.mark.parametrize(
+    "protocol, options",
+    [
+        ("kerberos", spnego.NegotiateOptions.none),
+        ("negotiate", spnego.NegotiateOptions.use_negotiate),
+    ],
+)
 @pytest.mark.parametrize("explicit_user", [False, True])
-def test_gssapi_kerberos_auth_no_integrity(explicit_user, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
+def test_kerberos_auth_no_integrity(protocol, options, explicit_user, kerb_realm):
+    username = kerb_realm.username if explicit_user else None
+    context_req = spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect | spnego.ContextReq.no_integrity
+    c = kerb_realm.client(username, protocol=protocol, options=options, context_req=context_req)
+    s = kerb_realm.server(protocol=protocol, options=options)
 
-    username = None
-    if explicit_user:
-        username = kerb_cred.user_princ
+    # GSSAPI still encrypts without confidentiality being negotiated, SSPI
+    # rejects it as unsupported. SSPI Kerberos always provides integrity.
+    is_sspi = kerb_realm.provider == "sspi"
+    expected_attr = spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
+    if is_sspi:
+        expected_attr |= spnego.ContextReq.integrity
 
-    c = spnego.client(
-        username,
-        None,
-        hostname=kerb_cred.hostname,
-        protocol="kerberos",
-        options=spnego.NegotiateOptions.use_gssapi,
-        context_req=spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect | spnego.ContextReq.no_integrity,
-    )
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="kerberos")
+    for client, server in _kerberos_auth_test(c, s, kerb_realm, message_test=not is_sspi):
+        assert client.context_attr == expected_attr
+        assert server.context_attr == expected_attr
 
-    assert c.get_extra_info("invalid") is None
-    assert c.get_extra_info("invalid", "default") == "default"
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = c.session_key
-
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = s.session_key
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
-    assert s.context_attr == spnego.ContextReq.mutual_auth | spnego.ContextReq.sequence_detect
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    print(c.context_attr)
-    print(s.context_attr)
+        if is_sspi:
+            with pytest.raises(OperationNotAvailableError):
+                client.wrap(b"data")
 
 
 @pytest.mark.parametrize("acquire_cred_from", [False, True])
-def test_gssapi_kerberos_auth_explicit_cred(acquire_cred_from, kerb_cred, monkeypatch):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
+def test_kerberos_auth_explicit_cred(acquire_cred_from, kerb_realm, monkeypatch):
     if not acquire_cred_from:
-        monkeypatch.delattr("gssapi.raw.acquire_cred_from", raising=False)
+        # Without acquire_cred_from GSSAPI stores the TGT in a temporary
+        # credential cache before acquiring the credential from it.
+        gssapi = pytest.importorskip("gssapi")
+        monkeypatch.delattr(gssapi.raw, "acquire_cred_from", raising=False)
 
     context_req = spnego.ContextReq.default | spnego.ContextReq.delegate
-    c = spnego.client(
-        kerb_cred.user_princ,
-        kerb_cred.password("user"),
-        hostname=socket.getfqdn(),
-        protocol="kerberos",
-        options=spnego.NegotiateOptions.use_gssapi,
-        context_req=context_req,
-    )
-    s = spnego.server(options=spnego.NegotiateOptions.use_gssapi, protocol="kerberos")
+    c = kerb_realm.client(kerb_realm.username, kerb_realm.password, context_req=context_req)
+    s = kerb_realm.server()
 
     assert c.get_extra_info("invalid") is None
     assert c.get_extra_info("invalid", "default") == "default"
 
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = c.session_key
-
-    with pytest.raises(SpnegoError, match="Retrieving session key"):
-        _ = s.session_key
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr & spnego.ContextReq.delegate
-    assert s.context_attr & spnego.ContextReq.delegate
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    assert c.context_attr & spnego.ContextReq.delegate
-    assert s.context_attr & spnego.ContextReq.delegate
-
-    _message_test(c, s)
+    for client, server in _kerberos_auth_test(c, s, kerb_realm):
+        assert client.context_attr & spnego.ContextReq.delegate
+        assert server.context_attr & spnego.ContextReq.delegate
 
 
-@pytest.mark.parametrize(
-    "protocol, set_principal",
-    [
-        ("kerberos", False),
-        ("kerberos", True),
-        ("negotiate", False),
-        ("negotiate", True),
-    ],
-)
-def test_kerberos_auth_keytab(protocol, set_principal, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    kerb_cred.extract_keytab(kerb_cred.user_princ, kerb_cred.client_keytab)
+@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
+@pytest.mark.parametrize("set_principal", [False, True])
+def test_kerberos_auth_keytab(protocol, set_principal, kerb_realm):
     if set_principal:
-        kt = spnego.KerberosKeytab(keytab=kerb_cred.client_keytab, principal=kerb_cred.user_princ)
+        kt = spnego.KerberosKeytab(keytab=kerb_realm.client_keytab, principal=kerb_realm.username)
+    elif kerb_realm.provider == "sspi":
+        pytest.skip("KerberosKeytab for SSPI requires a principal to be set")
     else:
-        kt = spnego.KerberosKeytab(keytab=kerb_cred.client_keytab)
+        kt = spnego.KerberosKeytab(keytab=kerb_realm.client_keytab)
 
-    context_req = spnego.ContextReq.default
-    c = spnego.client(kt, hostname=socket.getfqdn(), protocol=protocol, context_req=context_req)
-    s = spnego.server(protocol=protocol)
+    c = kerb_realm.client(kt, protocol=protocol)
+    s = kerb_realm.server(protocol=protocol)
 
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
+    _kerberos_auth_test(c, s, kerb_realm)
 
 
-@pytest.mark.parametrize(
-    "protocol, explicit_user",
-    [
-        ("kerberos", False),
-        ("kerberos", True),
-        ("negotiate", False),
-        ("kerberos", True),
-    ],
-)
-def test_kerberos_auth_ccache(protocol, explicit_user, kerb_cred, monkeypatch):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    # Verified we are actually using our explicit CCache
+@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
+@pytest.mark.parametrize("explicit_user", [False, True])
+def test_kerberos_auth_ccache(protocol, explicit_user, kerb_realm, kerb_ccache, monkeypatch):
+    # Verifies we are actually using our explicit ccache and not the default.
     monkeypatch.setenv("KRB5CCNAME", "missing")
 
-    context_req = spnego.ContextReq.default
+    principal = kerb_realm.username if explicit_user else None
+    ccache = spnego.KerberosCCache(ccache=kerb_ccache, principal=principal)
 
-    if explicit_user:
-        ccache = spnego.KerberosCCache(ccache=kerb_cred.ccache, principal=kerb_cred.user_princ)
-    else:
-        ccache = spnego.KerberosCCache(ccache=kerb_cred.ccache)
+    c = kerb_realm.client(ccache, protocol=protocol)
+    s = kerb_realm.server(protocol=protocol)
 
-    c = spnego.client(ccache, hostname=socket.getfqdn(), protocol=protocol, context_req=context_req)
-    s = spnego.server(protocol=protocol)
-
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-    # assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
+    _kerberos_auth_test(c, s, kerb_realm)
 
 
-@pytest.mark.parametrize(
-    "protocol, explicit_user",
-    [
-        ("kerberos", False),
-        ("kerberos", True),
-        ("negotiate", False),
-        ("kerberos", True),
-    ],
-)
-def test_kerberos_auth_env_cache(protocol, explicit_user, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
+@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
+def test_kerberos_auth_credential_cache(protocol, kerb_realm):
+    cred = spnego.CredentialCache(username=kerb_realm.username)
 
-    context_req = spnego.ContextReq.default
-    cred = None
-    if explicit_user:
-        cred = spnego.CredentialCache(username=kerb_cred.user_princ)
+    c = kerb_realm.client(cred, protocol=protocol)
+    s = kerb_realm.server(protocol=protocol)
 
-    c = spnego.client(cred, hostname=socket.getfqdn(), protocol=protocol, context_req=context_req)
-    s = spnego.server(protocol=protocol)
-
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step()
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
+    _kerberos_auth_test(c, s, kerb_realm)
 
 
-@pytest.mark.parametrize(
-    "protocol, with_step",
-    [
-        ("kerberos", False),
-        ("kerberos", True),
-        ("negotiate", False),
-        ("negotiate", True),
-    ],
-)
-def test_kerberos_auth_channel_bindings(protocol, with_step, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
+@pytest.mark.parametrize("protocol", ["kerberos", "negotiate"])
+@pytest.mark.parametrize("with_step", [False, True])
+def test_kerberos_auth_channel_bindings(protocol, with_step, kerb_realm):
     cbt = spnego.channel_bindings.GssChannelBindings(application_data=b"test_data:\x00\x01")
 
     step_kwargs: typing.Dict[str, typing.Any] = {}
@@ -1428,81 +949,10 @@ def test_kerberos_auth_channel_bindings(protocol, with_step, kerb_cred):
         client_kwargs["channel_bindings"] = cbt
         server_kwargs["channel_bindings"] = cbt
 
-    c = spnego.client(
-        kerb_cred.user_princ,
-        kerb_cred.password("user"),
-        hostname=socket.getfqdn(),
-        protocol=protocol,
-        **client_kwargs,
-    )
-    s = spnego.server(protocol=protocol, **server_kwargs)
+    c = kerb_realm.client(kerb_realm.username, kerb_realm.password, protocol=protocol, **client_kwargs)
+    s = kerb_realm.server(protocol=protocol, **server_kwargs)
 
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token1 = c.step(**step_kwargs)
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-    # assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1, **step_kwargs)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2, **step_kwargs)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
-
-    c = c.new_context()
-    s = s.new_context()
-
-    token1 = c.step(**step_kwargs)
-    assert isinstance(token1, bytes)
-    assert not c.complete
-    assert not s.complete
-    if protocol == "negotiate":
-        assert s.negotiated_protocol is None
-    else:
-        assert s.negotiated_protocol == "kerberos"
-
-    token2 = s.step(token1, **step_kwargs)
-    assert isinstance(token2, bytes)
-    assert not c.complete
-    assert s.complete
-    assert s.negotiated_protocol == "kerberos"
-
-    token3 = c.step(token2, **step_kwargs)
-    assert token3 is None
-    assert c.complete
-    assert s.complete
-    assert isinstance(c.session_key, bytes)
-    assert isinstance(s.session_key, bytes)
-    assert c.session_key == s.session_key
-
-    assert c.client_principal is None
-    assert s.client_principal == kerb_cred.user_princ
-
-    _message_test(c, s)
+    _kerberos_auth_test(c, s, kerb_realm, step_kwargs=step_kwargs)
 
 
 # CredSSP scenarios
@@ -1717,12 +1167,9 @@ def test_credssp_ntlm_creds(options, restrict_tlsv12, version, ntlm_cred, monkey
 
 
 @pytest.mark.parametrize("restrict_tlsv12", [False, True])
-def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
-    if sys.platform == "darwin":
-        pytest.skip("Environment problem with GSS.Framework - skip")
-
-    c_kerb_context = spnego.client(kerb_cred.user_princ, None, hostname=socket.getfqdn(), protocol="kerberos")
-    s_kerb_context = spnego.server(protocol="kerberos")
+def test_credssp_kerberos_creds(restrict_tlsv12, kerb_realm):
+    c_kerb_context = kerb_realm.client(kerb_realm.username)
+    s_kerb_context = kerb_realm.server()
 
     client_kwargs: typing.Dict[str, typing.Any] = {}
     if restrict_tlsv12:
@@ -1738,8 +1185,8 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
         client_kwargs["credssp_tls_context"] = tls_context
 
     c = spnego.client(
-        kerb_cred.user_princ,
-        kerb_cred.password("user"),
+        kerb_realm.username,
+        kerb_realm.password,
         protocol="credssp",
         credssp_negotiate_context=c_kerb_context,
         **client_kwargs,
@@ -1782,12 +1229,12 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     assert c_kerb_context.negotiated_protocol == "kerberos"
     assert s_kerb_context.negotiated_protocol == "kerberos"
 
-    assert s.client_principal == kerb_cred.user_princ
+    assert s.client_principal == kerb_realm.expected_client_principal
     assert c.get_extra_info("client_credential") is None
     client_credential = s.get_extra_info("client_credential")
     assert isinstance(client_credential, TSPasswordCreds)
-    assert client_credential.username == kerb_cred.user_princ
-    assert client_credential.password == kerb_cred.password("user")
+    assert client_credential.username == kerb_realm.username
+    assert client_credential.password == kerb_realm.password
 
     _message_test(c, s)
 
@@ -1840,12 +1287,12 @@ def test_credssp_kerberos_creds(restrict_tlsv12, kerb_cred):
     assert c_kerb_context.negotiated_protocol == "kerberos"
     assert s_kerb_context.negotiated_protocol == "kerberos"
 
-    assert s.client_principal == kerb_cred.user_princ
+    assert s.client_principal == kerb_realm.expected_client_principal
     assert c.get_extra_info("client_credential") is None
     client_credential = s.get_extra_info("client_credential")
     assert isinstance(client_credential, TSPasswordCreds)
-    assert client_credential.username == kerb_cred.user_princ
-    assert client_credential.password == kerb_cred.password("user")
+    assert client_credential.username == kerb_realm.username
+    assert client_credential.password == kerb_realm.password
 
     _message_test(c, s)
 

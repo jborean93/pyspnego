@@ -217,10 +217,14 @@ class SSPIProxy(ContextProxy):
 
     @property
     def negotiated_protocol(self) -> str | None:
-        # FIXME: Try and replicate GSSAPI. Will return None for acceptor until the first token is returned. Negotiate
-        # for both iniator and acceptor until the context is established.
+        # FIXME: Try and replicate GSSAPI. Will return Negotiate for both initiator and acceptor until the context is
+        # established.
+        if not self._context:
+            # Kerberos and NTLM are known up front, Negotiate only once a token has been processed.
+            return None if self.protocol == "negotiate" else self.protocol
+
         package_info = sspilib.raw.query_context_attributes(
-            t.cast(sspilib.raw.CtxtHandle, self._context),
+            self._context,
             sspilib.raw.SecPkgContextPackageInfo,
         )
         return package_info.name.lower()
@@ -228,8 +232,11 @@ class SSPIProxy(ContextProxy):
     @property
     @wrap_system_error(NativeError, "Retrieving session key")
     def session_key(self) -> bytes:
+        if not self._context:
+            raise NoContextError(context_msg="Retrieving session key failed as no context was initialized")
+
         session_key = sspilib.raw.query_context_attributes(
-            t.cast(sspilib.raw.CtxtHandle, self._context),
+            self._context,
             sspilib.raw.SecPkgContextSessionKey,
         )
         return session_key.session_key

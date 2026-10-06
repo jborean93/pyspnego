@@ -140,8 +140,8 @@ def test_credssp_server_without_pub_key():
 def test_credssp_invalid_client_authentication_v2(version, ntlm_cred, monkeypatch):
     monkeypatch.setattr(credssp, "_CREDSSP_VERSION", version)
 
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp")
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept")
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, hostname=socket.gethostname(), protocol="credssp", usage="accept")
 
     # Set up the state so the server can send the error code
     server_tls_token = None
@@ -165,8 +165,8 @@ def test_credssp_invalid_client_authentication_v2(version, ntlm_cred, monkeypatc
 def test_credssp_invalid_client_authentication(version, ntlm_cred, monkeypatch):
     monkeypatch.setattr(credssp, "_CREDSSP_VERSION", version)
 
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp")
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept")
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, hostname=socket.gethostname(), protocol="credssp", usage="accept")
 
     # Set up the state so the server can send the error code
     server_tls_token = None
@@ -190,8 +190,8 @@ def test_credssp_invalid_client_authentication(version, ntlm_cred, monkeypatch):
 
 
 def test_credssp_no_pub_key_after_auth(ntlm_cred):
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp")
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept")
+    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp")
+    s = credssp.CredSSPProxy(None, None, hostname=socket.gethostname(), protocol="credssp", usage="accept")
 
     server_tls_token = None
     while c._auth_context is None:
@@ -216,8 +216,12 @@ def test_credssp_no_pub_key_after_auth(ntlm_cred):
 
 def test_credssp_pub_key_mismatch_initiator(ntlm_cred):
     options = NegotiateOptions.use_ntlm
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp", options=options)
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept", options=options)
+    c = credssp.CredSSPProxy(
+        ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp", options=options
+    )
+    s = credssp.CredSSPProxy(
+        None, None, hostname=socket.gethostname(), protocol="credssp", usage="accept", options=options
+    )
 
     server_tls_token = None
     while c._auth_context is None:
@@ -247,8 +251,12 @@ def test_credssp_pub_key_mismatch_initiator(ntlm_cred):
 
 def test_credssp_pub_key_mismatch_acceptor(ntlm_cred):
     options = NegotiateOptions.use_ntlm
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp", options=options)
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept", options=options)
+    c = credssp.CredSSPProxy(
+        ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp", options=options
+    )
+    s = credssp.CredSSPProxy(
+        None, None, hostname=socket.gethostname(), protocol="credssp", usage="accept", options=options
+    )
 
     server_tls_token = None
     while c._auth_context is None:
@@ -277,8 +285,12 @@ def test_credssp_pub_key_mismatch_acceptor(ntlm_cred):
 
 def test_credssp_no_credential(ntlm_cred):
     options = NegotiateOptions.use_ntlm
-    c = credssp.CredSSPProxy(ntlm_cred[0], ntlm_cred[1], hostname=socket.getfqdn(), protocol="credssp", options=options)
-    s = credssp.CredSSPProxy(None, None, hostname=socket.getfqdn(), protocol="credssp", usage="accept", options=options)
+    c = credssp.CredSSPProxy(
+        ntlm_cred[0], ntlm_cred[1], hostname=socket.gethostname(), protocol="credssp", options=options
+    )
+    s = credssp.CredSSPProxy(
+        None, None, hostname=socket.gethostname(), protocol="credssp", usage="accept", options=options
+    )
 
     server_tls_token = None
     while c._auth_context is None:
