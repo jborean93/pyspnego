@@ -39,6 +39,8 @@ from spnego.exceptions import (
 
 log = logging.getLogger(__name__)
 
+_KERBEROS_ALIASES = frozenset([GSSMech._ms_kerberos.value, GSSMech._kerberos_draft.value])
+
 
 class NegotiateProxy(ContextProxy):
     """A context wrapper for a Python managed SPNEGO context.
@@ -74,6 +76,9 @@ class NegotiateProxy(ContextProxy):
         self._context_list: typing.Dict[GSSMech, typing.Tuple[ContextProxy, typing.Optional[bytes]]] = {}
         self.__chosen_mech: typing.Optional[GSSMech] = None
         self._mech_list: typing.List[str] = []
+        # The OID to send as supportedMech, this may be an alias of the chosen mech if that is what the initiator
+        # offered, for example the MS Kerberos OID that Windows lists before the standard Kerberos OID.
+        self._supported_mech: typing.Optional[str] = None
 
         self._init_sent = False
         self._mech_sent = False
@@ -212,10 +217,18 @@ class NegotiateProxy(ContextProxy):
                     self._init_sent = True
                     self._mech_list = in_token.mech_types
 
+                    # Windows rejects a supportedMech that does not echo the OID it offered, even when it is an alias
+                    # of the same mech like the MS Kerberos OID. Reply with the first OID the initiator used for the
+                    # chosen mech.
+                    chosen_mech = self._chosen_mech
+                    self._supported_mech = next(
+                        oid for oid in in_token.mech_types if self._is_same_mech(chosen_mech, oid)
+                    )
+
                     # If the preferred initiator token does not match the preferred acceptor token then the acceptor
                     # must send the request-mic negState.
                     preferred_mech = self._preferred_mech_list()[0]
-                    if preferred_mech.value != in_token.mech_types[0]:
+                    if not self._is_same_mech(preferred_mech, in_token.mech_types[0]):
                         self._mic_required = True
 
             elif isinstance(in_token, NegTokenResp):
@@ -230,7 +243,11 @@ class NegotiateProxy(ContextProxy):
 
                 # If we have received the supported_mech then we don't need to send our own.
                 if in_token.supported_mech:
-                    self.__chosen_mech = GSSMech.from_oid(in_token.supported_mech)
+                    supported_mech = in_token.supported_mech
+                    self.__chosen_mech = next(
+                        (m for m in self._context_list if self._is_same_mech(m, supported_mech)),
+                        GSSMech.from_oid(supported_mech),
+                    )
                     self._mech_sent = True
 
                 # Raise exception if we are rejected and have no error info (mechToken) that will give us more info.
@@ -337,7 +354,7 @@ class NegotiateProxy(ContextProxy):
             # https://tools.ietf.org/html/rfc4178#section-4.2.2
             supported_mech = None
             if not self._mech_sent:
-                supported_mech = self._chosen_mech.value
+                supported_mech = self._supported_mech or self._chosen_mech.value
                 if self._mic_required:
                     state = NegState.request_mic
 
@@ -410,6 +427,16 @@ class NegotiateProxy(ContextProxy):
     def _requires_mech_list_mic(self) -> bool:
         return self._context._requires_mech_list_mic
 
+    @staticmethod
+    def _is_same_mech(mech: GSSMech, oid: str) -> bool:
+        """Checks whether an OID offered by the peer identifies the mech, either directly or through a known alias."""
+        if mech.value == oid:
+            return True
+
+        # Kerberos is also known by the MS OID that Windows offers first and the pre RFC draft OID. MIT krb5 treats
+        # these as the same mech (gss_mech_set_krb5_both) and so do we.
+        return mech == GSSMech.kerberos and oid in _KERBEROS_ALIASES
+
     def _preferred_mech_list(self) -> typing.List[GSSMech]:
         """Get a list of mechs that can be used in priority order (highest to lowest)."""
         available_protocols = [p for p in self.available_protocols(self.options) if p != "negotiate"]
@@ -434,7 +461,7 @@ class NegotiateProxy(ContextProxy):
             all_protocols = self._preferred_mech_list()
 
             for mech in all_protocols:
-                if mech_types and mech.value not in mech_types:
+                if mech_types and not any(self._is_same_mech(mech, oid) for oid in mech_types):
                     continue
 
                 protocol = mech.name
@@ -447,7 +474,12 @@ class NegotiateProxy(ContextProxy):
                         options |= NegotiateOptions.use_ntlm
 
                     if self.usage == "accept":
-                        context = spnego.server(protocol=protocol, options=options, **context_kwargs)
+                        context = spnego.server(
+                            credentials=self._credentials,
+                            protocol=protocol,
+                            options=options,
+                            **context_kwargs,
+                        )
                     else:
                         context = spnego.client(self._credentials, protocol=protocol, options=options, **context_kwargs)
 
