@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.13.0 - TBD
+
 ## 0.12.4 - 2026-10-06
 
 * Fix SSPI acceptor with explicit `Password` or `KerberosKeytab` credentials failing with `SEC_E_LOGON_DENIED` when the username is in the UPN form `user@REALM`
