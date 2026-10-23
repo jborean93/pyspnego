@@ -28,7 +28,7 @@ This is an evolving document and I'm trying to keep this updated as I figure out
 
 ## Channel bindings on MIT Negotiate
 
-### Versions affects
+### Versions affected
 
 | Distribution | MIT Version | Heimdal Version |
 |-|-|-|
@@ -37,9 +37,9 @@ This is an evolving document and I'm trying to keep this updated as I figure out
 ### Description
 
 When using pure `SPNEGO` through MIT KRB5 it will fail to pass the channel bindings token along to the underlying
-mech causing failures if CB were required by the acceptor. This has been fixed in a
-[recent commit](https://github.com/krb5/krb5/commit/d16325a24c34ec9a5f6fb4910987f162e0d4d9cd) but not into any releases
-as of yet. MIT KRB5's `SPNEGO` provider is only used when both Kerberos and NTLM are available, if it is not then
+mech causing failures if CB were required by the acceptor. This was fixed in
+[this commit](https://github.com/krb5/krb5/commit/d16325a24c34ec9a5f6fb4910987f162e0d4d9cd) which was released in MIT
+krb5 1.19. MIT KRB5's `SPNEGO` provider is only used when both Kerberos and NTLM are available, if it is not then
 `pyspnego` will automatically use it's own Negotiate provider which handles this scenario just fine.
 
 The workaround is to either set `options=spnego.NegotiateOptions.use_negotiate` to force the use of `pyspnego's`
@@ -49,7 +49,7 @@ _Note: Some distributions, like Fedora, have backported this to the 1.18.x relea
 
 ### Code
 
-This problem is already fixed and is just waiting on a new MIT KRB5 release, no need for code to test this.
+This problem is fixed in MIT krb5 1.19, no need for code to test this.
 
 
 ## Delegation with explicit credentials
@@ -76,8 +76,8 @@ cannot be used in a delegation scenario. The only workaround is to call `kinit`,
 explicitly state that the credential can be forwarded/delegated. In pyspnego this means that no password should be set
 when creating the context.
 
-This problem has been fixed by [this PR](https://github.com/heimdal/heimdal/pull/738) and looks like it will be
-backported to the 7 series of releases so I expect this to no longer be an issue once Heimdal 7.8 comes out.
+This problem has been fixed by [this PR](https://github.com/heimdal/heimdal/pull/738) which was released in Heimdal
+7.8.0.
 
 ### Code
 
@@ -153,14 +153,15 @@ There are 2 problems here;
 * Heimdal mandates the presence of a `PADDING` IOV buffer in the call to `gss_unwrap_iov()`
 * A bug in the RC4 decryption code which results in an erroneous validation error of the header
 
-These 2 bugs have been fixed in [this PR](https://github.com/heimdal/heimdal/pull/740), the PR has also been tested and
-confirmed to work using the same IOV buffer setup as both MIT and SSPI. Unfortunately using those IOV buffers fails
-in existing Heimdal versions so the current code just calls `gss_unwrap()` which works only for AES. This unfortunately
-means RC4 will never work until the code has changed to the IOV variant but that can only be done once the newer
-Heimdal versions have a wider distribution.
+These 2 bugs have been fixed in [this PR](https://github.com/heimdal/heimdal/pull/740) which was released in Heimdal
+7.8.0, the PR has also been tested and confirmed to work using the same IOV buffer setup as both MIT and SSPI.
+Unfortunately using those IOV buffers fails in Heimdal versions older than 7.8.0 so the current code just calls
+`gss_unwrap()` which works only for AES. This unfortunately means RC4 will never work until the code has changed to the
+IOV variant but that can only be done once the newer Heimdal versions have a wider distribution.
 
 ### Code
 
-This problem is being fixed in [the PR](https://github.com/heimdal/heimdal/pull/740) and this is extremely hard to
-test. See [test_integration.py::test_winrm_rc4_wrapping](../tests/integration/templates/test_integration.py.tmpl) for
-the integration test that covers this scenario. Currently it is disabled on the Heimdal tests.
+This problem was fixed in [the PR](https://github.com/heimdal/heimdal/pull/740) (Heimdal 7.8.0) and this is extremely
+hard to test. See
+[test_integration.py::test_winrm_rc4_wrapping](../tests/integration/templates/test_integration.py.tmpl) for the
+integration test that covers this scenario. Currently it is disabled on the Heimdal tests.
