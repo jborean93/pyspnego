@@ -2,6 +2,8 @@
 
 ## 0.13.0 - TBD
 
+* Treat an installed GSSAPI provider with a missing native runtime as unavailable, allowing other authentication providers to work.
+
 ## 0.12.4 - 2026-10-06
 
 * Fix SSPI acceptor with explicit `Password` or `KerberosKeytab` credentials failing with `SEC_E_LOGON_DENIED` when the username is in the UPN form `user@REALM`

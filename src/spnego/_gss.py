@@ -48,7 +48,7 @@ try:
     import krb5
     from gssapi.raw import ChannelBindings, GSSError, inquire_sec_context_by_oid, set_cred_option
     from gssapi.raw import exceptions as gss_errors
-except ImportError as e:
+except (ImportError, OSError) as e:
     GSSAPI_IMP_ERR = str(e)
     HAS_GSSAPI = False
     log.debug("Python gssapi not available, cannot use any GSSAPIProxy protocols: %s" % e)
@@ -60,7 +60,7 @@ try:
     from gssapi.raw import IOV as GSSIOV
     from gssapi.raw import IOVBuffer as GSSIOVBuffer
     from gssapi.raw import IOVBufferType, unwrap_iov, wrap_iov, wrap_iov_length
-except ImportError as e:
+except (ImportError, OSError) as e:
     GSSAPI_IOV_IMP_ERR = str(e)
     HAS_IOV = False
     log.debug("Python gssapi IOV extension not available: %s" % GSSAPI_IOV_IMP_ERR)

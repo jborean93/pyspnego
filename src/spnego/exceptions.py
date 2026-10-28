@@ -7,7 +7,7 @@ import typing
 GSSError: typing.Type[Exception]
 try:
     from gssapi.raw import GSSError  # type: ignore
-except ImportError as e:
+except (ImportError, OSError) as e:
     GSSError = Exception
 
 WinError: typing.Type[Exception]
